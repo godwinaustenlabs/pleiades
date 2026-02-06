@@ -90,12 +90,14 @@ export class Memory {
       llmConfig: config.summarizer?.llmConfig || {},
     };
     this.kvNamespace = config.kvNamespace || null;
+    this.logger = config.logger;
 
     // Wrap NAS adapter
     this.adapterWrapper = new AdapterWrapper({
       kvNamespace: this.kvNamespace,
       agentId: this.agentId,
       clientId: this.clientId,
+      logger: this.logger
     });
 
     // Initialize memory strategy
@@ -107,6 +109,8 @@ export class Memory {
    */
   _initMemory(type) {
     switch (type) {
+      case 'nomemory':
+        return new nomemory();
       case 'summary':
         return new SummaryMemory(this._summarizer.bind(this), this.limitTurns);
       case 'dynamic':
@@ -160,9 +164,16 @@ export class Memory {
   async sms(query, topK) {
     const smsResults = [];
     if (query) {
+      const k = _key(this.clientId, this.agentId);
+
+      // CRITICAL FIX: Ensure memory is loaded before searching
+      // This prevents 500 errors in stateless workers where _BaseStore starts empty
+      if (!_BaseStore.has(k)) {
+        await this.load();
+      }
+
       let s = 1;
-      let turns =
-        _BaseStore.get(_key(this.clientId, this.agentId))?.turns || [];
+      let turns = _BaseStore.get(k)?.turns || [];
 
       for (const t of turns) {
         if (
@@ -190,6 +201,11 @@ export class Memory {
   async load() {
     const k = _key(this.clientId, this.agentId);
     let data = _RAM.get(k);
+
+    if (this.memory instanceof nomemory) {
+      data = { turns: [], summary: '' };
+      return { data: data, tokensUsedByMemory: null };
+    }
 
     if (!data) {
       const extData = await this.adapterWrapper.loadNAS(6);
@@ -221,6 +237,11 @@ export class Memory {
       const k = _key(this.clientId, this.agentId);
       let tokensInfo = null;
 
+      //No memory
+      if (this.memory instanceof nomemory) {
+        return;
+      }
+
       // Handle different memory types
       if (this.memory instanceof DynamicMemory) {
         tokensInfo = await this.memory.saveAndMaybeSummarize(
@@ -240,15 +261,24 @@ export class Memory {
 
       // Persist to NAS adapter
       const mem = _RAM.get(k);
-      if (mem?.turns?.length) {
-        const lastTwo = mem.turns.slice(-2);
-        const toPersist = { turns: lastTwo, summary: mem.summary || '' };
-        await this.adapterWrapper.saveNAS(toPersist);
-      }
+      // toPersist should be the exact new turns we just added, not a slice of history
+      // This prevents duplicating overlaps when batch saving
+      const turnsToSave = Array.isArray(turn) ? turn : [turn];
+      const toPersist = { turns: turnsToSave, summary: mem.summary || '' };
+      await this.adapterWrapper.saveNAS(toPersist);
+
 
       // Update base store (historical memory)
       const b = _key(this.clientId, this.agentId);
-      _BaseStore.get(b).turns.push(turn);
+      if (!_BaseStore.has(b)) {
+        _BaseStore.set(b, { turns: [], summary: '' });
+      }
+
+      if (Array.isArray(turn)) {
+        _BaseStore.get(b).turns.push(...turn);
+      } else {
+        _BaseStore.get(b).turns.push(turn);
+      }
 
       if (_BaseStore.get(b).turns.length > 100) {
         const slice = _BaseStore.get(b).turns.slice(-100);
@@ -262,6 +292,19 @@ export class Memory {
     } catch (err) {
       console.error(`[Memory] Save failed: ${err.message}, ${err.stack}`);
     }
+  }
+}
+
+// No memory
+export class nomemory {
+  constructor() { }
+
+  async load(clientId, agentId) {
+    return { turns: [], summary: '' };
+  }
+
+  async save(clientId, agentId, turn) {
+    return;
   }
 }
 

@@ -15,9 +15,8 @@ import { parseRAW } from './parser.js';
  * @param {Object} opts.llmConfig - LLM configuration to initialize ChatLLM.
  * @returns {Promise<string>} The key of the chosen pipeline.
  */
-async function choosePipeline({ query, pipelines, llmConfig }) {
-  console.log('LLM config for SRS routing:', llmConfig);
-  const llm = new ChatLLM(llmConfig);
+async function choosePipeline({ query, pipelines, llmConfig, logger }) {
+  const llm = new ChatLLM({ ...llmConfig, logger });
 
   // Construct a list of available pipelines in human-readable format.
   const list = Object.entries(pipelines)
@@ -32,15 +31,23 @@ async function choosePipeline({ query, pipelines, llmConfig }) {
   // Include the pipelines and user query in the LLM request.
   const userPrompt = `Available pipelines:\n${list}\n\nUser query: "${query}"\n\nRespond with one pipeline key.`;
 
-  // Invoke LLM chat model
-  const res = await llm.chat({ system: systemPrompt, user: userPrompt });
-  console.log('[SRS] Pipeline choice LLM response:', res);
+  // Invite LLM chat model
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ];
+
+  const res = await llm.chat(messages);
+
+  if (res.error) {
+    throw new Error(`[SRS] LLM Router failed: ${res.error}`);
+  }
 
   // -------------------
   // LLM response parsing
   // -------------------
-  const output = await parseRAW(res.raw);
-  console.log(`[SRS] LLM raw output parsed to: "${output}"`);
+  const output = res.text || "";
+  console.log(`[SRS] LLM output: "${output}"`);
 
   // Defensive async function that loops over pipelines (Cuz gemini wraps res in markdown)
   // to find a key that matches part of the LLM output.
@@ -117,11 +124,12 @@ async function queryAutoRAG(binding, query, env) {
  * @returns {Promise<{ chosenPipeline: string, answer: string }>} The pipeline key and resulting answer.
  */
 export async function srs(config = {}) {
-  console.log('Config OBJ:', config);
-  const { query, pipelines, llmConfig, env } = config;
+  const { query, pipelines, llmConfig, env, logger } = config;
+
+  if (logger) logger.ragSearch(query, "Selecting Pipeline...");
 
   // Step 1: Choose pipeline key using LLM router.
-  const pipelineKey = await choosePipeline({ query, llmConfig, pipelines });
+  const pipelineKey = await choosePipeline({ query, llmConfig, pipelines, logger });
   const pipeline = pipelines[pipelineKey];
 
   console.log(

@@ -1,0 +1,1 @@
+{"agentId":"nova-math-agent","clientId":"test-user-01","payload":{"turns":[{"role":"user","content":"hi"},{"role":"assistant","content":"Hi again. Is there something I can help you with or would you like to chat?"}],"summary":""},"timestamp":1770279969174}

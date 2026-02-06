@@ -158,7 +158,7 @@ export default {
                 const result = await webChatboxAgent(body, env);
 
                 return new Response(
-                    JSON.stringify(result.content),
+                    JSON.stringify(result),
                     {
                         status: 200,
                         headers: {

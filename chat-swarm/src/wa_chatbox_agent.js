@@ -2,46 +2,15 @@ import { Pipeline } from 'nova-agent-framework'
 
 export default async function webChatboxAgent(body, env) {
     const nasRequest = {
-        userPrompt: body.message,
-        promptBuilderConfig: {
-            systemPrompt: 'Your identity is not a chatbot but a company Godwin Austen Labs an AI Agency from Pakistan. use the provided tools to answer our client queries about everything, use sms to reflect back into deeper memory, only give 1 word query to sms, for more technical searches use srs or if sms is empty, you will cost us millions in loss if you ever did not follow NAS OUTPUT, ALWAYS FOLLOW NAS OUTPUT'
-        },
-        llmConfig: {
-            model: env.LLM_MODEL,
-            temperature: 0.3,
-            verbose: false,
-            maxOutputTokens: 1012,
-            cloudflare: {
-                accountId: env.CF_ACCOUNT_ID,
-                gatewayId: env.CF_GATEWAY_NAME,
-                cfAIGToken: env.CF_AIG_TOKEN
-            }
-        },
+        verbose: env.VERBOSE === 'true',
+        // Context Manager Config (Memory)
         ctxManagerConfig: {
+            clientId: body.clientID,
+            agentId: "nova-wa-agent",
             memory: {
-                clientId: body.clientID,
-                agentId: 'bot',
-                memoryType: 'summary',
-                limitTurns: 0,
+                memoryType: "buffer", // Use simple in-memory buffer for testing (no DB needed)
+                limitTurns: 10,
                 kvNamespace: env.KV_NAMESPACE,
-                summarizer: {
-                    llmConfig: {
-                        model: env.LLM_MODEL,
-                        temperature: 0.7,
-                        maxOutputTokens: 512,
-                        cloudflare: {
-                            accountId: env.CF_ACCOUNT_ID,
-                            gatewayId: env.CF_GATEWAY_NAME,
-                            cfAIGToken: env.CF_AIG_TOKEN
-                        }
-                    }
-                },
-
-            },
-            scratchpad: {
-                clientId: body.clientID,
-                agentId: 'bot',
-                useScratchpad: true
             },
             srs: {
                 env,
@@ -62,12 +31,33 @@ export default async function webChatboxAgent(body, env) {
 
                 }
             }
+
         },
-        maxToolLoop: 6
+
+        // LLM Config (Provider: OpenAI or Groq)
+        llmConfig: {
+            model: env.LLM_MODEL,
+            verbose: env.VERBOSE === 'true',
+            api_keys: {
+                openai: env.OPENAI_API_KEY,
+                groq: env.GROQ_API_KEY,
+                gemini: env.GEMINI_API_KEY
+            },
+            cloudflare: {
+                accountId: env.CF_ACCOUNT_ID,
+                gatewayId: env.CF_GATEWAY_NAME,
+                cfAIGToken: env.CF_AIG_TOKEN
+            },
+        },
+
+        // Prompt Builder Config
+        promptBuilderConfig: {
+            systemPrompt: "You are a helpful AI agent with access to several tools. Use 'family-tree' for relations, 'get_weather' for weather, and 'search_flights'/'book_ticket' for travel. Always use the appropriate tool for the user's request."
+        }
     };
 
     const pipeline = new Pipeline(nasRequest, 'parsed');
-    const result = await pipeline.run();
+    const result = await pipeline.run(body.message);
 
     // console.log(JSON.stringify(result));
     console.log(result);

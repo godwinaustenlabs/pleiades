@@ -2,7 +2,7 @@
 // File: adapters/CloudflareKVVectorAdapter.js
 // ===============================
 
-import fetch from 'node-fetch';
+
 
 export default class CloudflareKVVectorAdapter {
   constructor(config = {}) {

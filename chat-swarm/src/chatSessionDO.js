@@ -24,7 +24,7 @@ export default class ChatSessionDO {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 to: job.user,
-                message: result.content,
+                message: result,
             }),
         });
 

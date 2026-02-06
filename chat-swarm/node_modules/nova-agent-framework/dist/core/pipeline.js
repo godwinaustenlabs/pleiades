@@ -1,198 +1,134 @@
-// ===============================
-// File: pipeline.js (extended with ContextManager + SMS loop)
-// ===============================
-
+import { Logger } from './logger.js';
 import { ChatLLM } from './llm.js';
 import { PromptBuilder } from './prompt.js';
-import { parseNAS } from './parser.js';
-import { ContextManager } from './ctxmanager.js'; // <- new
-// NOTE: memory.js and scratchpad.js are no longer constructed here directly
+import { ContextManager } from './ctxManager.js';
+import { ToolRegistry } from './toolRegistry.js';
 
-/**
- * Pipeline orchestrates the flow: context -> prompt -> LLM -> parse -> (optional SMS/SRS loop) -> save -> output
- */
 export class Pipeline {
-  constructor(config = {}, outputType) {
-    this.config = { ...config };
-    this.outputType = outputType || 'parsed';
-    // Safety cap for tool loops to prevent runaway loops
-    this._maxToolLoop = Number(config.maxToolLoop || 6);
+  /**
+   * @param {Object} config - Pipeline configuration
+   * @param {boolean} config.verbose - Enable verbose logging
+   * @param {Object} config.ctxManagerConfig - Config for Context Manager
+   * @param {Object} config.llmConfig - Config for ChatLLM
+   * @param {Array} config.tools - Array of external tool definitions { name, description, schema, func }
+   * @param {number} config.maxToolLoop - Max iterations (default 6)
+   */
+  constructor(config = {}) {
+    this.config = config;
+    this._maxToolLoop = config.maxToolLoop || 6;
+
+    // 0. Initialize Logger
+    this.logger = new Logger(config.verbose || false);
+
+    // 1. Initialize Components
+    this.ctx = new ContextManager({ ...config.ctxManagerConfig, logger: this.logger });
+    this.llm = new ChatLLM({ ...config.llmConfig, logger: this.logger, verbose: config.verbose });
+    this.registry = new ToolRegistry({ logger: this.logger });
+    this.promptBuilder = new PromptBuilder(config.promptBuilderConfig);
+
+    // 2. Register Internal Tools (SMS/SRS)
+    this.ctx.initializeTools(this.registry);
+
+    // 3. Register External/Developer Tools
+    if (Array.isArray(config.tools)) {
+      for (const t of config.tools) {
+        this.registry.register(t.name, t.description, t.schema, t.func);
+      }
+    }
   }
 
-  async run() {
-    // 0) Create Context Manager
-    const ctx = new ContextManager({ ...(this.config.ctxManagerConfig || {}) });
+  /**
+   * Runs the agent pipeline.
+   * @param {string} userPrompt - The user's input text.
+   * @returns {Promise<string>} The final text response from the agent.
+   */
+  async run(userPrompt) {
+    this.logger.startPipeline(userPrompt);
 
-    // 1) PromptBuilder - initialize with base systemPrompt + tools from config (will be augmented with context tools)
-    const promptBuilder = new PromptBuilder({
-      ...(this.config.promptBuilderConfig || {}),
-      lastToolResponse: this.config.lastToolResponse || null,
-    });
+    try {
+      // 1. Load History (Context)
+      const history = await this.ctx.getHistory();
 
-    // 2) LLM
-    const llm = new ChatLLM({ ...this.config.llmConfig });
+      // 2. Build System Prompt
+      const { system } = await this.promptBuilder.build();
 
-    //End of Configuration
-
-    // We will iterate: build prompt -> LLM -> parse -> if toolRequest is SMS/SRS => fetch -> loop
-    let lastParsed = null;
-    let lastLLMRaw = null;
-    let lastToolResponse = null;
-
-    // 1) Load context (memory + scratchpad + optionally preloaded RAG)
-    const context = await ctx.load();
-    // context: { memory, scratchpad, rag, tokensUsedByMemory, tools? }
-
-    // Merge context tools into promptBuilder dynamically
-    // Context Manager may provide default tool metadata (SMS / SRS)
-    promptBuilder.tools = {
-      ...(promptBuilder.tools || {}),
-      ...(context.tools || {}),
-    };
-
-    // Build initial prompt
-    let built = await promptBuilder.build(
-      this.config.userPrompt,
-      context.memory,
-      context.scratchpad,
-      context.rag
-    );
-
-    // Track loop count
-    let loopCount = 0;
-    let shouldContinue = true;
-    let COTOutput = {}; // Chain of Thought output object to return
-
-    while (shouldContinue) {
-      loopCount++;
-      if (loopCount > this._maxToolLoop) {
-        throw new Error(
-          `Tool request loop exceeded max iterations (${this._maxToolLoop}). Aborting.`
-        );
-      }
-
-      // 4) Decide what to send: userPrompt (first round) OR lastToolResponse (after tool)
-      if (lastToolResponse) {
-        // Mark: only send the tool response forward, not the same user input again
-        promptBuilder.lastToolResponse = lastToolResponse;
-        built = await promptBuilder.build(
-          '', // suppress repeating original user input
-          context.memory,
-          COTOutput.scratchpad
-        );
-      }
-
-      const response = await llm.chat(built, {});
-      lastLLMRaw = response;
-      // 5) Parse JSON output
-      const parsed = { ...parseNAS(response.text) };
-      lastParsed = parsed;
-
-      // If the LLM asked to call SMS / SRS (semantic search tools), call context.fetch and loop
-      const tr = parsed.toolRequest;
-      const isSMS =
-        tr &&
-        typeof tr.name === 'string' &&
-        ['SMS', 'SRS', 'sms', 'srs'].includes(String(tr.name).toUpperCase());
-
-      if (isSMS) {
-        //call to semantic builders
-        // Call ContextManager.fetch with the args from toolRequest
-        const fetchArgs = tr.args || {};
-        const fetchResult = await ctx.fetch({
-          name: String(tr.name).toUpperCase(),
-          args: fetchArgs,
-        });
-
-        // fetchResult expected to contain the same structure as save() return:
-        // { tokensUsedByMemory, snapshot, tools, rag, ... }
-        // We'll set lastToolResponse and also merge new tools into promptBuilder
-        lastToolResponse = fetchResult;
-
-        // Also if fetchResult.snapshot exists we should update the local context.memory snapshot (for transparency)
-        if (fetchResult.snapshot) {
-          context.memory = fetchResult.snapshot;
-        }
-
-        // Rebuild prompt with new context + lastToolResponse
-        // built = await promptBuilder.build(
-        //   this.config.userPrompt,
-        //   context.memory,
-        //   lastParsed.scratchpad, // inject RAG results if any
-        // );
-
-        // Build final return object consistent with previous pipeline
-        COTOutput = {
-          ...lastParsed,
-          LLMUsage: lastLLMRaw.usage,
-          ...(context.tokensUsedByMemory || null),
-          memory: context.memory,
-        };
-
-
-        // continue loop (do not save yet). The LLM will receive lastToolResponse in the next call.
-        continue;
-      }
-
-      // If not SMS, stop looping and proceed to save and finalization
-      shouldContinue = false;
-
-      // 6) Save scratchpad + memory via ContextManager.save
-      // Save expects turn (conversation pair) and optional scratchpad content.
-      // We'll attempt to compute the assistant content from parsed.content
-      const assistantContent = parsed.content || parsed.finalAnswer || '';
-      // turn to persist
-      const turn = [
-        { role: 'user', content: this.config.userPrompt },
-        { role: 'assistant', content: assistantContent },
+      // 3. Prepare Message Chain
+      const messages = [
+        { role: 'system', content: system },
+        ...history,
+        { role: 'user', content: userPrompt }
       ];
 
-      // Save via ContextManager, returns tokens info, snapshot, and tools
-      const saveResult = await ctx.save(
-        turn,
-        typeof parsed.scratchpad === 'string'
-          ? parsed.scratchpad
-          : (parsed.scratchpad?.content ?? '')
-      );
+      // Keep track of new messages generated in this session to save later
+      const newSessionMessages = [{ role: 'user', content: userPrompt }];
 
-      // If saveResult.tools, merge them (so the user can use them next time)
-      if (saveResult.tools) {
-        promptBuilder.tools = {
-          ...(promptBuilder.tools || {}),
-          ...saveResult.tools,
-        };
+      let loops = 0;
+      let finalOutput = "";
+
+      // ==========================================
+      // 🔄 The Tool Execution Loop
+      // ==========================================
+      while (loops < this._maxToolLoop) {
+        loops++;
+        this.logger.loopStart(loops);
+
+        // A. Call LLM with Tools
+        const response = await this.llm.chat(messages, {
+          tools: this.registry.getAPITools(),
+          toolChoice: 'auto'
+        });
+
+        // B. Handle Error
+        if (response.error) {
+          throw new Error(`LLM Error: ${response.error}`);
+        }
+
+        // C. Push Assistant Response to Memory & Chain
+        messages.push(response.rawMessage);
+        newSessionMessages.push(response.rawMessage);
+
+        // D. CASE: Text Response (Final Answer)
+        if (response.type === 'TEXT') {
+          finalOutput = response.text;
+          break; // Exit loop
+        }
+
+        // E. CASE: Tool Call
+        if (response.type === 'TOOL_CALL') {
+          // Execute all tools requested by the LLM in parallel
+          const toolResults = await Promise.all(
+            response.toolCalls.map(async (call) => {
+
+              // Execute via Registry
+              const result = await this.registry.execute(call.name, call.args);
+
+              // Construct Tool Message (OpenAI Standard)
+              return {
+                role: 'tool',
+                tool_call_id: call.id, // Critical: Links result to the specific call
+                name: call.name,
+                content: result
+              };
+            })
+          );
+
+          // Append results to chain
+          messages.push(...toolResults);
+          newSessionMessages.push(...toolResults);
+        }
+
+        this.logger.loopEnd(loops);
       }
 
-      // If parsed.toolRequest exists and it's not SMS, allow external toolRunner if provided (legacy behavior)
-      if (parsed.toolRequest && this.config.toolRunner) {
-        const toolRes = await this.config.toolRunner(
-          parsed.toolRequest.name,
-          parsed.toolRequest.args
-        );
-        parsed.toolResponse = toolRes;
-      }
+      // 4. Save Session to Memory
+      await this.ctx.save(newSessionMessages);
 
-      // Prepare snapshot after save
-      const snapshot = saveResult.snapshot || (await ctx.memory.load()).data;
+      this.logger.endPipeline();
+      return finalOutput;
 
-      // Build final return object consistent with previous pipeline
-      const outputObj = {
-        ...parsed,
-        LLMUsage: lastLLMRaw.usage,
-        ...(saveResult.tokensUsedByMemory || null),
-        ...snapshot,
-      };
-
-      // Return according to requested outputType
-      if (this.outputType.toLowerCase() === 'text') {
-        return lastLLMRaw.text;
-      }
-      if (this.outputType.toLowerCase() === 'raw') {
-        return lastLLMRaw.raw || lastLLMRaw;
-      }
-      if (this.outputType.toLowerCase() === 'parsed') {
-        return outputObj;
-      }
+    } catch (err) {
+      this.logger.error("Pipeline", err.message, err.stack);
+      throw err;
     }
   }
 }
