@@ -29,7 +29,7 @@ export class ChatLLM {
    */
   _detectProvider(model) {
     if (!model) return 'openai'; // Safety check
-    if (model.includes('llama') || model.includes(`oss`) || model.includes('mixtral')) return 'groq';
+    if (model.includes('llama') || model.includes(`openai`) || model.includes('mixtral')) return 'groq';
     if (model.includes('gpt') || model.includes('o1-')) return 'openai';
     if (model.includes('gemini')) return 'gemini';
     return 'openai'; // Default fallback
@@ -198,22 +198,21 @@ export class ChatLLM {
 
       // 1. Check if we have the specific "tool_use_failed" signature
       const isToolError =
+        err.error?.code === 'tool_use_failed' ||
         err.code === 'tool_use_failed' ||
-        (err.error && err.error.code === 'tool_use_failed') ||
         (err.message && err.message.includes('tool_use_failed')) ||
         (err.status === 400 && JSON.stringify(err).includes('tool_use_failed'));
 
       const failedGen =
+        err.error?.failed_generation ||
         err.failed_generation ||
-        (err.error && err.error.failed_generation) ||
-        (err.response?.data?.error?.failed_generation) ||
-        (err.error?.failed_generation);
+        err.response?.data?.error?.failed_generation;
 
-      if (isToolError && failedGen) {
+      if (failedGen) {
         if (this.logger) {
           this.logger.error("ChatLLM", "failed gen response recieved, self healing initiiated");
         }
-        if (this.verbose) console.warn(`[ChatLLM] ⚠️ Caught Gemini Tool Error. Attempting Self-Heal...`);
+        if (this.verbose) console.warn(`[ChatLLM] ⚠️ Caught LLM Error. Attempting Self-Heal...`);
 
         let toolName, args;
 
@@ -230,17 +229,19 @@ export class ChatLLM {
           // JSON Parse failed, fall through to Regex
         }
 
-        // 2. Regex fallback for <function=NAME({"arg": "val"}) format
+        // 2. Regex fallback for various formats:
+        // - <function=NAME({"arg": "val"})
+        // - <function=NAME[]{"arg": "val"}</function>
         if (!toolName) {
-          const regex = /<function=(\w+)\((.*)\)/;
+          const regex = /<function=([\w-]+)(?:\[\])?\(?(.*?)\)?(?:<\/function>|>|$)/;
           const match = failedGen.match(regex);
           if (match) {
             try {
               toolName = match[1];
-              args = JSON.parse(match[2]);
+              args = JSON.parse(match[2].trim());
             } catch (e) {
-              // If JSON.parse fails, it might be a raw string
-              args = match[2];
+              // If JSON.parse fails, it might be a raw string or malformed JSON
+              args = match[2].trim();
             }
           }
         }

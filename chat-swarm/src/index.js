@@ -1,213 +1,217 @@
 import webChatboxAgent from './web_chatbox_agent.js';
 import ChatSessionDO from './chatSessionDO.js';
+import { sendWhatsAppMessage } from './whatsapp.js';
+import { html } from './web/index.js';
+
+/**
+ * Nova Framework Main Worker (index.js)
+ * 
+ * DESIGN PATTERN (NUMBERED FLOW):
+ * 1. Incoming requests are filtered for CORS/Options.
+ * 2. AUTHENTICATION: Requests to /web and /api are checked for a password.
+ * 3. ROUTING: Requests are routed based on pathname (/whatsapp, /web, /api, /internal).
+ * 4. WHATSAPP WEBHOOK: Logic for Meta handshake and incoming message handling.
+ * 5. DURABLE OBJECT PROXY: Shared logic for persistence and real-time.
+ */
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Dashboard-Token', // Added custom token header
 };
-// Export Durable Object classes so Wrangler knows about them
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
+        console.log(`[Worker] ${request.method} ${url.pathname}`);
 
-        // ================================
-        // CORS
-        // ================================
+        // [FLOW 1] CORS Handshake
         if (request.method === 'OPTIONS') {
             return new Response(null, { headers: corsHeaders });
         }
-        // ================================
-        // Internal webhook to send WhatsApp messages
-        // ================================
-        if (url.pathname === '/internal') {
-            const { to, message } = await request.json();
-            await sendWhatsAppMessage(to, message, env);
-            return new Response('OK');
+
+        // [FLOW 2] AUTHENTICATION CHECK
+        // If the user tries to access the dashboard (/web) or its data (/api), we check the password.
+        if (url.pathname.startsWith('/web') || url.pathname.startsWith('/api')) {
+            const token = request.headers.get('X-Dashboard-Token') || url.searchParams.get('token');
+            const password = env.DASHBOARD_PASSWORD || 'nova-admin-123';
+
+            // Exception: Serve the base /web page even without token (it will prompt for password)
+            if (url.pathname === '/web' && request.method === 'GET' && token !== password) {
+                // Return the HTML anyway, the frontend JS handles the password prompt if token is missing/wrong.
+                return new Response(html, {
+                    status: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'text/html' }
+                });
+            }
+
+            // Reject API calls or WebSocket handshakes if the token is wrong
+            if (token !== password) {
+                return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+            }
         }
 
-        // ================================
-        // WHATSAPP WEBHOOK
-        // ================================
-        if (url.pathname === '/whatsapp') {
+        // [FLOW 3] ROUTING LOGIC
 
-            // ---- Verification (Meta handshake)
+        // --- DASHBOARD API: List Clients ---
+        if (url.pathname === '/api/clients') {
+            const clientsRaw = await env.KV_NAMESPACE.get('clients');
+            return new Response(clientsRaw || '[]', { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // --- DASHBOARD API: Fetch Messages ---
+        if (url.pathname === '/api/messages') {
+            const clientID = url.searchParams.get('clientID');
+            if (!clientID) return new Response('Missing clientID', { status: 400 });
+            const id = env.CHAT_SESSION_DO.idFromName(clientID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+            return await stub.fetch(`https://do/messages`);
+        }
+
+        // --- DASHBOARD API: Real-Time WebSocket ---
+        if (url.pathname === '/api/ws') {
+            const clientID = url.searchParams.get('clientID');
+            const id = env.CHAT_SESSION_DO.idFromName(clientID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+
+            // Proxy to DO, rewriting path to /ws for hibernatable connection
+            const upgradeRequest = new Request('https://do-internal/ws', request);
+            return await stub.fetch(upgradeRequest);
+        }
+
+        // --- DASHBOARD API: Manual Reply ---
+        if (url.pathname === '/api/send') {
+            const { contactID, message } = await request.json();
+            await sendWhatsAppMessage(contactID, message, env);
+            const id = env.CHAT_SESSION_DO.idFromName(contactID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+            await stub.fetch(`https://do/manual_send`, {
+                method: 'POST',
+                body: JSON.stringify({ message })
+            });
+            return new Response('OK', { headers: corsHeaders });
+        }
+
+        // --- DASHBOARD API: Agent Status Control ---
+        if (url.pathname === '/api/agent_status') {
+            const clientID = url.searchParams.get('clientID');
+            if (!clientID) return new Response('Missing clientID', { status: 400 });
+            const id = env.CHAT_SESSION_DO.idFromName(clientID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+
+            // Forward the request (GET or POST) to the DO
+            return await stub.fetch(new Request(`https://do/agent_status`, request));
+        }
+
+        // [NEW] DASHBOARD API: Client Info (Naming) Proxy
+        if (url.pathname === '/api/client_info') {
+            const clientID = url.searchParams.get('clientID');
+            if (!clientID) return new Response('Missing clientID', { status: 400 });
+            const id = env.CHAT_SESSION_DO.idFromName(clientID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+            return await stub.fetch(new Request(`https://do/client_info`, request));
+        }
+
+        // [NEW] DASHBOARD API: Hard Delete Proxy + KV Cleanup
+        if (url.pathname === '/api/delete_client') {
+            const clientID = url.searchParams.get('clientID');
+            if (!clientID) return new Response('Missing clientID', { status: 400 });
+
+            // 1. Tell the DO to wipe its SQLite and Storage
+            const id = env.CHAT_SESSION_DO.idFromName(clientID);
+            const stub = env.CHAT_SESSION_DO.get(id);
+            await stub.fetch(`https://do/delete`);
+
+            // 2. Remove from global clients list in KV so they disappear from Sidebar
+            const clientsRaw = await env.KV_NAMESPACE.get('clients');
+            if (clientsRaw) {
+                let clients = JSON.parse(clientsRaw);
+                clients = clients.filter(c => c !== clientID);
+                await env.KV_NAMESPACE.put('clients', JSON.stringify(clients));
+            }
+
+            return new Response('OK', { headers: corsHeaders });
+        }
+
+        // [FLOW 4] WHATSAPP WEBHOOK
+        if (url.pathname === '/whatsapp') {
+            // Handshake (GET)
             if (request.method === 'GET') {
                 const mode = url.searchParams.get('hub.mode');
                 const token = url.searchParams.get('hub.verify_token');
                 const challenge = url.searchParams.get('hub.challenge');
-
                 if (mode === 'subscribe' && token === env.WA_VERIFY_TOKEN) {
-                    return new Response(challenge, { status: 200, headers: corsHeaders });
+                    return new Response(challenge, { status: 200 });
                 }
-
-                return new Response('Forbidden', { status: 403, headers: corsHeaders });
+                return new Response('Forbidden', { status: 403 });
             }
 
-            // ---- Incoming messages
+            // Incoming (POST)
             if (request.method === 'POST') {
-                let body;
                 try {
-                    body = await request.json();
-                } catch {
-                    return new Response('Invalid JSON', { status: 400, headers: corsHeaders });
-                }
-
-                try {
+                    const body = await request.json();
                     const entry = body.entry?.[0];
                     const change = entry?.changes?.[0];
                     const value = change?.value;
-                    const message = value?.messages?.[0];
+                    const msg = value?.messages?.[0];
 
-                    if (!message || message.type !== 'text' || !message.text?.body) {
-                        return new Response('EMPTY MSG', { status: 200, headers: corsHeaders });
+                    if (msg?.text?.body) {
+                        const clientID = msg.from;
+                        const userName = value.contacts?.[0]?.profile?.name || msg.from;
+
+                        await trackClient(clientID, env);
+                        await processDO({
+                            clientID,
+                            contactID: clientID,
+                            userName,
+                            message: msg.text.body,
+                            channel: 'whatsapp'
+                        }, env, url);
                     }
-
-                    const from = message.from;
-                    const text = message.text.body;
-                    const number = value.metadata.display_phone_number;
-                    console.log('Received message from', from, ':', text);
-
-                    // Call WhatsApp agent
-                    const clientID = from;
-
-                    const id = env.CHAT_SESSION_DO.idFromName(clientID);
-                    const stub = env.CHAT_SESSION_DO.get(id);
-
-                    const request = {
-                        clientID,
-                        user: from,
-                        message: text,
-                        replyWebhook: `https://chat-swarm.saadnaik.workers.dev/internal`,
-                    }
-
-                    try {
-                        await processDO(request, env);
-                    } catch (err) {
-                        console.error('Error processing DO:', err);
-                    }
-
-                    return new Response('OK', { status: 200, headers: corsHeaders });
-
-                } catch (err) {
-                    return new Response(
-                        JSON.stringify({ error: err.message }),
-                        { status: 500, headers: corsHeaders }
-                    );
-                }
-            }
-
-            return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
-        }
-
-        // ================================
-        // Process DO
-        // ================================
-        async function processDO(request, env) {
-            const body = await request;
-            const clientID = body.clientID;
-            const user = body.user;
-            const message = body.message;
-            const replyWebhook = body.replyWebhook;
-
-            const id = env.CHAT_SESSION_DO.idFromName(clientID);
-            const stub = env.CHAT_SESSION_DO.get(id);
-
-            await stub.fetch('https://do/process', {
-                method: 'POST',
-                body: JSON.stringify({
-                    clientID,
-                    user,
-                    message,
-                    replyWebhook,
-                }),
-            });
-
-            return new Response('DO OK', { status: 200, headers: corsHeaders });
-        }
-
-
-        // ================================
-        // WEB CHATBOX
-        // ================================
-        if (url.pathname === '/web') {
-            if (request.method !== 'POST') {
-                return new Response('Method Not Allowed', {
-                    status: 405,
-                    headers: corsHeaders,
-                });
-            }
-
-            let body;
-            try {
-                body = await request.json();
-            } catch {
-                return new Response(
-                    JSON.stringify({ error: 'Invalid JSON body' }),
-                    {
-                        status: 400,
-                        headers: {
-                            ...corsHeaders,
-                            'Content-Type': 'application/json',
-                        },
-                    }
-                );
-            }
-
-            try {
-                const result = await webChatboxAgent(body, env);
-
-                return new Response(
-                    JSON.stringify(result),
-                    {
-                        status: 200,
-                        headers: {
-                            ...corsHeaders,
-                            'Content-Type': 'application/json',
-                        },
-                    }
-                );
-            } catch (err) {
-                return new Response(
-                    JSON.stringify({ error: err.message }),
-                    {
-                        status: 500,
-                        headers: {
-                            ...corsHeaders,
-                            'Content-Type': 'application/json',
-                        },
-                    }
-                );
+                    return new Response('OK');
+                } catch (e) { return new Response('Error', { status: 500 }); }
             }
         }
 
-        // ================================
-        // FALLBACK
-        // ================================
-        return new Response('Not Found', { status: 404, headers: corsHeaders });
-    },
+        // [FLOW 5] INTERNAL REPLIES
+        if (url.pathname === '/internal') {
+            const { contactID, message } = await request.json();
+            await sendWhatsAppMessage(contactID, message, env);
+            return new Response('OK');
+        }
+
+        return new Response('Not Found', { status: 404 });
+    }
 };
 
-// ================================
-// WhatsApp Sender
-// ================================
-async function sendWhatsAppMessage(to, message, env) {
-    console.log('Sending WhatsApp message to', to, ':', message);
-    await fetch(
-        `https://graph.facebook.com/v22.0/${env.WA_PHONE_NUMBER_ID}/messages`,
-        {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${env.WA_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                messaging_product: 'whatsapp',
-                to: to,
-                text: { body: message },
-            }),
+/**
+ * Shared function to route a message to the appropriate Durable Object.
+ */
+async function processDO(payload, env, url) {
+    const id = env.CHAT_SESSION_DO.idFromName(payload.clientID);
+    const stub = env.CHAT_SESSION_DO.get(id);
+    const response = await stub.fetch('https://do/process', {
+        method: 'POST',
+        body: JSON.stringify({ ...payload, replyWebhook: `${url.origin}/internal` }),
+    });
+    return await response.text();
+}
+
+/**
+ * Utility to keep track of active clientIDs in KV storage for the Dashboard sidebar.
+ */
+async function trackClient(clientID, env) {
+    try {
+        const clientsRaw = await env.KV_NAMESPACE.get('clients');
+        let clients = [];
+        if (clientsRaw) {
+            try { clients = JSON.parse(clientsRaw); } catch (e) { }
         }
-    );
+        if (!clients.includes(clientID)) {
+            clients.push(clientID);
+            await env.KV_NAMESPACE.put('clients', JSON.stringify(clients));
+        }
+    } catch (err) { console.error('KV Error:', err); }
 }
 
 export { ChatSessionDO };

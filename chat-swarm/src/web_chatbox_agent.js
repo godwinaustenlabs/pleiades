@@ -5,7 +5,7 @@ export default async function webChatboxAgent(body, env) {
         verbose: env.VERBOSE === 'true',
         // Context Manager Config (Memory)
         ctxManagerConfig: {
-            clientId: "test-user-01",
+            clientId: body.clientID,
             agentId: "nova-math-agent",
             memory: {
                 memoryType: "buffer", // Use simple in-memory buffer for testing (no DB needed)
@@ -57,7 +57,7 @@ export default async function webChatboxAgent(body, env) {
     };
 
     const pipeline = new Pipeline(nasRequest);
-    const result = await pipeline.run(body.userPrompt);
+    const result = await pipeline.run(body.message || body.userPrompt);
 
     // console.log(JSON.stringify(result));
     console.log("result:" + result);

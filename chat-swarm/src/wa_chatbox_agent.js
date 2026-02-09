@@ -1,6 +1,6 @@
 import { Pipeline } from 'nova-agent-framework'
 
-export default async function webChatboxAgent(body, env) {
+export default async function waChatboxAgent(body, env) {
     const nasRequest = {
         verbose: env.VERBOSE === 'true',
         // Context Manager Config (Memory)

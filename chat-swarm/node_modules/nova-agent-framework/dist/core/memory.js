@@ -145,10 +145,7 @@ export class Memory {
 
     const llm = new ChatLLM({ ...this.summarizerCfg.llmConfig });
 
-    const res = await llm.chat({
-      user: messages[1].content,
-      system: messages[0].content,
-    });
+    const res = await llm.chat(messages);
 
     data.summary = await parseRAW(res.raw);
     data.turns = data.turns.slice(-4);
@@ -417,9 +414,15 @@ export class DynamicMemory extends BufferMemory {
 
     for (let i = turns.length - 1; i >= 0; i--) {
       const t = turns[i];
-      const tokens = estimateTokensLocal(t.content);
+      const tokens = estimateTokensLocal(t.content || JSON.stringify(t.tool_calls || ''));
       if (used + tokens > this.memoryBudgetTokens) break;
-      messages.unshift({ role: t.role, content: t.content });
+
+      const msg = { role: t.role, content: t.content };
+      if (t.name) msg.name = t.name;
+      if (t.tool_call_id) msg.tool_call_id = t.tool_call_id;
+      if (t.tool_calls) msg.tool_calls = t.tool_calls;
+
+      messages.unshift(msg);
       used += tokens;
     }
 
