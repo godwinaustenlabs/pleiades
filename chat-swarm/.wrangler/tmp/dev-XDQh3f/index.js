@@ -14716,7 +14716,7 @@ async function webChatboxAgent(body, env2) {
     // Context Manager Config (Memory)
     ctxManagerConfig: {
       clientId: body.clientID,
-      agentId: "nova-math-agent",
+      agentId: "nova-web-agent",
       memory: {
         memoryType: "buffer",
         // Use simple in-memory buffer for testing (no DB needed)
@@ -15929,7 +15929,7 @@ var src_default = {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
-    if (url.pathname.startsWith("/web") || url.pathname.startsWith("/api")) {
+    if (url.pathname === "/web" || url.pathname.startsWith("/api")) {
       const token = request.headers.get("X-Dashboard-Token") || url.searchParams.get("token");
       const password = env2.DASHBOARD_PASSWORD || "nova-admin-123";
       if (url.pathname === "/web" && request.method === "GET" && token !== password) {

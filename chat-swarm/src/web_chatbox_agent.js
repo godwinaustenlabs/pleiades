@@ -6,7 +6,7 @@ export default async function webChatboxAgent(body, env) {
         // Context Manager Config (Memory)
         ctxManagerConfig: {
             clientId: body.clientID,
-            agentId: "nova-math-agent",
+            agentId: "nova-web-agent",
             memory: {
                 memoryType: "buffer", // Use simple in-memory buffer for testing (no DB needed)
                 limitTurns: 10,

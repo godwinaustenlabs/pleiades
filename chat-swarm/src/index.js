@@ -31,8 +31,9 @@ export default {
         }
 
         // [FLOW 2] AUTHENTICATION CHECK
-        // If the user tries to access the dashboard (/web ) or its data (/api), we check the password.
-        if (url.pathname.startsWith('/web') || url.pathname.startsWith('/api')) {
+        // If the user tries to access the dashboard (/web) or its data (/api), we check the password.
+        // We use an exact check for '/web' so it doesn't block '/website'.
+        if (url.pathname === '/web' || url.pathname.startsWith('/api')) {
             const token = request.headers.get('X-Dashboard-Token') || url.searchParams.get('token');
             const password = env.DASHBOARD_PASSWORD || 'nova-admin-123';
 
