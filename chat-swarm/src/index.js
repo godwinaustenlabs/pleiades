@@ -55,7 +55,7 @@ export default {
 
         // --- DASHBOARD API: List Clients ---
         if (url.pathname === '/api/clients') {
-            const clientsRaw = await env.KV_NAMESPACE.get('clients');
+            const clientsRaw = await env.CLIENTS_KV_NAMESPACE.get('clients');
             return new Response(clientsRaw || '[]', { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
@@ -123,11 +123,11 @@ export default {
             await stub.fetch(`https://do/delete`);
 
             // 2. Remove from global clients list in KV so they disappear from Sidebar
-            const clientsRaw = await env.KV_NAMESPACE.get('clients');
+            const clientsRaw = await env.CLIENTS_KV_NAMESPACE.get('clients');
             if (clientsRaw) {
                 let clients = JSON.parse(clientsRaw);
                 clients = clients.filter(c => c !== clientID);
-                await env.KV_NAMESPACE.put('clients', JSON.stringify(clients));
+                await env.CLIENTS_KV_NAMESPACE.put('clients', JSON.stringify(clients));
             }
 
             return new Response('OK', { headers: corsHeaders });
@@ -202,14 +202,14 @@ async function processDO(payload, env, url) {
  */
 async function trackClient(clientID, env) {
     try {
-        const clientsRaw = await env.KV_NAMESPACE.get('clients');
+        const clientsRaw = await env.CLIENTS_KV_NAMESPACE.get('clients');
         let clients = [];
         if (clientsRaw) {
             try { clients = JSON.parse(clientsRaw); } catch (e) { }
         }
         if (!clients.includes(clientID)) {
             clients.push(clientID);
-            await env.KV_NAMESPACE.put('clients', JSON.stringify(clients));
+            await env.CLIENTS_KV_NAMESPACE.put('clients', JSON.stringify(clients));
         }
     } catch (err) { console.error('KV Error:', err); }
 }

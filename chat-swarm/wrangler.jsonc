@@ -21,16 +21,21 @@
 		"CF_GATEWAY_NAME": "testing-gateway-2",
 		"CF_AIG_TOKEN": "O2bUj1gkZwFjlrW4HnXz_d1tMxWbbT8UMBJFfHqA",
 		"WA_VERIFY_TOKEN": "verificationtesting123",
-		// "WA_PHONE_NUMBER_ID": "934665196399099",
-		"WA_PHONE_NUMBER_ID": "987003544491839",
+		"WA_PHONE_NUMBER_ID": "987003544491839",		//production testing
+		// "WA_PHONE_NUMBER_ID": "1036902446163891",       //pre-production testing
 		"WA_ACCESS_TOKEN": "EAAlUy7Mlb8MBQmQQw52VIH8DEaXr63btUAGFtIc9vOwidilPMuNsHnF4ZCZAg1VacWEElm5qYiGg5mMbnQja7KDxXUZB18rr9an0hL5YjwnRtHzCcjsUD1XrgFHQ0xlbyXiYLz1Rpw2a2PFeogx5YVHC8ZBpegnBLgQGa9nBI7OJNvS89p3Vp4ZAFB8iRLIQPYQZDZD",
-		"DASHBOARD_PASSWORD": "nova-admin-123"
+		"DASHBOARD_PASSWORD": "nova-admin-123",
+		"admin": "923184458194"
 	},
 
 	"kv_namespaces": [
 		{
-			"binding": "KV_NAMESPACE",
-			"id": "f5ec253a6a79442e87838fd8cea5aaeb"
+			"binding": "CLIENTS_KV_NAMESPACE",
+			"id": "669b10984a084d2d88f046a056d2ad4d"
+		}, 
+		{
+			"binding": "MEMORY_KV_NAMESPACE",
+			"id": "fe850a4d50b945ab84298100d85e9460"
 		}
 	],
 

@@ -10,7 +10,7 @@ export default async function webChatboxAgent(body, env) {
             memory: {
                 memoryType: "buffer", // Use simple in-memory buffer for testing (no DB needed)
                 limitTurns: 10,
-                kvNamespace: env.KV_NAMESPACE,
+                kvNamespace: env.MEMORY_KV_NAMESPACE,
             },
             srs: {
                 env,

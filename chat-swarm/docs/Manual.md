@@ -1,5 +1,3 @@
-Welcome to the deep end of Cloudflare architecture! As a "master dev," you’re moving beyond simple serverless functions and into Stateful Serverless.
-
 Here is the high-level architecture of exactly how your "Chat Swarm" system works, broken down by component.
 
 1. The Durable Object (DO) is a "Living Instance"
