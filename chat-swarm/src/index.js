@@ -31,14 +31,13 @@ export default {
         }
 
         // [FLOW 2] AUTHENTICATION CHECK
-        // If the user tries to access the dashboard (/web) or its data (/api), we check the password.
+        // If the user tries to access the dashboard (/web ) or its data (/api), we check the password.
         if (url.pathname.startsWith('/web') || url.pathname.startsWith('/api')) {
             const token = request.headers.get('X-Dashboard-Token') || url.searchParams.get('token');
             const password = env.DASHBOARD_PASSWORD || 'nova-admin-123';
 
             // Exception: Serve the base /web page even without token (it will prompt for password)
             if (url.pathname === '/web' && request.method === 'GET' && token !== password) {
-                // Return the HTML anyway, the frontend JS handles the password prompt if token is missing/wrong.
                 return new Response(html, {
                     status: 200,
                     headers: { ...corsHeaders, 'Content-Type': 'text/html' }
@@ -52,6 +51,20 @@ export default {
         }
 
         // [FLOW 3] ROUTING LOGIC
+
+        // --- WEB CHAT AGENT (Stateless): Direct call to agent ---
+        if (url.pathname === '/website' && request.method === 'POST') {
+            try {
+                const body = await request.json();
+                const result = await webChatboxAgent(body, env);
+                return new Response(JSON.stringify(result), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            } catch (err) {
+                console.error('Web Agent Error:', err);
+                return new Response('Error Processing Request', { status: 500, headers: corsHeaders });
+            }
+        }
 
         // --- DASHBOARD API: List Clients ---
         if (url.pathname === '/api/clients') {

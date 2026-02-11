@@ -14709,6 +14709,66 @@ var Pipeline = class {
   }
 };
 
+// src/web_chatbox_agent.js
+async function webChatboxAgent(body, env2) {
+  const nasRequest = {
+    verbose: env2.VERBOSE === "true",
+    // Context Manager Config (Memory)
+    ctxManagerConfig: {
+      clientId: body.clientID,
+      agentId: "nova-math-agent",
+      memory: {
+        memoryType: "buffer",
+        // Use simple in-memory buffer for testing (no DB needed)
+        limitTurns: 10,
+        kvNamespace: env2.MEMORY_KV_NAMESPACE
+      },
+      srs: {
+        env: env2,
+        pipelines: {
+          nova: {
+            binding: "testing-rag",
+            description: "Technical docs"
+          }
+        },
+        llmConfig: {
+          model: env2.LLM_MODEL,
+          temperature: 0.7,
+          cloudflare: {
+            accountId: env2.CF_ACCOUNT_ID,
+            gatewayId: env2.CF_GATEWAY_NAME,
+            cfAIGToken: env2.CF_AIG_TOKEN
+          }
+        }
+      }
+    },
+    // LLM Config (Provider: OpenAI or Groq)
+    llmConfig: {
+      model: env2.LLM_MODEL,
+      verbose: env2.VERBOSE === "true",
+      api_keys: {
+        openai: env2.OPENAI_API_KEY,
+        groq: env2.GROQ_API_KEY,
+        gemini: env2.GEMINI_API_KEY
+      },
+      cloudflare: {
+        accountId: env2.CF_ACCOUNT_ID,
+        gatewayId: env2.CF_GATEWAY_NAME,
+        cfAIGToken: env2.CF_AIG_TOKEN
+      }
+    },
+    // Prompt Builder Config
+    promptBuilderConfig: {
+      systemPrompt: "You are a helpful AI agent with access to several tools. Use 'family-tree' for relations, 'get_weather' for weather, and 'search_flights'/'book_ticket' for travel. Always use the appropriate tool for the user's request."
+    }
+  };
+  const pipeline = new Pipeline(nasRequest);
+  const result = await pipeline.run(body.message || body.userPrompt);
+  console.log("result:" + result);
+  return result;
+}
+__name(webChatboxAgent, "webChatboxAgent");
+
 // src/whatsapp.js
 async function sendWhatsAppMessage(contactID, message, env2) {
   console.log("Sending WhatsApp message to", contactID, ":", message);
@@ -15880,6 +15940,18 @@ var src_default = {
       }
       if (token !== password) {
         return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      }
+    }
+    if (url.pathname === "/website" && request.method === "POST") {
+      try {
+        const body = await request.json();
+        const result = await webChatboxAgent(body, env2);
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } catch (err) {
+        console.error("Web Agent Error:", err);
+        return new Response("Error Processing Request", { status: 500, headers: corsHeaders });
       }
     }
     if (url.pathname === "/api/clients") {
