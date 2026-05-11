@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GAnovaOS — Sign In</title>
+  <meta name="description" content="Secure unified login portal for GAnovaOS — the integrated operational intelligence platform for Godwin Austen Labs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #080c14;
+      --surface:     #0f1623;
+      --surface2:    #151e2d;
+      --border:      rgba(255,255,255,0.07);
+      --primary:     #3b82f6;
+      --primary-dim: rgba(59,130,246,0.15);
+      --accent:      #8b5cf6;
+      --text:        #f0f4ff;
+      --muted:       #6b7a9a;
+      --success:     #22c55e;
+      --danger:      #ef4444;
+      --warn:        #f59e0b;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Animated background ──────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% -10%, rgba(59,130,246,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 90% 110%, rgba(139,92,246,0.10) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* ── Grid ─────────────────────────────────────────────── */
+    .page {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 460px;
+    }
+
+    /* ── Left panel — brand / info ────────────────────────── */
+    .brand-panel {
+      display: flex; flex-direction: column; justify-content: center; padding: 4rem 5rem;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(15,22,35,0.9) 0%, rgba(8,12,20,0.9) 100%);
+    }
+
+    .logo-badge {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--primary-dim);
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 12px; padding: 10px 16px; width: fit-content;
+      margin-bottom: 2.5rem;
+    }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 16px; color: #fff;
+      box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+    }
+    .logo-text { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+    .logo-text span { color: var(--primary); }
+
+    .brand-headline {
+      font-size: clamp(2rem, 3.5vw, 3rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-headline .grad {
+      background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .brand-sub {
+      font-size: 1rem; color: var(--muted); line-height: 1.7; max-width: 480px;
+      margin-bottom: 3rem;
+    }
+
+    .pillars {
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+    .pillar {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 1rem 1.25rem;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .pillar:hover { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.05); }
+    .pillar-icon {
+      width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 18px;
+    }
+    .pillar-content h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 2px; }
+    .pillar-content p  { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+    /* ── Right panel — login form ─────────────────────────── */
+    .form-panel {
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 3rem 3rem;
+      background: var(--surface);
+    }
+
+    .form-title { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .form-subtitle { font-size: 0.875rem; color: var(--muted); margin-bottom: 2.5rem; }
+
+    /* Status banners */
+    .banner {
+      display: none; align-items: flex-start; gap: 10px;
+      border-radius: 10px; padding: 12px 14px;
+      font-size: 0.8rem; line-height: 1.5; margin-bottom: 1.5rem;
+    }
+    .banner.visible { display: flex; }
+    .banner.error   { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .banner.info    { background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.3);  color: #86efac; }
+    .banner.warn    { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #fcd34d; }
+    .banner-icon { font-size: 16px; flex-shrink: 0; line-height: 1.5; }
+
+    /* Form fields */
+    .field { margin-bottom: 1.25rem; }
+    .field label {
+      display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted);
+      margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .input-wrap { position: relative; }
+    .input-wrap .icon {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      font-size: 16px; color: var(--muted); pointer-events: none;
+    }
+    .input-wrap input {
+      width: 100%; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px 12px 42px;
+      font-size: 0.9rem; color: var(--text); font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+    .input-wrap input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+    .input-wrap input::placeholder { color: var(--muted); opacity: 0.6; }
+    .input-wrap.has-toggle input { padding-right: 44px; }
+    .toggle-pw {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 15px; padding: 4px;
+      transition: color 0.2s;
+    }
+    .toggle-pw:hover { color: var(--text); }
+
+    .forgot-row {
+      display: flex; justify-content: flex-end; margin-top: -0.75rem; margin-bottom: 1.5rem;
+    }
+    .link-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 0.8rem; color: var(--primary); font-family: inherit;
+      transition: color 0.2s; padding: 0;
+    }
+    .link-btn:hover { color: #93c5fd; text-decoration: underline; }
+
+    /* Submit button */
+    .btn-primary {
+      width: 100%; padding: 13px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      border: none; border-radius: 10px; color: #fff;
+      font-size: 0.95rem; font-weight: 600; font-family: inherit;
+      cursor: pointer; position: relative; overflow: hidden;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 18px rgba(59,130,246,0.35);
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(59,130,246,0.45); }
+    .btn-primary:active:not(:disabled) { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-primary .spinner {
+      display: none; width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      margin: 0 auto;
+    }
+    .btn-primary.loading .btn-label { display: none; }
+    .btn-primary.loading .spinner  { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Reset form */
+    .reset-form { display: none; }
+    .reset-form.active { display: block; }
+    .login-form.hidden { display: none; }
+
+    .back-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 0.8rem; font-family: inherit;
+      margin-bottom: 2rem; padding: 0;
+      transition: color 0.2s;
+    }
+    .back-btn:hover { color: var(--text); }
+
+    .divider { height: 1px; background: var(--border); margin: 2rem 0; }
+
+    .footer-note {
+      text-align: center; font-size: 0.75rem; color: var(--muted);
+      margin-top: 1.5rem; line-height: 1.6;
+    }
+
+    /* Hierarchy badge */
+    .hierarchy-info {
+      background: rgba(139,92,246,0.08);
+      border: 1px solid rgba(139,92,246,0.2);
+      border-radius: 10px; padding: 12px 14px;
+      font-size: 0.78rem; color: var(--muted); line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .hierarchy-info strong { color: var(--text); }
+
+    /* Role redirect labels */
+    .role-pills {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+    }
+    .role-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 500;
+    }
+    .pill-ceo      { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
+    .pill-hr       { background: rgba(139,92,246,0.15); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+    .pill-finance  { background: rgba(34,197,94,0.12);  color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
+    .pill-legal    { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+    .pill-tech     { background: rgba(20,184,166,0.12); color: #5eead4; border: 1px solid rgba(20,184,166,0.25); }
+    .pill-acq      { background: rgba(244,63,94,0.12);  color: #fda4af; border: 1px solid rgba(244,63,94,0.25); }
+
+    /* Responsive */
+    @media (max-width: 860px) {
+      .page { grid-template-columns: 1fr; }
+      .brand-panel { display: none; }
+      .form-panel { padding: 2.5rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── Left brand panel ─────────────────────────────── -->
+  <div class="brand-panel" aria-hidden="true">
+    <div class="logo-badge">
+      <div class="logo-icon">G</div>
+      <span class="logo-text">GAnova<span>OS</span></span>
+    </div>
+
+    <h1 class="brand-headline">
+      Operational Intelligence<br />
+      <span class="grad">Secured by Design</span>
+    </h1>
+
+    <p class="brand-sub">
+      The unified platform for HR, Finance, Legal, Tech, and Acquisition — 
+      with a hierarchy-aware access control layer that puts your HR Manager 
+      in control of who enters the system.
+    </p>
+
+    <div class="pillars">
+      <div class="pillar">
+        <div class="pillar-icon" style="background:rgba(59,130,246,0.12)">🔐</div>
+        <div class="pillar-content">
+          <h3>HR-Gated Provisioning</h3>
+          <p>Every account is created and owned by an HR Manager. No self-registration.</p>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" style="background:rgba(139,92,246,0.12)">🏛️</div>
+        <div class="pillar-content">
+          <h3>Chain-of-Command RBAC</h3>
+          <p>CEO → HR Manager → Dept Head → Employee. Authority flows downward.</p>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" style="background:rgba(34,197,94,0.12)">🔄</div>
+        <div class="pillar-content">
+          <h3>Delegated Password Resets</h3>
+          <p>Reset requests require explicit approval from your owning HR Manager.</p>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon" style="background:rgba(245,158,11,0.12)">📋</div>
+        <div class="pillar-content">
+          <h3>Full Audit Trail</h3>
+          <p>Every login, reset, and provisioning action is logged and attributable.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right form panel ──────────────────────────────── -->
+  <div class="form-panel">
+
+    <!-- Login Form -->
+    <div id="loginSection" class="login-form">
+      <div style="margin-bottom:2rem">
+        <div class="logo-badge" style="margin-bottom:1.5rem">
+          <div class="logo-icon">G</div>
+          <span class="logo-text">GAnova<span>OS</span></span>
+        </div>
+        <div class="form-title">Welcome back</div>
+        <div class="form-subtitle">Sign in to access your department portal</div>
+      </div>
+
+      <div id="loginError" class="banner error" role="alert">
+        <span class="banner-icon">⚠️</span>
+        <span id="loginErrorMsg">Invalid email or password.</span>
+      </div>
+
+      <div id="loginWarn" class="banner warn" role="alert">
+        <span class="banner-icon">🔒</span>
+        <span id="loginWarnMsg">Account temporarily locked. Contact your HR Manager.</span>
+      </div>
+
+      <form id="loginForm" autocomplete="on">
+        <div class="field">
+          <label for="email">Work Email</label>
+          <div class="input-wrap">
+            <span class="icon">📧</span>
+            <input id="email" name="email" type="email" placeholder="you@godwinausten.com"
+                   autocomplete="email" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="input-wrap has-toggle">
+            <span class="icon">🔑</span>
+            <input id="password" name="password" type="password" placeholder="Enter your password"
+                   autocomplete="current-password" required />
+            <button type="button" class="toggle-pw" id="togglePw" aria-label="Toggle password visibility">👁️</button>
+          </div>
+        </div>
+
+        <div class="forgot-row">
+          <button type="button" class="link-btn" id="forgotBtn">Forgot password?</button>
+        </div>
+
+        <button type="submit" id="loginBtn" class="btn-primary">
+          <span class="btn-label">Sign In</span>
+          <span class="spinner"></span>
+        </button>
+      </form>
+
+      <div class="divider"></div>
+
+      <div class="hierarchy-info">
+        <strong>Access is managed by your HR Manager.</strong><br />
+        After login you will be redirected to your department portal based on your assigned role:
+        <div class="role-pills" style="margin-top:8px">
+          <span class="role-pill pill-ceo">👑 CEO → Full Access</span>
+          <span class="role-pill pill-hr">🛡️ HR Manager → HR Portal</span>
+          <span class="role-pill pill-finance">💰 Finance → Finance Portal</span>
+          <span class="role-pill pill-legal">⚖️ Legal → Legal Portal</span>
+          <span class="role-pill pill-tech">⚙️ Tech Lead → Tech Portal</span>
+          <span class="role-pill pill-acq">📣 Marketing → Acquisition Portal</span>
+        </div>
+      </div>
+
+      <p class="footer-note">
+        Don't have an account? Contact your HR Manager to provision access.<br />
+        <span style="opacity:0.5">GAnovaOS v2 · Godwin Austen Labs</span>
+      </p>
+    </div>
+
+    <!-- Forgot Password / Reset Request Form -->
+    <div id="resetSection" class="reset-form">
+      <button type="button" class="back-btn" id="backBtn">← Back to Sign In</button>
+
+      <div class="form-title">Reset Password</div>
+      <div class="form-subtitle" style="margin-bottom:2rem">
+        Enter your email — your HR Manager will receive a request to approve the reset.
+      </div>
+
+      <div id="resetSuccess" class="banner info">
+        <span class="banner-icon">✅</span>
+        <span>Your reset request has been submitted. Your HR Manager must approve it before you can set a new password.</span>
+      </div>
+
+      <div id="resetError" class="banner error">
+        <span class="banner-icon">⚠️</span>
+        <span id="resetErrorMsg">Something went wrong. Please try again.</span>
+      </div>
+
+      <form id="resetForm" autocomplete="off">
+        <div class="field">
+          <label for="resetEmail">Work Email</label>
+          <div class="input-wrap">
+            <span class="icon">📧</span>
+            <input id="resetEmail" name="email" type="email" placeholder="you@godwinausten.com"
+                   autocomplete="email" required />
+          </div>
+        </div>
+
+        <button type="submit" id="resetBtn" class="btn-primary">
+          <span class="btn-label">Request Reset</span>
+          <span class="spinner"></span>
+        </button>
+      </form>
+
+      <div class="divider"></div>
+
+      <div class="hierarchy-info">
+        <strong>How it works:</strong><br />
+        1. Submit your email below<br />
+        2. Your HR Manager reviews the request in the HR portal<br />
+        3. Once approved, you'll receive a secure link to set a new password<br />
+        <br />
+        <strong>Already have a token?</strong> Submit it at 
+        <span style="color:var(--primary);font-family:monospace;font-size:0.78rem">POST /auth/complete-reset</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const API_BASE = '';  // same origin (Cloudflare Worker serves both)
+
+  // ── Role → app URL mapping ────────────────────────────────────
+  const ROLE_REDIRECTS = {
+    CEO:              '/apps/hr',
+    HR_Manager:       '/apps/hr',
+    Finance_Manager:  '/apps/finance',
+    Legal_Officer:    '/apps/legal',
+    Tech_Lead:        '/apps/tech',
+    Marketing_Lead:   '/apps/acquisition',
+    Employee:         '/apps/hr',  // fallback to HR for profile view
+  };
+
+  // ── UI refs ───────────────────────────────────────────────────
+  const loginSection  = document.getElementById('loginSection');
+  const resetSection  = document.getElementById('resetSection');
+  const loginForm     = document.getElementById('loginForm');
+  const resetForm     = document.getElementById('resetForm');
+  const loginBtn      = document.getElementById('loginBtn');
+  const resetBtn      = document.getElementById('resetBtn');
+  const loginError    = document.getElementById('loginError');
+  const loginErrorMsg = document.getElementById('loginErrorMsg');
+  const loginWarn     = document.getElementById('loginWarn');
+  const resetSuccess  = document.getElementById('resetSuccess');
+  const resetError    = document.getElementById('resetError');
+  const resetErrorMsg = document.getElementById('resetErrorMsg');
+  const togglePw      = document.getElementById('togglePw');
+  const passwordInput = document.getElementById('password');
+
+  // ── Password visibility toggle ────────────────────────────────
+  togglePw.addEventListener('click', () => {
+    const show = passwordInput.type === 'password';
+    passwordInput.type = show ? 'text' : 'password';
+    togglePw.textContent = show ? '🙈' : '👁️';
+  });
+
+  // ── Show/hide reset form ──────────────────────────────────────
+  document.getElementById('forgotBtn').addEventListener('click', () => {
+    loginSection.classList.add('hidden');
+    resetSection.classList.add('active');
+    clearBanners();
+  });
+  document.getElementById('backBtn').addEventListener('click', () => {
+    resetSection.classList.remove('active');
+    loginSection.classList.remove('hidden');
+    clearBanners();
+  });
+
+  function clearBanners() {
+    [loginError, loginWarn, resetSuccess, resetError].forEach(b => b.classList.remove('visible'));
+  }
+
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+  }
+
+  // ── Login ─────────────────────────────────────────────────────
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearBanners();
+    setLoading(loginBtn, true);
+
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 429) {
+        loginWarn.classList.add('visible');
+        setLoading(loginBtn, false);
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        loginErrorMsg.textContent = data.error || 'Invalid email or password.';
+        loginError.classList.add('visible');
+        setLoading(loginBtn, false);
+        return;
+      }
+
+      // Store JWT
+      localStorage.setItem('ganova_token', data.data.token);
+      localStorage.setItem('ganova_user', JSON.stringify(data.data.user));
+
+      // Redirect based on role
+      const roleName  = data.data.user?.roleName || 'Employee';
+      const targetUrl = ROLE_REDIRECTS[roleName] || '/apps/hr';
+
+      // Small success flash before redirect
+      loginBtn.querySelector('.btn-label').textContent = '✓ Redirecting…';
+      setTimeout(() => { window.location.href = targetUrl; }, 600);
+
+    } catch (err) {
+      loginErrorMsg.textContent = 'Network error. Please check your connection.';
+      loginError.classList.add('visible');
+      setLoading(loginBtn, false);
+    }
+  });
+
+  // ── Reset request ─────────────────────────────────────────────
+  resetForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearBanners();
+    setLoading(resetBtn, true);
+
+    const email = document.getElementById('resetEmail').value.trim();
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/request-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      // Always show success regardless (prevent email enumeration)
+      resetSuccess.classList.add('visible');
+      document.getElementById('resetEmail').value = '';
+      resetBtn.querySelector('.btn-label').textContent = 'Request Sent ✓';
+      resetBtn.disabled = true;
+
+    } catch (err) {
+      resetErrorMsg.textContent = 'Network error. Please try again.';
+      resetError.classList.add('visible');
+      setLoading(resetBtn, false);
+    }
+  });
+
+  // ── Auto-redirect if already logged in ───────────────────────
+  (function checkSession() {
+    const token = localStorage.getItem('ganova_token');
+    if (!token) return;
+    // Optionally verify: call /auth/whoami, redirect if valid
+    fetch(`${API_BASE}/auth/whoami`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }).then(r => r.json()).then(d => {
+      if (d.success && d.data?.roleName) {
+        window.location.href = ROLE_REDIRECTS[d.data.roleName] || '/apps/hr';
+      }
+    }).catch(() => {
+      // Token invalid — clear it silently
+      localStorage.removeItem('ganova_token');
+      localStorage.removeItem('ganova_user');
+    });
+  })();
+</script>
+</body>
+</html>

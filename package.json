@@ -1,20 +1,30 @@
 {
-	"name": "core-agent",
-	"version": "0.0.0",
-	"private": true,
-	"type": "module",
-	"scripts": {
-		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
-		"test": "vitest"
-	},
-	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.8.19",
-		"vitest": "~3.2.0",
-		"wrangler": "^4.54.0"
-	},
-	"dependencies": {
-		"nova-agent-framework": "^0.0.7"
-	}
+  "name": "ganova-os",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "npm@10.8.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"wrangler dev\" \"turbo run dev\"",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260510.1",
+    "@tailwindcss/postcss": "^4.3.0",
+    "autoprefixer": "^10.5.0",
+    "concurrently": "^9.2.1",
+    "postcss": "^8.5.14",
+    "prettier": "latest",
+    "tailwindcss": "^4.3.0",
+    "turbo": "latest",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "react-router-dom": "^7.15.0"
+  }
 }

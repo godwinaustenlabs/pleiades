@@ -4,58 +4,51 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "chatswarm",
-	"main": "src/index.js",
+	"name": "office",
+	"main": "src/index.ts",
 	"compatibility_date": "2026-01-03",
 	"observability": {
 		"enabled": true
 	},
-	"compatibility_flags": ["nodejs_compat"],
-
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "./apps/web/dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
 	"vars": {
 		// "LLM_MODEL": "openai/gpt-oss-120b",
 		// "LLM_MODEL": "gemini-2.5-flash",
-		"LLM_MODEL": "llama-3.3-70b-versatile",
-
-		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
-		"CF_GATEWAY_NAME": "testing-gateway-2",
-		"CF_AIG_TOKEN": "O2bUj1gkZwFjlrW4HnXz_d1tMxWbbT8UMBJFfHqA",
-		"WA_VERIFY_TOKEN": "verificationtesting123",
-		"WA_PHONE_NUMBER_ID": "987003544491839",		//production testing
-		// "WA_PHONE_NUMBER_ID": "1036902446163891",       //pre-production testing
-		"WA_ACCESS_TOKEN": "EAAlUy7Mlb8MBQmQQw52VIH8DEaXr63btUAGFtIc9vOwidilPMuNsHnF4ZCZAg1VacWEElm5qYiGg5mMbnQja7KDxXUZB18rr9an0hL5YjwnRtHzCcjsUD1XrgFHQ0xlbyXiYLz1Rpw2a2PFeogx5YVHC8ZBpegnBLgQGa9nBI7OJNvS89p3Vp4ZAFB8iRLIQPYQZDZD",
 		"DASHBOARD_PASSWORD": "nova-admin-123",
-		"admin": "923184458194"
+		"JWT_SECRET": "ganova_secret_keys_2026",
+		"API_KEY_SECRET": "ganova_api_key_secret_2026"
 	},
-
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "2c0c6471-7fcb-4ce0-96fa-03a41d260201",
+			"database_name": "office-db"
+		}
+	],
 	"kv_namespaces": [
 		{
 			"binding": "CLIENTS_KV_NAMESPACE",
 			"id": "669b10984a084d2d88f046a056d2ad4d"
-		}, 
+		},
 		{
 			"binding": "MEMORY_KV_NAMESPACE",
 			"id": "fe850a4d50b945ab84298100d85e9460"
 		}
 	],
-
-	 "ai": {
-    "binding": "AI" // i.e. available in your Worker on env.AI
-  },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "CHAT_SESSION_DO",
-        "class_name": "ChatSessionDO"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "ChatSessionDO"
-      ]
-    }
-  ]
+	"ai": {
+		"binding": "AI"
+	},
+	"r2_buckets": [
+		{
+			"binding": "CRM_BUCKET",
+			"bucket_name": "ganova-crm-docs"
+		}
+	]
 }

@@ -1,0 +1,41 @@
+{
+  "version": "5",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1778417283371,
+      "tag": "0000_plain_shard",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778421831832,
+      "tag": "0001_curved_donald_blake",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778425135583,
+      "tag": "0002_silly_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1778468395471,
+      "tag": "0003_lame_bucky",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1778493542500,
+      "tag": "0004_tidy_lockjaw",
+      "breakpoints": true
+    }
+  ]
+}

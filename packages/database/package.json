@@ -1,0 +1,16 @@
+{
+  "name": "@ganova/database",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "generate": "drizzle-kit generate:sqlite",
+    "migrate": "wrangler d1 migrations apply office-db --local"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.30.10"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.20.14",
+    "typescript": "^5.0.0"
+  }
+}
