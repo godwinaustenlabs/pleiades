@@ -110,4 +110,25 @@ portalRouter.get('/tickets/:id', clientAuth, async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+portalRouter.delete('/tickets/:id', clientAuth, async (c) => {
+  try {
+    const client = c.get('client');
+    const db = getDb(c.env);
+    const id = c.req.param('id');
+    const t = await db.query.crmTickets.findFirst({ where: eq(schema.crmTickets.id, id) });
+    if (!t) return notFound(c);
+    
+    // Check if ticket belongs to a committee owned by this client
+    const comm = await db.query.committees.findFirst({ where: and(eq(schema.committees.id, t.committeeId), eq(schema.committees.clientId, client.clientId)) });
+    if (!comm) return c.json({ error: 'Access denied' }, 403);
+
+    // Delete related notes
+    await db.delete(schema.crmTicketNotes).where(eq(schema.crmTicketNotes.ticketId, id));
+    // Delete ticket
+    await db.delete(schema.crmTickets).where(eq(schema.crmTickets.id, id));
+    
+    return ok(c, { id, deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
 export default portalRouter;

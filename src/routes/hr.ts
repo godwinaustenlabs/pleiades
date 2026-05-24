@@ -52,6 +52,7 @@ hrRouter.patch('/sectors/:id', async (c) => {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.sectors).set(body).where(eq(schema.sectors.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'sectors', id!, body);
     return ok(c, { id });
@@ -66,7 +67,12 @@ hrRouter.delete('/sectors/:id', async (c) => {
     await db.delete(schema.sectors).where(eq(schema.sectors.id, id!));
     await logAudit(c.env, user.id, 'DELETE', 'sectors', id!);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return serverError(c, new Error('Cannot delete sector: it has associated employees or projects.'));
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── APPOINTMENTS ── */
@@ -98,11 +104,12 @@ hrRouter.post('/appointments/provision', async (c) => {
     const db = getDb(c.env);
     const actor = c.get('user');
     const body = await c.req.json();
+    console.log('[DEBUG] Provisioning appointment, body:', JSON.stringify(body, null, 2));
     
     // 1. Find or Create Account
     let userRecord;
-    const email = body.email?.toLowerCase().trim();
-    const username = body.username?.toLowerCase().trim();
+    const email = body.email?.toLowerCase()?.trim();
+    const username = body.username?.toLowerCase()?.trim();
 
     if (body.id) {
       const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.id, body.id) });
@@ -124,9 +131,12 @@ hrRouter.post('/appointments/provision', async (c) => {
     if (userRecord) {
       accountId = userRecord.id;
       const updateData: any = {
-        employeeId: body.employeeId || userRecord.employeeId,
+        employeeId: (body.employeeId || userRecord.employeeId || null),
         isActive: true,
       };
+      // Ensure we never pass empty strings to FK columns
+      if (updateData.employeeId === "") updateData.employeeId = null;
+
       if (email) updateData.email = email;
       if (username) updateData.username = username;
       if (body.name) updateData.name = body.name;
@@ -139,42 +149,64 @@ hrRouter.post('/appointments/provision', async (c) => {
         updateData.isSuperadmin = true;
       }
       
-      await db.update(schema.usersLogins).set(updateData).where(eq(schema.usersLogins.id, accountId));
+      try {
+        await db.update(schema.usersLogins).set(updateData).where(eq(schema.usersLogins.id, accountId));
+      } catch (err: any) {
+        throw new Error(`[DB_ERROR] users_logins UPDATE failed: ${err.message}`);
+      }
       await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', accountId, { email, note: 're-provisioned' });
     } else {
-      if (!body.password) throw new Error('Password is required for new accounts');
-      if (!email || !username) throw new Error('Email and Username are required for new accounts');
+      if (!body.password) return c.json({ success: false, error: 'Password is required for new accounts' }, 400);
+      if (!email || !username) return c.json({ success: false, error: 'Email and Username are required for new accounts' }, 400);
       
       accountId = generateId('usr');
       const passwordHash = await sha256hex(body.password);
-      await db.insert(schema.usersLogins).values({
-        id: accountId,
-        email,
-        username,
-        name: body.name || username,
-        passwordHash,
-        roleId: 'member', // Default generic role
-        employeeId: body.employeeId || null,
-        isActive: true,
-        isSuperadmin: body.roleOrTitle?.toUpperCase() === 'CEO',
-        failedAttempts: 0,
-        createdAt: new Date(),
-        createdByUserId: actor.id,
-      });
-      await logAudit(c.env, actor.id, 'CREATE', 'users_logins', accountId, { email });
+      
+      // Verify if actor exists to avoid FK failure on createdByUserId
+      let creatorId = null;
+      if (actor?.id) {
+        const creator = await db.query.usersLogins.findFirst({ where: eq(schema.usersLogins.id, actor.id) });
+        if (creator) creatorId = actor.id;
+      }
 
-      await db.insert(schema.userOwnership).values({
-        userId: accountId,
-        ownerUserId: actor.id,
-        assignedAt: new Date(),
-        assignedByUserId: actor.id,
-      });
+      try {
+        await db.insert(schema.usersLogins).values({
+          id: accountId,
+          email,
+          username,
+          name: body.name || username,
+          passwordHash,
+          roleId: 'role_emp', // Fixed: confirmed 'role_emp' (underscored) exists in remote DB
+          employeeId: body.employeeId || null,
+          isActive: true,
+          isSuperadmin: body.roleOrTitle?.toUpperCase() === 'CEO',
+          failedAttempts: 0,
+          createdAt: new Date(),
+          createdByUserId: creatorId,
+        });
+      } catch (err: any) {
+        throw new Error(`[DB_ERROR] users_logins INSERT failed: ${err.message}`);
+      }
+      
+      if (creatorId) {
+        await logAudit(c.env, creatorId, 'CREATE', 'users_logins', accountId, { email });
+        try {
+          await db.insert(schema.userOwnership).values({
+            userId: accountId,
+            ownerUserId: creatorId,
+            assignedAt: new Date(),
+            assignedByUserId: creatorId,
+          });
+        } catch (err: any) {
+          console.error('[WARNING] user_ownership INSERT failed (non-blocking):', err.message);
+        }
+      }
     }
 
     // 2. Create or Update Appointment
     const appointmentId = body.id || generateId('appt');
     const appointmentValues = {
-      employeeId: body.employeeId,
+      employeeId: body.employeeId || null,
       accountId: accountId,
       committeeId: body.committeeId || null,
       roleOrTitle: body.roleOrTitle,
@@ -184,11 +216,19 @@ hrRouter.post('/appointments/provision', async (c) => {
     };
 
     if (body.id) {
-      await db.update(schema.appointments).set(appointmentValues).where(eq(schema.appointments.id, body.id));
-      await logAudit(c.env, actor.id, 'UPDATE', 'appointments', body.id, appointmentValues);
+      try {
+        await db.update(schema.appointments).set(appointmentValues).where(eq(schema.appointments.id, body.id));
+      } catch (err: any) {
+        throw new Error(`[DB_ERROR] appointments UPDATE failed: ${err.message}`);
+      }
+      if (actor?.id) await logAudit(c.env, actor.id, 'UPDATE', 'appointments', body.id, appointmentValues);
     } else {
-      await db.insert(schema.appointments).values({ ...appointmentValues, id: appointmentId, createdAt: new Date() });
-      await logAudit(c.env, actor.id, 'CREATE', 'appointments', appointmentId, { employeeId: body.employeeId, accountId });
+      try {
+        await db.insert(schema.appointments).values({ ...appointmentValues, id: appointmentId, createdAt: new Date() });
+      } catch (err: any) {
+        throw new Error(`[DB_ERROR] appointments INSERT failed: ${err.message}`);
+      }
+      if (actor?.id) await logAudit(c.env, actor.id, 'CREATE', 'appointments', appointmentId, { employeeId: body.employeeId, accountId });
     }
 
     // 3. Setup Granular Permissions
@@ -292,8 +332,22 @@ hrRouter.post('/appointments/provision', async (c) => {
     }
 
     return ok(c, { success: true, accountId, appointmentId });
-  } catch (err) {
-    return c.json({ success: false, error: (err as Error).message }, 500);
+  } catch (err: any) {
+    const errorBody = await (async () => {
+      try { return await c.req.json(); } catch { return {}; }
+    })();
+    console.error('[ERROR] Provisioning failed, body:', JSON.stringify(errorBody, null, 2));
+    console.error('[ERROR] Error details:', err);
+    
+    const msg = err.message || 'Internal server error';
+    if (msg.includes('FOREIGN KEY constraint failed')) {
+      return c.json({ success: false, error: 'Database constraint violation: invalid employee, committee, or account ID.' }, 400);
+    }
+    if (msg.includes('UNIQUE constraint failed')) {
+      return c.json({ success: false, error: 'Database constraint violation: email, username, or appointment already exists.' }, 400);
+    }
+    
+    return c.json({ success: false, error: msg }, 500);
   }
 });
 
@@ -310,6 +364,7 @@ hrRouter.patch('/appointments/:id', async (c) => {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.appointments).set(body).where(eq(schema.appointments.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'appointments', id!, body);
     return ok(c, { id });
@@ -324,7 +379,12 @@ hrRouter.delete('/appointments/:id', async (c) => {
     await db.delete(schema.appointments).where(eq(schema.appointments.id, id!));
     await logAudit(c.env, user.id, 'DELETE', 'appointments', id!);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return serverError(c, new Error('Cannot delete appointment: it is referenced by other records.'));
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── PAYROLL RECORDS ── */
@@ -367,6 +427,7 @@ hrRouter.patch('/payroll/:id', async (c) => {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.payrollRecords).set(body).where(eq(schema.payrollRecords.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'payroll_records', id!, body);
     return ok(c, { id });
@@ -421,6 +482,7 @@ hrRouter.patch('/legal-tracker/:id', async (c) => {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.legalTracker).set(body).where(eq(schema.legalTracker.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'legal_tracker', id!, body);
     return ok(c, { id });

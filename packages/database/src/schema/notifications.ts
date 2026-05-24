@@ -23,3 +23,16 @@ export const taskAttachments = sqliteTable('task_attachments', {
   uploadedById: text('uploaded_by_id').references(() => usersLogins.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
+
+export const appMessages = sqliteTable('app_messages', {
+  id: text('id').primaryKey(),
+  senderApp: text('sender_app').notNull(),
+  targetApp: text('target_app').notNull(),
+  senderId: text('sender_id').references(() => usersLogins.id),
+  type: text('type').notNull(), 
+  title: text('title').notNull(),
+  message: text('message').notNull(),
+  priority: text('priority').default('medium'),
+  isResolved: integer('is_resolved', { mode: 'boolean' }).default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});

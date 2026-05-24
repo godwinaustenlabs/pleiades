@@ -1,17 +1,22 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Shield, Activity, LogOut,
-  Key, Settings, BarChart3, Plus, Loader2, Save, X, Home, Lock
+  Key, Settings, BarChart3, Plus, Loader2, Save, X, Home, Lock, CheckCircle2, Copy, Check
 } from 'lucide-react';
 import Login from './Login';
-import GanovaGrid, { type Column } from '../components/GanovaGrid';
+import GAGrid, { type Column } from '../components/GAGrid';
 
 import TaskBoard from '../components/TaskBoard';
+import NotificationCenter from '../components/NotificationCenter';
 import AppointmentProvisionForm from '../components/AppointmentProvisionForm';
 import ProfileModal from '../components/ProfileModal';
+import EntityForm from '../components/EntityForm';
+import CropModal from '../components/CropModal';
+import MobileTabMenu from '../components/MobileTabMenu';
+
 
 const API = '/api';
-const token = () => localStorage.getItem('ganova_token') || '';
+const token = () => localStorage.getItem('ga_token') || '';
 
 type Tab = 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets';
 
@@ -42,8 +47,10 @@ function HR() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [committees, setCommittees] = useState<any[]>([]);
+  const [payrollRecords, setPayrollRecords] = useState<any[]>([]);
 
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
+  const [showPayrollForm, setShowPayrollForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -51,7 +58,7 @@ function HR() {
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ganova_user') || '{}'), []);
+  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -98,6 +105,12 @@ function HR() {
       .then(d => setCommittees(d.data || [])).catch(() => { });
   };
 
+  const fetchPayroll = () => {
+    fetch(`${API}/hr/payroll`, { headers: { Authorization: `Bearer ${token()}` } })
+      .then(r => { if (r.status === 401) { handleLogout(); throw new Error(); } return r.json(); })
+      .then(d => setPayrollRecords(d.data || [])).catch(() => { });
+  };
+
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -118,6 +131,10 @@ function HR() {
       }
       if (tab === 'committees') {
         fetchCommittees();
+        fetchEmployees();
+      }
+      if (tab === 'payroll' && getPerm('payroll').canView) {
+        fetchPayroll();
         fetchEmployees();
       }
 
@@ -174,34 +191,82 @@ function HR() {
     );
   }
 
+  const CopyableId = ({ id }: { id: string }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+      <button 
+        onClick={handleCopy}
+        className="group/id flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/5 transition-all"
+        title="Click to copy ID"
+      >
+        <span className="font-mono text-[10px] text-textSecondary uppercase tracking-tighter">
+          {id.substring(0, 8)}...
+        </span>
+        {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-textSecondary opacity-0 group-hover/id:opacity-100 transition-opacity" />}
+      </button>
+    );
+  };
+
   const employeeColumns: Column[] = [
     { key: 'name', label: 'Name', type: 'avatar' },
-    { key: 'id', label: 'Employee ID' },
-    { key: 'slackId', label: 'Slack ID', type: 'badge' },
+    { 
+      key: 'id', label: 'Employee ID', 
+      render: (v: string) => <CopyableId id={v} />
+    },
+    { 
+      key: 'slackId', label: 'Slack ID', 
+      render: (v: string) => (!v || v === 'NULL') ? <span className="text-textSecondary italic text-[10px]">—</span> : <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{v}</span> 
+    },
+    { key: 'email', label: 'Email', render: (v) => <span className="text-xs text-textSecondary truncate max-w-[120px] inline-block">{v || '—'}</span> },
+    { key: 'phone', label: 'Phone', render: (v) => <span className="text-xs text-textSecondary whitespace-nowrap">{v || '—'}</span> },
     { key: 'department', label: 'Department', type: 'badge' },
     {
       key: 'role', label: 'Primary Role', render: (_v: any, record: any) => {
         const appt = appointments.find(a => a.employeeId === record.id && a.isActive);
-        return appt ? appt.roleOrTitle : <span className="text-textSecondary italic">No active role</span>;
+        return <span className="text-xs font-bold text-white leading-tight block max-w-[150px]">{appt ? appt.roleOrTitle : <span className="text-textSecondary italic font-normal">No active role</span>}</span>;
       }
     },
     { key: 'employmentStatus', label: 'Status', type: 'status' },
-    { key: 'baseSalary', label: 'Salary', type: 'currency' },
+    { key: 'salary', label: 'Salary', type: 'currency' },
+  ];
+
+  const payrollColumns: Column[] = [
+    { key: 'employeeId', label: 'Employee', render: (v: string) => employees.find(e => e.id === v)?.name || 'Unknown' },
+    { key: 'payrollMonth', label: 'Month' },
+    { key: 'grossSalary', label: 'Gross Salary', type: 'currency' },
+    { key: 'netPay', label: 'Net Pay', type: 'currency' },
+    { key: 'disbursementStatus', label: 'Status', type: 'status' },
+    { key: 'paymentDate', label: 'Payment Date', type: 'date' },
+    { key: 'financeReference', label: 'Tx Ref' }
   ];
 
   const handleEmployeeSubmit = async (data: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
     const url = editingRecord ? `${API}/core/employees/${editingRecord.id}` : `${API}/core/employees`;
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-      body: JSON.stringify(data),
-    });
-    if (res.status === 401) { handleLogout(); return; }
-    if (!res.ok) throw new Error('Failed to save employee');
-    setShowEntityForm(false);
-    setEditingRecord(null);
-    fetchEmployees();
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify(data),
+      });
+      if (res.status === 401) { handleLogout(); return; }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to save employee');
+      }
+      setShowEntityForm(false);
+      setEditingRecord(null);
+      fetchEmployees();
+    } catch (err: any) {
+      alert(err.message || 'An error occurred while saving.');
+      throw err; // Re-throw for EntityForm to catch and show in its internal UI
+    }
   };
 
   const handleAppointmentEdit = async (record: any) => {
@@ -220,67 +285,109 @@ function HR() {
   };
 
   const handleEmployeeDelete = async (record: any) => {
-    if (!confirm(`CRITICAL WARNING: This will PERMANENTLY DELETE the employee "${record.name}". Are you sure?`)) return;
-    const res = await fetch(`${API}/core/employees/${record.id}`, {
+    if (!confirm(`CRITICAL WARNING: This will PERMANENTLY DELETE the employee "${record.name}". Are you sure? This action is IRREVERSIBLE.`)) return;
+    try {
+      const res = await fetch(`${API}/core/employees/${record.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.status === 401) { handleLogout(); return; }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to delete employee');
+      }
+      fetchEmployees();
+    } catch (err: any) {
+      alert(err.message || 'An error occurred during deletion.');
+    }
+  };
+
+  const handlePayrollSubmit = async (data: any) => {
+    const method = editingRecord ? 'PATCH' : 'POST';
+    const url = editingRecord ? `${API}/hr/payroll/${editingRecord.id}` : `${API}/hr/payroll`;
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+      body: JSON.stringify(data),
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    if (!res.ok) throw new Error('Failed to save payroll record');
+    setShowEntityForm(false);
+    setEditingRecord(null);
+    fetchPayroll();
+  };
+
+  const handlePayrollDelete = async (record: any) => {
+    if (!confirm(`Permanently delete payroll record for ${record.payrollMonth}?`)) return;
+    const res = await fetch(`${API}/hr/payroll/${record.id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token()}` },
     });
     if (res.status === 401) { handleLogout(); return; }
-    fetchEmployees();
+    fetchPayroll();
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-8 py-4 flex items-center justify-between border-b border-white/10">
+      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="bg-primary/20 p-2 rounded-xl">
-            <Activity className="w-6 h-6 text-primary" />
+            <Activity className="w-5 h-5 md:w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight leading-none">GAnova<span className="text-primary">OS</span></h1>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-textSecondary font-bold">HR Management</span>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-none">GA<span className="text-primary">OS</span></h1>
+            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-bold">HR Management</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-2 p-2 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-xl transition-all">
-            <Home className="w-5 h-5" />
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-xl transition-all">
+            <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-3 pl-2 pr-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-xs shadow-lg shadow-primary/20">
-              {user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-primary/20 overflow-hidden">
+              {user.profilePhoto ? (
+                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+              ) : (
+                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
+              )}
             </div>
             <div className="text-left hidden sm:block">
               <div className="text-xs font-bold leading-none mb-0.5">{user.name || user.username || 'User'}</div>
               <div className="text-[10px] text-textSecondary leading-none uppercase tracking-wider">{user.roleName || 'Employee'}</div>
             </div>
-            <Settings className="w-3.5 h-3.5 text-textSecondary group-hover:rotate-90 transition-transform duration-500" />
           </button>
-          <div className="h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
-            <LogOut className="w-5 h-5" />
+          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+            <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
       </header>
 
-      <div className="border-b border-white/5 bg-surface/30 backdrop-blur-md px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2 max-w-7xl mx-auto">
+      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
+        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-6 py-4 text-xs font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
+              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
                 ? 'border-primary text-primary bg-primary/5'
                 : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
                 }`}>
-              <t.icon className={`w-3.5 h-3.5 ${tab === t.id ? 'text-primary' : 'text-textSecondary'}`} />
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-primary' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto w-full space-y-8 animate-in slide-in-from-bottom-2 duration-500">
+      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
+        <MobileTabMenu
+          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as Tab)}
+          accentColor="primary"
+        />
         {tab === 'directory' && (
-          <GanovaGrid
+          <GAGrid
             title="Employee Directory"
             entityName="employee"
             columns={employeeColumns}
@@ -306,15 +413,23 @@ function HR() {
         )}
 
         {tab === 'payroll' && (
-          <div className="glass-panel rounded-3xl p-20 text-center space-y-4 border border-white/10">
-            <BarChart3 className="w-16 h-16 mx-auto text-primary opacity-20" />
-            <h3 className="text-xl font-bold">Payroll Engine</h3>
-            <p className="text-textSecondary max-w-md mx-auto text-sm">Automated payroll distribution and tax calculations are being synchronized.</p>
-          </div>
+          <GAGrid
+            title="Payroll Management"
+            entityName="record"
+            columns={payrollColumns}
+            data={payrollRecords}
+            loading={loading}
+            canAdd={getPerm('payroll').canEdit}
+            canEdit={getPerm('payroll').canEdit}
+            canDelete={getPerm('payroll').canDelete}
+            onAdd={() => { setEditingRecord(null); setShowPayrollForm(true); }}
+            onEdit={(record) => { setEditingRecord(record); setShowPayrollForm(true); }}
+            onDelete={handlePayrollDelete}
+          />
         )}
 
         {tab === 'appointments' && (
-          <GanovaGrid
+          <GAGrid
             title="Account Provisioning & Appointments"
             entityName="appointment"
             columns={[
@@ -335,7 +450,7 @@ function HR() {
         )}
 
         {tab === 'committees' && (
-          <GanovaGrid
+          <GAGrid
             title="Organizational Committees"
             entityName="committee"
             columns={[
@@ -353,6 +468,7 @@ function HR() {
       </main>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      <NotificationCenter currentApp="hr" />
 
       {showEntityForm && (
         <EmployeeForm
@@ -393,6 +509,28 @@ function HR() {
           }}
         />
       )}
+
+      {showPayrollForm && (
+        <EntityForm
+          title={editingRecord ? 'Edit Payroll Record' : 'New Payroll Record'}
+          fields={[
+            { key: 'employeeId', label: 'Employee', type: 'select', required: true, options: employees.map(e => ({ value: e.id, label: e.name })) },
+            { key: 'payrollMonth', label: 'Payroll Month (e.g. YYYY-MM)', type: 'text', required: true },
+            { key: 'grossSalary', label: 'Gross Salary', type: 'number', required: true },
+            { key: 'withholdingTax', label: 'Withholding Tax', type: 'number' },
+            { key: 'otherDeductions', label: 'Other Deductions', type: 'number' },
+            { key: 'bonuses', label: 'Bonuses', type: 'number' },
+            { key: 'netPay', label: 'Net Pay', type: 'number', required: true },
+            { key: 'raiseAmount', label: 'Raise Amount', type: 'number' },
+            { key: 'disbursementStatus', label: 'Disbursement Status', type: 'select', required: true, options: [{value: 'pending', label: 'Pending'}, {value: 'processed', label: 'Processed'}, {value: 'paid', label: 'Paid'}], initialValue: 'pending' },
+            { key: 'paymentDate', label: 'Payment Date', type: 'date' },
+            { key: 'financeReference', label: 'Finance Reference', type: 'text' }
+          ]}
+          initialData={editingRecord}
+          onClose={() => { setShowPayrollForm(false); setEditingRecord(null); }}
+          onSubmit={handlePayrollSubmit}
+        />
+      )}
     </div>
   );
 }
@@ -416,23 +554,27 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleFileUpload = async (file: File) => {
+  const [rawImage, setRawImage] = useState<string | null>(null);
+
+  const handleSaveCrop = async (blob: Blob) => {
     setUploading(true);
     setError('');
     try {
-      const token = localStorage.getItem('ganova_token') || '';
-      const r2Key = `profiles/${Date.now()}_${file.name}`;
+      const token = localStorage.getItem('ga_token') || '';
+      const r2Key = `profiles/${Date.now()}_avatar.jpg`;
       const res = await fetch(`/api/assets/upload/${r2Key}`, {
         method: 'PUT',
-        headers: { 'Content-Type': file.type, Authorization: `Bearer ${token}` },
-        body: file
+        headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
+        body: blob
       });
       if (!res.ok) throw new Error('Upload failed');
       const d = await res.json();
       setFormData({ ...formData, profilePhoto: d.data.url });
+      setRawImage(null);
     } catch (err) { setError('Photo upload failed'); }
     finally { setUploading(false); }
   };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -443,13 +585,13 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
+      <div className="glass-panel rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Profile' : 'Create Profile'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 overflow-y-auto max-h-[80vh] space-y-8 custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar min-h-0">
           {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">{error}</div>}
           
           <div className="flex items-center gap-8">
@@ -461,7 +603,20 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
                   <div className="w-full h-full flex items-center justify-center text-textSecondary"><Users className="w-8 h-8 opacity-20" /></div>
                 )}
               </div>
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} />
+              <input 
+                type="file" 
+                accept="image/*"
+                className="absolute inset-0 opacity-0 cursor-pointer" 
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setRawImage(ev.target?.result as string);
+                      reader.readAsDataURL(file);
+                  }
+                }}
+              />
+
               {uploading && <div className="absolute inset-0 bg-black/50 rounded-[2rem] flex items-center justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>}
             </div>
             <div className="flex-1 space-y-4">
@@ -477,6 +632,16 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Hire Date</label>
                   <input type="date" value={formData.hireDate || ''} onChange={e => setFormData({ ...formData, hireDate: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Email Address</label>
+                  <input type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@gaos.org" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Phone Number</label>
+                  <input type="tel" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+1 (555) 000-0000" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
                 </div>
               </div>
             </div>
@@ -548,22 +713,41 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
               <input type="text" value={formData.sectorId || ''} onChange={e => setFormData({ ...formData, sectorId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Departments (Hold Cmd/Ctrl for multiple)</label>
-            <select 
-              multiple
-              value={Array.isArray(formData.department) ? formData.department : (formData.department ? formData.department.split(',') : [])} 
-              onChange={e => {
-                const values = Array.from(e.target.selectedOptions, option => option.value);
-                setFormData({ ...formData, department: values.join(',') });
-              }} 
-              className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 min-h-[100px]"
-            >
-              {DEPARTMENT_OPTIONS.filter(opt => opt.value).map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <p className="text-[10px] text-textSecondary mt-1 italic ml-1">Current selection: {formData.department || 'None'}</p>
+          <div className="space-y-3">
+            <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Departments</label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {DEPARTMENT_OPTIONS.filter(opt => opt.value).map(opt => {
+                const isSelected = ((formData.department || '') || '').split(',').includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      const current = (formData.department || '').split(',').filter(Boolean);
+                      const next = isSelected 
+                        ? current.filter((v: string) => v !== opt.value)
+                        : [...current, opt.value];
+                      setFormData({ ...formData, department: next.join(',') });
+                    }}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                      isSelected 
+                        ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10' 
+                        : 'bg-surface/50 border-white/10 text-textSecondary hover:border-white/20'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      isSelected ? 'bg-primary border-primary' : 'border-white/20 bg-black/20'
+                    }`}>
+                      {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                    </div>
+                    <span className="text-xs font-bold">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-textSecondary mt-1 italic ml-1">
+              {formData.department ? `Assigned to: ${formData.department.split(',').join(', ')}` : 'No departments assigned.'}
+            </p>
           </div>
           </div>
         </form>
@@ -576,6 +760,7 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
           </button>
         </div>
       </div>
+      {rawImage && <CropModal image={rawImage} onClose={() => setRawImage(null)} onSave={handleSaveCrop} />}
     </div>
   );
 }

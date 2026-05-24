@@ -30,6 +30,7 @@ opsRouter.patch('/labs/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.labs).set({ ...body, updatedAt: new Date() }).where(eq(schema.labs.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'labs', id, body);
     return ok(c, { id });

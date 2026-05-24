@@ -5,14 +5,14 @@ import { Env } from '../index';
 
 const assetsRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 
-// Simple auth for uploads/downloads
-assetsRouter.use('*', authMiddleware);
+// No global auth here; handled per-route for public access to specific assets
+// assetsRouter.use('*', authMiddleware);
 
 /**
  * PUT /api/assets/upload/*
  * Upload a file to R2
  */
-assetsRouter.put('/upload/*', async (c) => {
+assetsRouter.put('/upload/*', authMiddleware, async (c) => {
   try {
     const r2 = c.env.CRM_BUCKET;
     if (!r2) return badRequest(c, 'R2 bucket not configured');
@@ -37,6 +37,16 @@ assetsRouter.get('/download/*', async (c) => {
     if (!r2) return badRequest(c, 'R2 bucket not configured');
     
     const key = c.req.path.replace('/api/assets/download/', '');
+    
+    // Public access for avatars and profile photos
+    const isPublicPrefix = key.startsWith('avatars/') || key.startsWith('profiles/');
+    
+    if (!isPublicPrefix) {
+      // Manual check for auth since we want to allow some public keys
+      const user = c.get('user');
+      if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+    }
+
     const object = await r2.get(key);
     
     if (!object) return notFound(c);

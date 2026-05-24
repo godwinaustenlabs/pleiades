@@ -36,6 +36,55 @@
       "when": 1778493542500,
       "tag": "0004_tidy_lockjaw",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1778554661687,
+      "tag": "0005_late_warbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778555307950,
+      "tag": "0006_black_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1778555419781,
+      "tag": "0007_serious_mongoose",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1778555539534,
+      "tag": "0008_bitter_puppet_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1778555758029,
+      "tag": "0009_fast_venom",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1779008013807,
+      "tag": "0010_useful_thunderbolt_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1779601600102,
+      "tag": "0011_gifted_living_tribunal",
+      "breakpoints": true
     }
   ]
 }

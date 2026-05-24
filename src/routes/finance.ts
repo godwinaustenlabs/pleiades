@@ -36,6 +36,7 @@ financeRouter.patch('/accounts/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.accounts).set(body).where(eq(schema.accounts.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'accounts', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -71,6 +72,7 @@ financeRouter.patch('/channels/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.channels).set(body).where(eq(schema.channels.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'channels', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -114,6 +116,7 @@ financeRouter.patch('/fund-requests/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.fundRequests).set(body).where(eq(schema.fundRequests.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'fund_requests', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -157,6 +160,7 @@ financeRouter.patch('/invoices/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.invoices).set(body).where(eq(schema.invoices.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'invoices', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -186,6 +190,8 @@ financeRouter.post('/transactions', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('txn');
+    if (!body.name && body.description) body.name = body.description;
+    if (!body.name) body.name = 'Transaction';
     await db.insert(schema.transactions).values({ ...body, id, createdAt: new Date() });
     await logAudit(c.env, user.id, 'CREATE', 'transactions', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -200,6 +206,7 @@ financeRouter.patch('/transactions/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.transactions).set(body).where(eq(schema.transactions.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'transactions', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -235,6 +242,7 @@ financeRouter.patch('/pl-reports/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.plReports).set(body).where(eq(schema.plReports.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'pl_reports', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }

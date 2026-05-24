@@ -1,20 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Target, TrendingUp, Calendar, LogOut,
-  Settings, Megaphone, UserPlus, Home, Loader2, Lock
+  Megaphone, UserPlus, Home, Loader2, Lock
 } from 'lucide-react';
 import Login from './Login';
-import GanovaGrid from '../components/GanovaGrid';
+import GAGrid from '../components/GAGrid';
+import FunnelView from '../components/FunnelView';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
+import NotificationCenter from '../components/NotificationCenter';
+import MobileTabMenu from '../components/MobileTabMenu';
 
 const API = '/api';
-const token = () => localStorage.getItem('ganova_token') || '';
+const token = () => localStorage.getItem('ga_token') || '';
 
 
 
-type Tab = 'campaigns' | 'contacts' | 'content' | 'sprints' | 'tasks';
+type Tab = 'funnels' | 'campaigns' | 'leads' | 'content' | 'sprints' | 'tasks';
 
 interface UserPermission {
   appName: string;
@@ -32,12 +35,19 @@ function Acquisition() {
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [funnels, setFunnels] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [sprintsList, setSprintsList] = useState<any[]>([]);
+  const [showNestedForm, setShowNestedForm] = useState<string | null>(null);
+
+  // Maps frontend tab IDs to backend route segments
+  const tabToRoute = (t: string) => t === 'leads' ? 'contacts' : t;
 
   // Granular Permissions
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ganova_user') || '{}'), []);
+  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
   const fetchPermissions = async () => {
     try {
@@ -57,10 +67,22 @@ function Acquisition() {
     };
   };
 
+  const fetchRelations = () => {
+    const fetchWithAuth = (url: string, setter: any) => {
+      fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
+        .then(r => r.json()).then(d => setter(d.data || [])).catch(()=>{});
+    };
+    fetchWithAuth(`${API}/acquisition/funnels`, setFunnels);
+    fetchWithAuth(`${API}/acquisition/campaigns`, setCampaigns);
+    fetchWithAuth(`${API}/acquisition/sprints`, setSprintsList);
+  };
+
   const fetchData = () => {
     if (!permsLoaded) return;
+    fetchRelations();
     setLoading(true);
-    fetch(`${API}/acquisition/${tab}`, { headers: { Authorization: `Bearer ${token()}` } })
+    const route = tabToRoute(tab);
+    fetch(`${API}/acquisition/${route}`, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => {
         if (r.status === 401) { handleLogout(); throw new Error('Unauthorized'); }
         return r.json();
@@ -87,11 +109,12 @@ function Acquisition() {
   // Tab filtering
   const TABS = useMemo(() => {
     const all = [
+      { id: 'funnels', label: 'Marketing Funnels', icon: Target, feature: 'funnels' },
       { id: 'campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
-      { id: 'contacts', label: 'Leads', icon: UserPlus, feature: 'contacts' },
-      { id: 'content', label: 'Content', icon: Calendar, feature: 'content' },
+      { id: 'leads', label: 'Leads & Contacts', icon: UserPlus, feature: 'leads' },
+      { id: 'content', label: 'Content Calendar', icon: Calendar, feature: 'content' },
       { id: 'sprints', label: 'Sprints', icon: TrendingUp, feature: 'sprints' },
-      { id: 'tasks', label: 'Tasks', icon: Megaphone, feature: 'tasks' },
+      { id: 'tasks', label: 'Tasks', icon: Calendar, feature: 'tasks' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -129,7 +152,10 @@ function Acquisition() {
 
   const handleEntitySubmit = async (formData: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
-    const url = editingRecord ? `${API}/acquisition/${tab}/${editingRecord.id}` : `${API}/acquisition/${tab}`;
+    const route = tabToRoute(tab);
+    const url = editingRecord
+      ? `${API}/acquisition/${route}/${editingRecord.id}`
+      : `${API}/acquisition/${route}`;
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
@@ -142,86 +168,158 @@ function Acquisition() {
     fetchData();
   };
 
+  const handleImportCSV = async (file: File) => {
+    try {
+      setLoading(true);
+      const text = await file.text();
+      const rows = text.split('\n').map(row => row.split(','));
+      const headers = rows[0].map(h => h.trim());
+      
+      const promises = rows.slice(1).map(async (row) => {
+        if (!row || row.length === 0 || !row[0]) return;
+        const body: any = {};
+        headers.forEach((h, i) => {
+          body[h] = row[i]?.trim() || '';
+        });
+        
+        await fetch(`${API}/acquisition/contacts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+          body: JSON.stringify(body),
+        });
+      });
+      
+      await Promise.all(promises);
+      fetchData();
+    } catch (err) {
+      alert('Error importing CSV: Ensure columns match the lead schema.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const currentFeature = TABS.find(t => t.id === tab)?.feature || 'campaigns';
   const p = getPerm(currentFeature);
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-8 py-4 flex items-center justify-between border-b border-white/10">
+      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="bg-rose-500/20 p-2 rounded-xl border border-rose-500/20 shadow-lg shadow-rose-500/5">
-            <Target className="w-6 h-6 text-rose-400" />
+            <Target className="w-5 h-5 md:w-6 h-6 text-rose-400" />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter leading-none">GAnova<span className="text-rose-400">ACQ</span></h1>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Growth & Acquisition</span>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-rose-400">ACQ</span></h1>
+            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Growth & Acquisition</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-2 p-2 text-textSecondary hover:text-rose-400 hover:bg-rose-400/10 rounded-xl transition-all">
-            <Home className="w-5 h-5" />
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-rose-400 hover:bg-rose-400/10 rounded-xl transition-all">
+            <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-3 pl-2 pr-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center font-bold text-xs shadow-lg shadow-rose-500/20">
-              {user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-rose-500/20 overflow-hidden">
+              {user.profilePhoto ? (
+                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+              ) : (
+                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
+              )}
             </div>
             <div className="text-left hidden sm:block">
               <div className="text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Growth'}</div>
               <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.roleName || 'Manager'}</div>
             </div>
-            <Settings className="w-3.5 h-3.5 text-textSecondary group-hover:rotate-90 transition-transform duration-500" />
           </button>
-          <div className="h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
-            <LogOut className="w-5 h-5" />
+          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+            <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
       </header>
 
-      <div className="border-b border-white/5 bg-surface/30 backdrop-blur-md px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2 max-w-7xl mx-auto">
+      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
+        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-6 py-5 text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
-                  ? 'border-rose-400 text-rose-400 bg-rose-400/5'
-                  : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
+              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
+                ? 'border-rose-400 text-rose-400 bg-rose-400/5'
+                : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
                 }`}>
-              <t.icon className={`w-3.5 h-3.5 ${tab === t.id ? 'text-rose-400' : 'text-textSecondary'}`} />
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-rose-400' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto w-full space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-        {tab !== 'tasks' && (
-          <GanovaGrid
+      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
+        <MobileTabMenu
+          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as Tab)}
+          accentColor="rose-400"
+        />
+        {tab === 'funnels' && (
+          <FunnelView 
+            funnels={funnels}
+            canEdit={getPerm('funnels').canEdit}
+            canDelete={getPerm('funnels').canDelete}
+            onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
+            onEdit={(f) => { setEditingRecord(f); setShowEntityForm(true); }}
+            onDelete={async (f) => {
+              if (!confirm(`Irreversible deletion of funnel. Confirm?`)) return;
+              await fetch(`${API}/acquisition/funnels/${f.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+              fetchData();
+            }}
+          />
+        )}
+        {tab !== 'tasks' && tab !== 'funnels' && (
+          <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Acquisition'}
-            entityName={tab.slice(0, -1)}
+            entityName={tab === 'leads' ? 'contact' : tab === 'content' ? 'content' : tab.slice(0, -1)}
             columns={
               tab === 'campaigns' ? [
-                { key: 'campaignName', label: 'Campaign', type: 'avatar' },
-                { key: 'status', label: 'Status', type: 'status' },
-                { key: 'platform', label: 'Platform', type: 'badge' },
-              ] : tab === 'contacts' ? [
-                { key: 'fullName', label: 'Lead Name', type: 'avatar' },
-                { key: 'pipelineStage', label: 'Stage', type: 'status' },
-                { key: 'source', label: 'Source', type: 'badge' },
+                { key: 'campaignName', label: 'Campaign', type: 'avatar' as const },
+                { key: 'type', label: 'Type', type: 'badge' as const },
+                { key: 'objective', label: 'Objective' },
+                { key: 'budget', label: 'Budget', type: 'currency' as const },
+                { key: 'leadsGenerated', label: 'Leads' },
+                { key: 'roi', label: 'ROI', render: (v: any) => v ? `${v}%` : '—' },
+                { key: 'status', label: 'Status', type: 'status' as const },
+                { key: 'startDate', label: 'Start', type: 'date' as const },
+                { key: 'endDate', label: 'End', type: 'date' as const },
+              ] : tab === 'leads' ? [
+                { key: 'fullName', label: 'Name', type: 'avatar' as const },
+                { key: 'companyName', label: 'Company' },
+                { key: 'email', label: 'Email' },
+                { key: 'phone', label: 'Phone' },
+                { key: 'leadSource', label: 'Source', type: 'badge' as const },
+                { key: 'pipelineStage', label: 'Pipeline Stage', type: 'status' as const },
+                { key: 'contactOwner', label: 'Owner' },
+                { key: 'leadScore', label: 'Lead Score' },
               ] : tab === 'content' ? [
-                { key: 'contentTitle', label: 'Title' },
-                { key: 'status', label: 'Status', type: 'status' },
-                { key: 'publishDate', label: 'Publish Date', type: 'date' },
+                { key: 'contentTitle', label: 'Content', type: 'avatar' as const },
+                { key: 'channel', label: 'Channel', type: 'badge' as const },
+                { key: 'status', label: 'Status', type: 'status' as const },
+                { key: 'publishDate', label: 'Publish Date', type: 'date' as const },
+                { key: 'views', label: 'Views' },
+                { key: 'engagement', label: 'Engagement' },
+              ] : tab === 'sprints' ? [
+                { key: 'sprintName', label: 'Sprint', type: 'avatar' as const },
+                { key: 'status', label: 'Status', type: 'status' as const },
+                { key: 'startDate', label: 'Start', type: 'date' as const },
+                { key: 'endDate', label: 'End', type: 'date' as const },
               ] : [
-                { key: 'sprintName', label: 'Sprint' },
-                { key: 'status', label: 'Status', type: 'status' },
-                { key: 'endDate', label: 'End Date', type: 'date' },
+                { key: 'modelName', label: 'Model' },
+                { key: 'status', label: 'Status', type: 'status' as const },
               ]
             }
             data={data}
             loading={loading}
             onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
             onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
+            onImport={tab === 'leads' ? handleImportCSV : undefined}
             onDelete={async (r) => {
               if (!confirm(`Irreversible deletion of growth record. Confirm?`)) return;
               await fetch(`${API}/acquisition/${tab}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
@@ -236,28 +334,152 @@ function Acquisition() {
       </main>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      <NotificationCenter currentApp="acquisition" />
 
       {showEntityForm && (
         <EntityForm
-          title={editingRecord ? `Update ${tab.slice(0, -1)}` : `New ${tab.slice(0, -1)}`}
+          title={editingRecord ? `Update Record` : `New Record`}
           fields={
-            tab === 'campaigns' ? [
-              { key: 'campaignName', label: 'Campaign Name', type: 'text', required: true },
-              { key: 'status', label: 'Status', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'completed', label: 'Completed' }], required: true },
-            ] : tab === 'contacts' ? [
-              { key: 'fullName', label: 'Full Name', type: 'text', required: true },
-              { key: 'pipelineStage', label: 'Stage', type: 'select', options: [{ value: 'lead', label: 'Lead' }, { value: 'qualified', label: 'Qualified' }, { value: 'closed', label: 'Closed' }], required: true },
+            tab === 'funnels' ? [
+              { key: 'funnelName', label: 'Funnel Name', type: 'text' as const, required: true },
+              { key: 'campaignId', label: 'Linked Campaign', type: 'select' as const, options: campaigns.map(c => ({ value: c.id, label: c.campaignName })), action: { label: '+ New Campaign', onClick: () => setShowNestedForm('campaign') } },
+              { key: 'conversionRatePct', label: 'Conversion Rate (%)', type: 'number' as const },
+              { key: 'leadEntryCount', label: 'Lead Entry Count', type: 'number' as const },
+              { key: 'conversions', label: 'Total Conversions', type: 'number' as const },
+              { key: 'stages', label: 'Stages (JSON)', type: 'textarea' as const },
+            ] : tab === 'campaigns' ? [
+              { key: 'campaignName', label: 'Campaign Name', type: 'text' as const, required: true },
+              { key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
+                { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
+                { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
+                { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
+              ]},
+              { key: 'objective', label: 'Campaign Objective', type: 'text' as const },
+              { key: 'budget', label: 'Budget ($)', type: 'number' as const },
+              { key: 'startDate', label: 'Start Date', type: 'date' as const },
+              { key: 'endDate', label: 'End Date', type: 'date' as const },
+              { key: 'leadsGenerated', label: 'Leads Generated', type: 'number' as const },
+              { key: 'roi', label: 'ROI (%)', type: 'number' as const },
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+                { value: 'paused', label: 'Paused' }, { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
+              ]},
+            ] : tab === 'leads' ? [
+              { key: 'fullName', label: 'Full Name', type: 'text' as const, required: true },
+              { key: 'companyName', label: 'Company Name', type: 'text' as const },
+              { key: 'email', label: 'Email Address', type: 'email' as const },
+              { key: 'phone', label: 'Phone Number', type: 'text' as const },
+              { key: 'leadSource', label: 'Lead Source', type: 'select' as const, options: [
+                { value: 'website', label: 'Website' }, { value: 'referral', label: 'Referral' },
+                { value: 'social', label: 'Social Media' }, { value: 'cold_outreach', label: 'Cold Outreach' },
+                { value: 'event', label: 'Event' }, { value: 'ad', label: 'Advertisement' },
+              ]},
+              { key: 'pipelineStage', label: 'Pipeline Stage', type: 'select' as const, options: [
+                { value: 'new', label: 'New' }, { value: 'contacted', label: 'Contacted' },
+                { value: 'qualified', label: 'Qualified' }, { value: 'proposal', label: 'Proposal Sent' },
+                { value: 'negotiation', label: 'Negotiation' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' },
+              ]},
+              { key: 'contactOwner', label: 'Contact Owner', type: 'text' as const },
+              { key: 'leadScore', label: 'Lead Score (0–100)', type: 'number' as const },
             ] : tab === 'content' ? [
-              { key: 'contentTitle', label: 'Title', type: 'text', required: true },
-              { key: 'status', label: 'Status', type: 'select', options: [{ value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }], required: true },
+              { key: 'contentTitle', label: 'Content Title', type: 'text' as const, required: true },
+              { key: 'channel', label: 'Channel', type: 'select' as const, options: [
+                { value: 'instagram', label: 'Instagram' }, { value: 'linkedin', label: 'LinkedIn' },
+                { value: 'twitter', label: 'Twitter/X' }, { value: 'blog', label: 'Blog' },
+                { value: 'email', label: 'Email Newsletter' }, { value: 'youtube', label: 'YouTube' },
+              ]},
+              { key: 'owner', label: 'Content Owner', type: 'text' as const },
+              { key: 'publishDate', label: 'Publish Date', type: 'date' as const },
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'draft', label: 'Draft' }, { value: 'review', label: 'In Review' },
+                { value: 'scheduled', label: 'Scheduled' }, { value: 'published', label: 'Published' }, { value: 'archived', label: 'Archived' },
+              ]},
+              { key: 'engagement', label: 'Engagement Count', type: 'number' as const },
+              { key: 'views', label: 'Total Views', type: 'number' as const },
+              { key: 'clickThroughRate', label: 'Click-Through Rate (%)', type: 'number' as const },
+              { key: 'campaignId', label: 'Linked Campaign', type: 'select' as const, options: campaigns.map(c => ({ value: c.id, label: c.campaignName })), action: { label: '+ New Campaign', onClick: () => setShowNestedForm('campaign') } },
+            ] : tab === 'sprints' ? [
+              { key: 'sprintName', label: 'Sprint Name', type: 'text' as const, required: true },
+              { key: 'startDate', label: 'Start Date', type: 'date' as const },
+              { key: 'endDate', label: 'End Date', type: 'date' as const },
+              { key: 'sprintGoals', label: 'Sprint Goals', type: 'textarea' as const },
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+                { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
+              ]},
             ] : [
-              { key: 'sprintName', label: 'Sprint Name', type: 'text', required: true },
-              { key: 'status', label: 'Status', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'completed', label: 'Completed' }], required: true },
+              { key: 'taskName', label: 'Task Name', type: 'text' as const, required: true },
+              { key: 'description', label: 'Description', type: 'textarea' as const },
+              { key: 'priority', label: 'Priority', type: 'select' as const, options: [
+                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
+              ]},
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'done', label: 'Done' },
+              ]},
+              { key: 'assignee', label: 'Assignee', type: 'text' as const },
+              { key: 'dueDate', label: 'Due Date', type: 'date' as const },
+              { key: 'estimatedEffort', label: 'Estimated Effort (hrs)', type: 'number' as const },
+              { key: 'actualEffort', label: 'Actual Effort (hrs)', type: 'number' as const },
+              { key: 'sprintId', label: 'Sprint', type: 'select' as const, options: sprintsList.map(s => ({ value: s.id, label: s.sprintName })), action: { label: '+ New Sprint', onClick: () => setShowNestedForm('sprint') } },
+              { key: 'campaignId', label: 'Campaign', type: 'select' as const, options: campaigns.map(c => ({ value: c.id, label: c.campaignName })), action: { label: '+ New Campaign', onClick: () => setShowNestedForm('campaign') } },
             ]
           }
           initialData={editingRecord}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
           onSubmit={handleEntitySubmit}
+        />
+      )}
+
+      {showNestedForm === 'campaign' && (
+        <EntityForm
+          title="New Campaign"
+          fields={[
+            { key: 'campaignName', label: 'Campaign Name', type: 'text' as const, required: true },
+            { key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
+              { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
+              { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
+              { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
+            ]},
+            { key: 'objective', label: 'Campaign Objective', type: 'text' as const },
+            { key: 'budget', label: 'Budget ($)', type: 'number' as const },
+            { key: 'status', label: 'Status', type: 'select' as const, options: [
+              { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+            ]},
+          ]}
+          onClose={() => setShowNestedForm(null)}
+          onSubmit={async (formData) => {
+            const res = await fetch(`${API}/acquisition/campaigns`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+              body: JSON.stringify(formData),
+            });
+            if (!res.ok) throw new Error('Failed to create campaign');
+            fetchRelations();
+            setShowNestedForm(null);
+          }}
+        />
+      )}
+
+      {showNestedForm === 'sprint' && (
+        <EntityForm
+          title="New Sprint"
+          fields={[
+            { key: 'sprintName', label: 'Sprint Name', type: 'text' as const, required: true },
+            { key: 'startDate', label: 'Start Date', type: 'date' as const },
+            { key: 'endDate', label: 'End Date', type: 'date' as const },
+            { key: 'sprintGoals', label: 'Sprint Goals', type: 'textarea' as const },
+          ]}
+          onClose={() => setShowNestedForm(null)}
+          onSubmit={async (formData) => {
+            const res = await fetch(`${API}/acquisition/sprints`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+              body: JSON.stringify(formData),
+            });
+            if (!res.ok) throw new Error('Failed to create sprint');
+            fetchRelations();
+            setShowNestedForm(null);
+          }}
         />
       )}
     </div>

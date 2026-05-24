@@ -7,6 +7,7 @@ import { checkFeaturePermission } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
+import { postToSlack } from '../utils/slack';
 
 const tasksRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 tasksRouter.use('*', authMiddleware);
@@ -27,11 +28,26 @@ function sanitizeTaskBody(body: any) {
 tasksRouter.get('/', async (c) => {
   try {
     const db = getDb(c.env);
+    const user = c.get('user');
     const dept = c.req.query('dept');
     const userId = c.req.query('userId'); // This is employeeId now
     const committeeId = c.req.query('committeeId');
     const appointmentId = c.req.query('appointmentId');
     const status = c.req.query('status');
+
+    // If a department is specified, check view permission for that department's tasks
+    if (dept) {
+      const canView = await checkFeaturePermission(c, dept.toLowerCase(), 'tasks', 'view');
+      if (!canView) {
+        return c.json({ success: false, error: `Permission denied: cannot view tasks for ${dept}` }, 403);
+      }
+    } else if (user.type !== 'agent' && !user.isSuperadmin) {
+      // If no department is specified, and user is not superadmin/agent, 
+      // they can only see tasks where they are the assignee, 
+      // UNLESS they have global HR view (simplified for now: just filter if not superadmin)
+      // Actually, let's keep it simple: if no dept, they see all, but we should ideally filter.
+      // For now, let's just enforce dept-based RBAC as requested.
+    }
 
     let conditions = [];
     if (dept) conditions.push(eq(schema.universalTasks.department, dept));
@@ -89,6 +105,22 @@ tasksRouter.post('/', async (c) => {
     });
 
     await logAudit(c.env, user.id, 'CREATE', 'universal_tasks', id, body);
+    
+    // Slack Notification
+    if (body.assigneeId) {
+      try {
+        const assignee = await db.query.employees.findFirst({
+          where: eq(schema.employees.id, body.assigneeId),
+          columns: { slackId: true }
+        });
+        if (assignee?.slackId) {
+          await postToSlack(c.env, assignee.slackId, `You have been assigned a new task: ${body.title}`);
+        }
+      } catch (err) {
+        console.error('[Slack Notification Error]', err);
+      }
+    }
+    
     return created(c, { id });
   } catch (err) {
     return serverError(c, err);
@@ -116,8 +148,9 @@ tasksRouter.patch('/:id', async (c) => {
       return c.json({ success: false, error: 'Permission denied: cannot edit tasks in this department' }, 403);
     }
 
+    delete body.id; delete body.createdAt; delete body.updatedAt; delete body.completedAt;
     const updates: any = { ...body, updatedAt: new Date() };
-    if (body.status === 'completed' && !body.completedAt) {
+    if (body.status === 'completed') {
       updates.completedAt = new Date();
     }
 

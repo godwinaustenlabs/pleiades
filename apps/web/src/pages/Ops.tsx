@@ -1,18 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Settings, LogOut,
-  FlaskConical, Users, Briefcase, FileText, Shield, X, Check, Home, Loader2, Lock, Key, AlertCircle, Trash2
+  FlaskConical, Users, Briefcase, FileText, Shield, X, Check, Home, Loader2, Lock, Key, AlertCircle, Trash2, BarChart2
 } from 'lucide-react';
 import Login from './Login';
-import GanovaGrid from '../components/GanovaGrid';
+import GAGrid from '../components/GAGrid';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
+import NotificationCenter from '../components/NotificationCenter';
+import MobileTabMenu from '../components/MobileTabMenu';
 
 const API = '/api';
-const token = () => localStorage.getItem('ganova_token') || '';
+const token = () => localStorage.getItem('ga_token') || '';
 
-type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'tasks';
+type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'reports' | 'tasks';
 
 interface UserPermission {
   appName: string;
@@ -38,18 +40,19 @@ function Ops() {
   const [showProvisionPortal, setShowProvisionPortal] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [clientPortalStatuses, setClientPortalStatuses] = useState<Record<string, any>>({});
+  const [showNestedForm, setShowNestedForm] = useState<string | null>(null);
 
   // Granular Permissions
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
 
   const handleLogout = () => {
-    localStorage.removeItem('ganova_token');
-    localStorage.removeItem('ganova_user');
+    localStorage.removeItem('ga_token');
+    localStorage.removeItem('ga_user');
     setIsAuthenticated(false);
   };
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ganova_user') || '{}'), []);
+  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
   const fetchPermissions = async () => {
     try {
@@ -123,6 +126,7 @@ function Ops() {
       { id: 'committees', label: 'Committees', icon: Users, feature: 'committees' },
       { id: 'clients', label: 'Clients', icon: Briefcase, feature: 'clients' },
       { id: 'docs', label: 'Documents', icon: FileText, feature: 'documents' },
+      { id: 'reports', label: 'Monthly Reports', icon: BarChart2, feature: 'reports' },
       { id: 'tasks', label: 'Tasks', icon: Settings, feature: 'tasks' },
     ] as const;
 
@@ -161,16 +165,34 @@ function Ops() {
   const handleEntitySubmit = async (formData: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
     const url = editingRecord ? `${API}/core/${tab}/${editingRecord.id}` : `${API}/core/${tab}`;
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-      body: JSON.stringify(formData),
-    });
-    if (res.status === 401) { handleLogout(); return; }
-    if (!res.ok) throw new Error(`Failed to save ${tab}`);
-    setShowEntityForm(false);
-    setEditingRecord(null);
-    fetchData();
+    
+    // Ensure boolean fields are correctly typed
+    const cleanData = { ...formData };
+    if (tab === 'committees' && typeof cleanData.activeStatus === 'string') {
+      cleanData.activeStatus = cleanData.activeStatus === 'true';
+    }
+    if (tab === 'docs' && typeof cleanData.confidential === 'string') {
+      cleanData.confidential = cleanData.confidential === 'true';
+    }
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify(cleanData),
+      });
+      if (res.status === 401) { handleLogout(); return; }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Failed to save ${tab.slice(0, -1)}`);
+      }
+      setShowEntityForm(false);
+      setEditingRecord(null);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'An error occurred while saving.');
+      throw err;
+    }
   };
 
   const currentFeature = TABS.find(t => t.id === tab)?.feature || 'labs';
@@ -178,56 +200,65 @@ function Ops() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-8 py-4 flex items-center justify-between border-b border-white/10">
+      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-500/20 p-2 rounded-xl border border-indigo-500/20 shadow-lg shadow-indigo-500/5">
-            <Settings className="w-6 h-6 text-indigo-400" />
+            <Settings className="w-5 h-5 md:w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter leading-none">GAnova<span className="text-indigo-400">OPS</span></h1>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Infrastructure</span>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-indigo-400">OPS</span></h1>
+            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Infrastructure</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-2 p-2 text-textSecondary hover:text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all">
-            <Home className="w-5 h-5" />
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all">
+            <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-3 pl-2 pr-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center font-bold text-xs shadow-lg shadow-indigo-500/20">
-              {user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+        <div className="flex items-center gap-2 md:gap-4">
+          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-indigo-500/20 overflow-hidden">
+              {user.profilePhoto ? (
+                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+              ) : (
+                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
+              )}
             </div>
             <div className="text-left hidden sm:block">
               <div className="text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Operations'}</div>
               <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.roleName || 'Director'}</div>
             </div>
-            <Settings className="w-3.5 h-3.5 text-textSecondary group-hover:rotate-90 transition-transform duration-500" />
           </button>
-          <div className="h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
-            <LogOut className="w-5 h-5" />
+          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+            <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
       </header>
 
-      <div className="border-b border-white/5 bg-surface/30 backdrop-blur-md px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-2 max-w-7xl mx-auto">
+      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
+        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-6 py-5 text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
+              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
                 ? 'border-indigo-400 text-indigo-400 bg-indigo-400/5'
                 : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
                 }`}>
-              <t.icon className={`w-3.5 h-3.5 ${tab === t.id ? 'text-indigo-400' : 'text-textSecondary'}`} />
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-indigo-400' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto w-full space-y-8 animate-in slide-in-from-bottom-2 duration-500">
+      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
+        <MobileTabMenu
+          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as Tab)}
+          accentColor="indigo-400"
+        />
         {tab !== 'tasks' && (
-        <GanovaGrid
+        <GAGrid
           title={TABS.find(t => t.id === tab)?.label || 'Operations'}
           entityName={tab.slice(0, -1)}
           columns={
@@ -264,11 +295,19 @@ function Ops() {
                   );
                 }
               },
+            ] : tab === 'docs' ? [
+              { key: 'docTitle', label: 'Document Title', type: 'avatar' as const },
+              { key: 'docType', label: 'Type', type: 'badge' as const },
+              { key: 'confidential', label: 'Confidential', render: (v: any) => v ? '🔒 Yes' : '🔓 No' },
+              { key: 'tags', label: 'Tags' },
+              { key: 'attachment', label: 'File', type: 'file' as const },
+              { key: 'uploadDate', label: 'Uploaded', type: 'date' as const },
             ] : [
-              { key: 'docTitle', label: 'Document Title' },
-              { key: 'category', label: 'Category', type: 'badge' },
-              { key: 'attachment', label: 'File', type: 'file' },
-              { key: 'createdAt', label: 'Added', type: 'date' },
+              { key: 'reportName', label: 'Report', type: 'avatar' as const },
+              { key: 'reportNo', label: 'Report #', type: 'badge' as const },
+              { key: 'period', label: 'Period' },
+              { key: 'netProfit', label: 'Net Profit', type: 'currency' as const },
+              { key: 'opsFinalApproval', label: 'Approved', render: (v: any) => v ? '✅ Yes' : '⏳ Pending' },
             ]
           }
           data={data}
@@ -276,9 +315,21 @@ function Ops() {
           onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
           onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
           onDelete={async (r) => {
-            if (!confirm(`Confirm irreversible deletion of this ${tab.slice(0, -1)} record?`)) return;
-            await fetch(`${API}/core/${tab}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
-            fetchData();
+            if (!confirm(`Confirm irreversible deletion of this ${tab.slice(0, -1)} record? This action cannot be undone.`)) return;
+            try {
+              const res = await fetch(`${API}/core/${tab}/${r.id}`, { 
+                method: 'DELETE', 
+                headers: { Authorization: `Bearer ${token()}` } 
+              });
+              if (res.status === 401) { handleLogout(); return; }
+              if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Failed to delete ${tab.slice(0, -1)}`);
+              }
+              fetchData();
+            } catch (err: any) {
+              alert(err.message || 'An error occurred during deletion.');
+            }
           }}
           rowActions={tab === 'clients' ? [
             {
@@ -385,56 +436,166 @@ function Ops() {
       )}
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      <NotificationCenter currentApp="ops" />
 
       {showEntityForm && (
         <EntityForm
-          title={editingRecord ? `Update ${tab.slice(0, -1)}` : `New ${tab.slice(0, -1)}`}
+          title={editingRecord ? `Update ${TABS.find(t => t.id === tab)?.label || tab}` : `New ${TABS.find(t => t.id === tab)?.label || tab}`}
           fields={
             tab === 'labs' ? [
-              { key: 'labName', label: 'Lab Name', type: 'text', required: true },
-              { key: 'category', label: 'Category', type: 'text' },
-              { key: 'description', label: 'Description', type: 'textarea' },
-              {
-                key: 'status', label: 'Status', type: 'select', options: [
-                  { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'blocked', label: 'Blocked' }, { value: 'closed', label: 'Closed' },
-                ], required: true
-              },
-              { key: 'opsLeadId', label: 'Ops Lead', type: 'select', options: employees.map(e => ({ value: e.id, label: e.name })) },
-              { key: 'labPhoto', label: 'Lab Photo', type: 'file' },
+              { key: 'labName', label: 'Lab Name', type: 'text' as const, required: true },
+              { key: 'category', label: 'Category', type: 'select' as const, options: [
+                { value: 'research', label: 'Research' }, { value: 'development', label: 'Development' },
+                { value: 'innovation', label: 'Innovation' }, { value: 'operations', label: 'Operations' },
+              ]},
+              { key: 'description', label: 'Description', type: 'textarea' as const },
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' },
+                { value: 'blocked', label: 'Blocked' }, { value: 'closed', label: 'Closed' },
+              ], required: true},
+              { key: 'opsLeadId', label: 'Ops Lead', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
+              { key: 'labPhoto', label: 'Lab Photo', type: 'file' as const },
             ] : tab === 'committees' ? [
-              { key: 'committeeName', label: 'Committee Name', type: 'text', required: true },
-              { key: 'type', label: 'Type', type: 'text' },
-              { key: 'opsStatus', label: 'Ops Status', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'closed', label: 'Closed' }], required: true },
-              { key: 'purpose', label: 'Purpose', type: 'textarea' },
-              { key: 'dateFormed', label: 'Date Formed', type: 'date' },
-              { key: 'activeStatus', label: 'Is Active', type: 'select', options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
-              { key: 'labId', label: 'Associated Lab', type: 'select', options: labsList.map(l => ({ value: l.id, label: l.labName })) },
-              { key: 'clientId', label: 'Associated Client', type: 'select', options: clientsList.map(c => ({ value: c.id, label: c.clientName })) },
+              { key: 'committeeName', label: 'Committee Name', type: 'text' as const, required: true },
+              { key: 'type', label: 'Type', type: 'select' as const, options: [
+                { value: 'steering', label: 'Steering' }, { value: 'advisory', label: 'Advisory' },
+                { value: 'technical', label: 'Technical' }, { value: 'finance', label: 'Finance' },
+                { value: 'hr', label: 'HR' }, { value: 'legal', label: 'Legal' },
+              ]},
+              { key: 'opsStatus', label: 'Ops Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'closed', label: 'Closed' },
+              ], required: true},
+              { key: 'purpose', label: 'Purpose / Mandate', type: 'textarea' as const },
+              { key: 'dateFormed', label: 'Date Formed', type: 'date' as const },
+              { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }], initialValue: 'true' },
+              { key: 'labId', label: 'Associated Lab', type: 'select' as const, options: labsList.map(l => ({ value: l.id, label: l.labName })), action: { label: '+ New Lab', onClick: () => setShowNestedForm('lab') } },
+              { key: 'clientId', label: 'Associated Client', type: 'select' as const, options: clientsList.map(c => ({ value: c.id, label: c.clientName })), action: { label: '+ New Client', onClick: () => setShowNestedForm('client') } },
             ] : tab === 'clients' ? [
-              { key: 'clientName', label: 'Client Name', type: 'text', required: true },
-              { key: 'industry', label: 'Industry', type: 'text' },
-              { key: 'primaryContact', label: 'Primary Contact', type: 'text' },
-              { key: 'contactEmail', label: 'Contact Email', type: 'email' },
-              { key: 'phone', label: 'Phone', type: 'text' },
-              { key: 'address', label: 'Address', type: 'textarea' },
-              { key: 'onboardingDate', label: 'Onboarding Date', type: 'date' },
-              { key: 'contractStatus', label: 'Contract', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' }, { value: 'expired', label: 'Expired' }], required: true },
-              { key: 'slaStatus', label: 'SLA Status', type: 'text' },
-              { key: 'clientPhoto', label: 'Client Photo', type: 'file' },
-            ] : tab === 'tasks' ? [
-              { key: 'title', label: 'Task Title', type: 'text', required: true },
-              { key: 'priority', label: 'Priority', type: 'select', options: [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }], required: true },
-              { key: 'status', label: 'Status', type: 'select', options: [{ value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' }], required: true },
-              { key: 'assigneeId', label: 'Assignee', type: 'select', options: employees.map(e => ({ value: e.id, label: e.name })) },
+              { key: 'clientName', label: 'Client Name', type: 'text' as const, required: true },
+              { key: 'industry', label: 'Industry', type: 'select' as const, options: [
+                { value: 'technology', label: 'Technology' }, { value: 'finance', label: 'Finance' },
+                { value: 'healthcare', label: 'Healthcare' }, { value: 'retail', label: 'Retail' },
+                { value: 'manufacturing', label: 'Manufacturing' }, { value: 'other', label: 'Other' },
+              ]},
+              { key: 'primaryContact', label: 'Primary Contact', type: 'text' as const },
+              { key: 'contactEmail', label: 'Contact Email', type: 'email' as const },
+              { key: 'phone', label: 'Phone', type: 'text' as const },
+              { key: 'address', label: 'Address', type: 'textarea' as const },
+              { key: 'onboardingDate', label: 'Onboarding Date', type: 'date' as const },
+              { key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' },
+                { value: 'renewal', label: 'Up for Renewal' }, { value: 'expired', label: 'Expired' }, { value: 'terminated', label: 'Terminated' },
+              ], required: true},
+              { key: 'slaStatus', label: 'SLA Status', type: 'select' as const, options: [
+                { value: 'green', label: 'Green (On Track)' }, { value: 'amber', label: 'Amber (At Risk)' }, { value: 'red', label: 'Red (Breached)' },
+              ]},
+              { key: 'clientPhoto', label: 'Client Logo/Photo', type: 'file' as const },
+            ] : tab === 'reports' ? [
+              { key: 'reportName', label: 'Report Name', type: 'text' as const, required: true },
+              { key: 'reportNo', label: 'Report Number', type: 'text' as const },
+              { key: 'period', label: 'Period (e.g. Q1 2026)', type: 'text' as const },
+              { key: 'periodStart', label: 'Period Start', type: 'date' as const },
+              { key: 'periodEnd', label: 'Period End', type: 'date' as const },
+              { key: 'totalIncome', label: 'Total Income ($)', type: 'number' as const },
+              { key: 'totalExpenses', label: 'Total Expenses ($)', type: 'number' as const },
+              { key: 'totalSalary', label: 'Total Salary ($)', type: 'number' as const },
+              { key: 'otherCapitalInputs', label: 'Other Capital Inputs ($)', type: 'number' as const },
+              { key: 'drawings', label: 'Drawings ($)', type: 'number' as const },
+              { key: 'tax', label: 'Tax ($)', type: 'number' as const },
+              { key: 'grossProfit', label: 'Gross Profit ($)', type: 'number' as const },
+              { key: 'netProfit', label: 'Net Profit ($)', type: 'number' as const },
+              { key: 'financeClearance', label: 'Finance Clearance', type: 'select' as const, options: [{ value: 'true', label: 'Cleared' }, { value: 'false', label: 'Pending' }] },
+              { key: 'hrClearance', label: 'HR Clearance', type: 'select' as const, options: [{ value: 'true', label: 'Cleared' }, { value: 'false', label: 'Pending' }] },
+              { key: 'legalClearance', label: 'Legal Clearance', type: 'select' as const, options: [{ value: 'true', label: 'Cleared' }, { value: 'false', label: 'Pending' }] },
+              { key: 'opsClearance', label: 'Ops Clearance', type: 'select' as const, options: [{ value: 'true', label: 'Cleared' }, { value: 'false', label: 'Pending' }] },
+              { key: 'opsFinalApproval', label: 'Ops Final Approval', type: 'select' as const, options: [{ value: 'true', label: 'Approved' }, { value: 'false', label: 'Pending' }] },
+              { key: 'financeNotes', label: 'Finance Notes', type: 'textarea' as const },
+              { key: 'hrNotes', label: 'HR Notes', type: 'textarea' as const },
+              { key: 'legalNotes', label: 'Legal Notes', type: 'textarea' as const },
+              { key: 'opsNotes', label: 'Ops Notes', type: 'textarea' as const },
+              { key: 'reportDoc', label: 'Report Document', type: 'file' as const },
+              { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committeesList.map(c => ({ value: c.id, label: c.committeeName })) },
+            ] : tab === 'docs' ? [
+              { key: 'docTitle', label: 'Document Title', type: 'text' as const, required: true },
+              { key: 'docType', label: 'Document Type', type: 'select' as const, options: [
+                { value: 'policy', label: 'Policy' }, { value: 'report', label: 'Report' },
+                { value: 'template', label: 'Template' }, { value: 'contract', label: 'Contract' },
+                { value: 'minutes', label: 'Meeting Minutes' }, { value: 'other', label: 'Other' },
+              ]},
+              { key: 'description', label: 'Description', type: 'textarea' as const },
+              { key: 'uploadDate', label: 'Upload Date', type: 'date' as const },
+              { key: 'confidential', label: 'Confidential', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
+              { key: 'tags', label: 'Tags (comma separated)', type: 'text' as const },
+              { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committeesList.map(c => ({ value: c.id, label: c.committeeName })) },
+              { key: 'clientId', label: 'Associated Client', type: 'select' as const, options: clientsList.map(c => ({ value: c.id, label: c.clientName })) },
+              { key: 'attachment', label: 'Document File', type: 'file' as const },
             ] : [
-              { key: 'docTitle', label: 'Document Title', type: 'text', required: true },
-              { key: 'category', label: 'Category', type: 'text' },
-              { key: 'attachment', label: 'Document File', type: 'file' },
+              { key: 'title', label: 'Task Title', type: 'text' as const, required: true },
+              { key: 'priority', label: 'Priority', type: 'select' as const, options: [
+                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
+              ], required: true},
+              { key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' },
+              ], required: true},
+              { key: 'assigneeId', label: 'Assignee', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
             ]
           }
           initialData={editingRecord}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
           onSubmit={handleEntitySubmit}
+        />
+      )}
+
+      {showNestedForm === 'lab' && (
+        <EntityForm
+          title="New Lab"
+          fields={[
+            { key: 'labName', label: 'Lab Name', type: 'text' as const, required: true },
+            { key: 'category', label: 'Category', type: 'text' as const },
+            { key: 'description', label: 'Description', type: 'textarea' as const },
+            { key: 'status', label: 'Status', type: 'select' as const, options: [
+              { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' },
+            ]},
+            { key: 'opsLeadId', label: 'Ops Lead', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
+          ]}
+          onClose={() => setShowNestedForm(null)}
+          onSubmit={async (formData) => {
+            const res = await fetch(`${API}/core/labs`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+              body: JSON.stringify(formData),
+            });
+            if (!res.ok) throw new Error('Failed to create lab');
+            fetchRelations();
+            setShowNestedForm(null);
+          }}
+        />
+      )}
+
+      {showNestedForm === 'client' && (
+        <EntityForm
+          title="New Client"
+          fields={[
+            { key: 'clientName', label: 'Client Name', type: 'text' as const, required: true },
+            { key: 'industry', label: 'Industry', type: 'text' as const },
+            { key: 'primaryContact', label: 'Primary Contact', type: 'text' as const },
+            { key: 'contactEmail', label: 'Contact Email', type: 'email' as const },
+            { key: 'phone', label: 'Phone', type: 'text' as const },
+            { key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
+              { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' }, { value: 'expired', label: 'Expired' },
+            ], required: true},
+          ]}
+          onClose={() => setShowNestedForm(null)}
+          onSubmit={async (formData) => {
+            const res = await fetch(`${API}/core/clients`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+              body: JSON.stringify(formData),
+            });
+            if (!res.ok) throw new Error('Failed to create client');
+            fetchRelations();
+            setShowNestedForm(null);
+          }}
         />
       )}
     </div>
@@ -463,7 +624,7 @@ function ProvisionCrmModal({ committees, employees, onClose, onSubmit }: { commi
         </div>
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Target Committee</label><select required value={formData.committeeId} onChange={e => setFormData({ ...formData, committeeId: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-indigo-500 appearance-none transition-all">{committees.map(c => <option key={c.id} value={c.id}>{c.committeeName}</option>)}</select></div>
-          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Internal Personnel Assignments</label><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">{employees.map(emp => (<label key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-pointer group"><input type="checkbox" checked={formData.employeeIds.includes(emp.id)} onChange={e => { const ids = e.target.checked ? [...formData.employeeIds, emp.id] : formData.employeeIds.filter(id => id !== emp.id); setFormData({ ...formData, employeeIds: ids }); }} className="w-4 h-4 rounded border-white/10 bg-black/40 text-indigo-500 focus:ring-0" /><div className="flex-1"><p className="text-xs font-bold group-hover:text-white transition-colors">{emp.name}</p><p className="text-[9px] text-textSecondary uppercase font-black tracking-widest">{emp.department}</p></div></label>))}</div></div>
+          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Internal Personnel Assignments</label><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">{employees.map(emp => (<label key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-pointer group"><input type="checkbox" checked={(formData.employeeIds || []).includes(emp.id)} onChange={e => { const ids = e.target.checked ? [...(formData.employeeIds || []), emp.id] : (formData.employeeIds || []).filter(id => id !== emp.id); setFormData({ ...formData, employeeIds: ids }); }} className="w-4 h-4 rounded border-white/10 bg-black/40 text-indigo-500 focus:ring-0" /><div className="flex-1"><p className="text-xs font-bold group-hover:text-white transition-colors">{emp.name}</p><p className="text-[9px] text-textSecondary uppercase font-black tracking-widest">{emp.department}</p></div></label>))}</div></div>
           <div className="pt-6 border-t border-white/10 flex justify-end gap-4"><button type="button" onClick={onClose} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">Discard</button><button type="submit" disabled={loading || !formData.committeeId} className="px-10 py-4 bg-indigo-500 hover:bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2 disabled:opacity-50">{loading ? 'Provisioning...' : 'Launch CRM'} <Check className="w-4 h-4" /></button></div>
         </form>
       </div>

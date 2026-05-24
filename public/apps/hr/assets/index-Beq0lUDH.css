@@ -1,1 +1,0 @@
-@tailwind base;@tailwind components;@tailwind utilities;@layer base{@apply bg-background text-textPrimary antialiased selection:bg-primary/30;}@layer utilities{@apply bg-surface/80 backdrop-blur-md border border-white/10 shadow-xl;}

@@ -7,6 +7,8 @@ export const employees = sqliteTable('employees', {
 
   department: text('department'),
   role: text('role'),
+  email: text('email'),
+  phone: text('phone'),
   employmentStatus: text('employment_status'), // active | inactive | on_leave
   hireDate: text('hire_date'),
   baseSalary: real('base_salary'),

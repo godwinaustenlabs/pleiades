@@ -1,7 +1,7 @@
 import { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { verify } from 'hono/jwt';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { getDb } from '@ganova/database';
 import { schema } from '@ganova/database';
 import { Env } from '../index';
@@ -42,7 +42,45 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
     }
   }
 
-  // 2. Check JWT for Human Users
+  // 2. Check x-slack-id header for Slack-originated agent/bot requests
+  const slackId = c.req.header('x-slack-id');
+  if (slackId) {
+    const db = getDb(c.env);
+    const employee = await db.query.employees.findFirst({
+      where: and(
+        eq(schema.employees.slackId, slackId),
+        eq(schema.employees.employmentStatus, 'active')
+      ),
+    });
+
+    if (employee) {
+      const login = await db.query.usersLogins.findFirst({
+        where: eq(schema.usersLogins.employeeId, employee.id),
+        with: {
+          role: true,
+        },
+      });
+
+      if (login) {
+        // @ts-ignore
+        c.set('user', {
+          id: login.id,
+          // @ts-ignore
+          roleId: login.roleId || '',
+          // @ts-ignore
+          roleName: login.role?.name || 'Employee',
+          employeeId: employee.id,
+          isSuperadmin: !!login.isSuperadmin,
+          type: 'human',
+        });
+        return await next();
+      }
+    }
+    // If Slack ID was supplied but no matching active employee was found, deny access
+    return c.json({ error: 'Unauthorized: No active account found for this Slack identity' }, 401);
+  }
+
+  // 3. Check JWT for Human Users
   const authHeader = c.req.header('Authorization');
   let token = '';
 
@@ -51,6 +89,10 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
   } else {
     // Fallback to cookie
     token = getCookie(c, 'auth_token') || '';
+  }
+
+  if (!token) {
+    token = c.req.query('token') || '';
   }
 
   if (!token) {
@@ -72,3 +114,4 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
     return c.json({ error: 'Invalid or expired token' }, 401);
   }
 }
+

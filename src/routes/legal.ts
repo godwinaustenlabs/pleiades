@@ -72,6 +72,7 @@ legalRouter.patch('/parties/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.partiesStakeholders).set(body).where(eq(schema.partiesStakeholders.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'parties_stakeholders', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -118,6 +119,7 @@ legalRouter.patch('/agreements/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.activeAgreements).set(body).where(eq(schema.activeAgreements.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'active_agreements', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -179,6 +181,7 @@ legalRouter.patch('/compliance/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.complianceObligations).set(body).where(eq(schema.complianceObligations.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'compliance_obligations', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -223,6 +226,7 @@ legalRouter.patch('/requests/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.legalRequests).set(body).where(eq(schema.legalRequests.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'legal_requests', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -259,6 +263,7 @@ legalRouter.patch('/ip/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.intellectualProperty).set(body).where(eq(schema.intellectualProperty.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'intellectual_property', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -295,6 +300,7 @@ legalRouter.patch('/sops/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.legalSops).set(body).where(eq(schema.legalSops.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'legal_sops', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }

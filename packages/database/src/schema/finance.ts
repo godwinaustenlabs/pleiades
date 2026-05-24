@@ -51,6 +51,7 @@ export const invoices = sqliteTable('invoices', {
   clientId: text('client_id').references(() => clients.id),
   committeeId: text('committee_id').references(() => committees.id),
   fundRequestId: text('fund_request_id').references(() => fundRequests.id),
+  invoiceDoc: text('invoice_doc'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

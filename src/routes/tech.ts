@@ -41,6 +41,7 @@ techRouter.patch('/projects/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.projects).set(body).where(eq(schema.projects.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'projects', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -85,6 +86,7 @@ techRouter.patch('/epics/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.epics).set(body).where(eq(schema.epics.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'epics', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -129,6 +131,7 @@ techRouter.patch('/stories/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.stories).set(body).where(eq(schema.stories.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'stories', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -175,6 +178,7 @@ techRouter.patch('/tasks/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.tasks).set(body).where(eq(schema.tasks.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'tasks', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -219,6 +223,7 @@ techRouter.patch('/releases/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.releases).set(body).where(eq(schema.releases.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'releases', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -255,6 +260,7 @@ techRouter.patch('/environments/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.environments).set(body).where(eq(schema.environments.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'environments', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -299,8 +305,16 @@ techRouter.patch('/deployments/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.deployments).set(body).where(eq(schema.deployments.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'deployments', id, body); return ok(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+techRouter.delete('/deployments/:id', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
+    await db.delete(schema.deployments).where(eq(schema.deployments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'deployments', id); return ok(c, { id, deleted: true });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -337,6 +351,7 @@ techRouter.patch('/issues/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.issues).set(body).where(eq(schema.issues.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'issues', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }

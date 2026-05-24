@@ -92,7 +92,13 @@ dashboardRouter.get('/me', async (c) => {
     }
 
     return ok(c, {
-      user: { id: user.id, roleId: user.roleId, roleName: user.roleName, employeeId: user.employeeId },
+      user: { 
+        id: user.id, 
+        roleId: user.roleId, 
+        roleName: user.roleName, 
+        employeeId: user.employeeId,
+        avatarUrl: employeeRecord?.profilePhoto || null
+      },
       employee: employeeRecord || null,
       stats: { 
         totalTasks: allTasks.length, 
@@ -106,6 +112,7 @@ dashboardRouter.get('/me', async (c) => {
       appointments,
       committees: committees.map((cm: any) => ({ ...cm, committeeName: cm.committee?.committeeName })),
       preferences: dashState?.preferences ? JSON.parse(dashState.preferences) : {},
+      calendarToken: (await db.query.calendarFeeds.findFirst({ where: eq(schema.calendarFeeds.userId, user.id) }))?.token || null,
     });
   } catch (err) { return serverError(c, err); }
 });
@@ -200,4 +207,59 @@ dashboardRouter.patch('/preferences', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+/* ── CALENDAR SYNC ── */
+dashboardRouter.get('/calendar/token', async (c) => {
+  try {
+    const user = c.get('user');
+    const db = getDb(c.env);
+    
+    let feed = await db.query.calendarFeeds.findFirst({
+      where: eq(schema.calendarFeeds.userId, user.id),
+    });
+
+    if (!feed) {
+      const id = generateId('cal');
+      const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      const now = new Date();
+      await db.insert(schema.calendarFeeds).values({
+        id, userId: user.id, token, createdAt: now, updatedAt: now
+      });
+      feed = { id, userId: user.id, token, createdAt: now, updatedAt: now };
+    }
+
+    return ok(c, { token: feed.token });
+  } catch (err) { return serverError(c, err); }
+});
+
+dashboardRouter.post('/calendar/token/reset', async (c) => {
+  try {
+    const user = c.get('user');
+    const db = getDb(c.env);
+    const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    const existing = await db.query.calendarFeeds.findFirst({
+      where: eq(schema.calendarFeeds.userId, user.id),
+    });
+
+    if (existing) {
+      await db.update(schema.calendarFeeds)
+        .set({ token, updatedAt: new Date() })
+        .where(eq(schema.calendarFeeds.userId, user.id));
+    } else {
+      await db.insert(schema.calendarFeeds).values({
+        id: generateId('cal'),
+        userId: user.id,
+        token,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    return ok(c, { token });
+  } catch (err) { 
+    console.error('Calendar token reset error:', err);
+    return serverError(c, err); 
+  }
+});
+
 export default dashboardRouter;
+

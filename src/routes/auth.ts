@@ -43,6 +43,7 @@ authRouter.post('/login', async (c) => {
     if (!email || !password) return badRequest(c, 'email and password are required');
 
     const db = getDb(c.env);
+    console.log('[DEBUG] Searching for user:', email.toLowerCase().trim());
 
     const user = await db.query.usersLogins.findFirst({
       where: or(
@@ -51,6 +52,12 @@ authRouter.post('/login', async (c) => {
       ),
       with: { role: true },
     });
+    console.log('[DEBUG] User search result:', user ? 'Found' : 'Not Found');
+    if (user) {
+      console.log('[DEBUG] User ID:', user.id);
+      console.log('[DEBUG] Role ID:', user.roleId);
+      console.log('[DEBUG] Role Object:', user.role);
+    }
 
     if (!user) return c.json({ success: false, error: 'Invalid credentials' }, 401);
     if (!user.isActive) return c.json({ success: false, error: 'Account is deactivated' }, 401);
@@ -64,9 +71,11 @@ authRouter.post('/login', async (c) => {
     }
 
     const passwordHash = await sha256hex(password);
+    console.log('[DEBUG] Password hash calculated');
 
     if (user.passwordHash !== passwordHash) {
       // Increment failed attempts
+      console.log('[DEBUG] Password mismatch, incrementing attempts');
       const attempts = (user.failedAttempts ?? 0) + 1;
       const lockUntil = attempts >= MAX_FAILED_ATTEMPTS
         ? new Date(Date.now() + LOCKOUT_SECONDS * 1000)
@@ -78,6 +87,7 @@ authRouter.post('/login', async (c) => {
     }
 
     // Successful login: reset counters + record timestamp
+    console.log('[DEBUG] Successful login, updating record');
     await db.update(schema.usersLogins)
       .set({ failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() })
       .where(eq(schema.usersLogins.id, user.id));
@@ -97,8 +107,14 @@ authRouter.post('/login', async (c) => {
       exp: now + 60 * 60 * 8, // 8 hours
     };
 
+    console.log('[DEBUG] Generating JWT token');
+    if (!c.env.JWT_SECRET) {
+      console.error('[ERROR] JWT_SECRET is missing from environment');
+      throw new Error('Server configuration error: JWT_SECRET missing');
+    }
     const token = await sign(payload, c.env.JWT_SECRET, 'HS256');
 
+    console.log('[DEBUG] Fetching app access records');
     const appAccessRecords = await db.query.userAppAccess.findMany({
       where: eq(schema.userAppAccess.userId, user.id)
     });
@@ -107,6 +123,7 @@ authRouter.post('/login', async (c) => {
       return acc;
     }, {} as Record<string, string>);
 
+    console.log('[DEBUG] Login successful');
     return ok(c, {
       token,
       expiresIn: 60 * 60 * 8,
@@ -168,10 +185,22 @@ authRouter.get('/profile', authMiddleware, async (c) => {
     const db = getDb(c.env);
     const userData = await db.query.usersLogins.findFirst({
       where: eq(schema.usersLogins.id, user.id),
-      columns: { passwordHash: false }
+      columns: { passwordHash: false },
+      with: {
+        employee: {
+          columns: { profilePhoto: true }
+        }
+      }
     });
     if (!userData) return notFound(c);
-    return ok(c, userData);
+    
+    // Add profilePhoto to the result object
+    const result = {
+      ...userData,
+      profilePhoto: userData.employee?.profilePhoto || null
+    };
+    
+    return ok(c, result);
   } catch (err) { return serverError(c, err); }
 });
 
@@ -181,11 +210,13 @@ authRouter.patch('/profile', authMiddleware, async (c) => {
   try {
     const user = c.get('user')!;
     const db = getDb(c.env);
-    const body = await c.req.json<{ name?: string; username?: string; password?: string }>();
+    const body = await c.req.json<{ name?: string; username?: string; email?: string; phone?: string; password?: string }>();
     
     const updateData: any = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.username !== undefined) updateData.username = body.username.toLowerCase().trim();
+    if (body.email !== undefined) updateData.email = body.email.toLowerCase().trim();
+    if (body.phone !== undefined) updateData.phone = body.phone.trim();
     if (body.password) {
       if (body.password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
       updateData.passwordHash = await sha256hex(body.password);
@@ -201,7 +232,39 @@ authRouter.patch('/profile', authMiddleware, async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-// ── POST /auth/request-reset ─────────────────────────────────────────────────
+// ── POST /auth/profile/avatar ───────────────────────────────────────────────
+
+authRouter.post('/profile/avatar', authMiddleware, async (c) => {
+  try {
+    const user = c.get('user')!;
+    const body = await c.req.parseBody();
+    const file = body.file as File;
+
+    if (!file) return badRequest(c, 'No file uploaded');
+    if (!c.env.CRM_BUCKET) return badRequest(c, 'Storage bucket not configured');
+
+    const extension = file.name.split('.').pop() || 'png';
+    const key = `avatars/${user.id}_${Date.now()}.${extension}`;
+    
+    await c.env.CRM_BUCKET.put(key, await file.arrayBuffer(), {
+      httpMetadata: { contentType: file.type }
+    });
+
+    const avatarUrl = `/api/assets/download/${key}`;
+    const db = getDb(c.env);
+    
+    // Sync with employee record if linked
+    if (user.employeeId) {
+      await db.update(schema.employees)
+        .set({ profilePhoto: avatarUrl, updatedAt: new Date() })
+        .where(eq(schema.employees.id, user.employeeId));
+    }
+
+    return ok(c, { avatarUrl });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
 
 /**
  * POST /auth/request-reset

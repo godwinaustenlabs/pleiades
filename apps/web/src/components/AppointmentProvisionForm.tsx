@@ -39,7 +39,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
   const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const token = localStorage.getItem('ganova_token');
+    const token = localStorage.getItem('ga_token');
     
     // 1. Fetch App Features
     fetch('/api/permissions/app-features', { headers: { Authorization: `Bearer ${token}` } })
@@ -127,8 +127,17 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
     e.preventDefault();
     setLoading(true);
     setError('');
+    
+    // Clean empty strings to null to prevent foreign key constraint errors
+    const cleanedData = { ...formData } as Record<string, any>;
+    Object.keys(cleanedData).forEach(key => {
+      if (cleanedData[key] === "") {
+        cleanedData[key] = null;
+      }
+    });
+
     try {
-      await onSubmit({ ...formData, permissions });
+      await onSubmit({ ...cleanedData, permissions });
     } catch (err: any) {
       setError(err.message || 'Failed to submit form');
       setLoading(false);
@@ -155,7 +164,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
           
           <form id="provision-form" onSubmit={handleSubmit} className="space-y-8">
             
-            <div className="grid grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left Column: Core Identity */}
               <div className="space-y-6">
                 <div className="space-y-4">

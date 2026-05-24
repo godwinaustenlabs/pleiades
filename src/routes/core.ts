@@ -23,11 +23,12 @@ coreRouter.use('*', authMiddleware);
 coreRouter.get('/employees', async (c) => {
   try {
     const db = getDb(c.env);
-    const { department, status } = c.req.query();
+    const { department, status, slack_id } = c.req.query();
     const rows = await db.query.employees.findMany({
       where: and(
         department ? like(schema.employees.department, `%${department}%`) : undefined,
-        status ? eq(schema.employees.employmentStatus, status) : undefined
+        status ? eq(schema.employees.employmentStatus, status) : undefined,
+        slack_id ? eq(schema.employees.slackId, slack_id) : undefined
       ),
     });
     return ok(c, rows);
@@ -43,8 +44,8 @@ coreRouter.post('/employees', async (c) => {
     const now = new Date();
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
-    const cleanBody = { name, slackId, department, role, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId };
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
+    const cleanBody = { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId };
 
     await db.insert(schema.employees).values({ ...cleanBody, id, createdAt: now, updatedAt: now });
     await logAudit(c.env, user.id, 'CREATE', 'employees', id, cleanBody);
@@ -69,12 +70,13 @@ coreRouter.patch('/employees/:id', async (c) => {
     const id = c.req.param('id');
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
     const cleanBody: any = {};
-    const fields = ['name', 'slackId', 'department', 'role', 'employmentStatus', 'hireDate', 'baseSalary', 'efficiencyScore', 'profilePhoto', 'sectorId'];
+    const fields = ['name', 'slackId', 'department', 'role', 'email', 'phone', 'employmentStatus', 'hireDate', 'baseSalary', 'efficiencyScore', 'profilePhoto', 'sectorId'];
     fields.forEach(f => { if (body[f] !== undefined) cleanBody[f] = body[f]; });
 
     await db.update(schema.employees).set({ ...cleanBody, updatedAt: new Date() }).where(eq(schema.employees.id, id));
+    
     await logAudit(c.env, user.id, 'UPDATE', 'employees', id, cleanBody);
     return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -88,7 +90,12 @@ coreRouter.delete('/employees/:id', async (c) => {
     await db.delete(schema.employees).where(eq(schema.employees.id, id));
     await logAudit(c.env, user.id, 'DELETE', 'employees', id);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return badRequest(c, 'Cannot delete employee: they have active appointments or other dependencies. Please remove those first.');
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── LABS ── */
@@ -136,7 +143,12 @@ coreRouter.delete('/labs/:id', async (c) => {
     await db.delete(schema.labs).where(eq(schema.labs.id, id));
     await logAudit(c.env, user.id, 'DELETE', 'labs', id);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return badRequest(c, 'Cannot delete lab: it has associated committees or employees.');
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── CLIENTS ── */
@@ -170,8 +182,12 @@ coreRouter.patch('/clients/:id', async (c) => {
     const db = getDb(c.env);
     const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
-    await db.update(schema.clients).set({ ...body, updatedAt: new Date() }).where(eq(schema.clients.id, id));
-    await logAudit(c.env, user.id, 'UPDATE', 'clients', id, body);
+    
+    // Sanitize body: remove system fields that shouldn't be updated directly
+    const { id: _id, createdAt: _ca, updatedAt: _ua, ...cleanBody } = body;
+    
+    await db.update(schema.clients).set({ ...cleanBody, updatedAt: new Date() }).where(eq(schema.clients.id, id));
+    await logAudit(c.env, user.id, 'UPDATE', 'clients', id, cleanBody);
     return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
@@ -184,7 +200,12 @@ coreRouter.delete('/clients/:id', async (c) => {
     await db.delete(schema.clients).where(eq(schema.clients.id, id));
     await logAudit(c.env, user.id, 'DELETE', 'clients', id);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return badRequest(c, 'Cannot delete client: they have active contracts, committees, or docs.');
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── CLIENT PORTAL LOGIN PROVISIONING ── */
@@ -261,7 +282,7 @@ coreRouter.get('/committees', async (c) => {
     const { all } = c.req.query();
     const db = getDb(c.env);
     const rows = await db.query.committees.findMany({
-      where: all === 'true' ? undefined : eq(schema.committees.activeStatus, true),
+      where: all === 'false' ? eq(schema.committees.activeStatus, true) : undefined,
     });
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
@@ -306,7 +327,12 @@ coreRouter.delete('/committees/:id', async (c) => {
     await db.delete(schema.committees).where(eq(schema.committees.id, id));
     await logAudit(c.env, user.id, 'DELETE', 'committees', id);
     return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
+  } catch (err: any) { 
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return badRequest(c, 'Cannot delete committee: it has active members, tickets, or reports.');
+    }
+    return serverError(c, err); 
+  }
 });
 
 /* ── COMMITTEE MEMBERS ── */

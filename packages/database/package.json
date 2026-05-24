@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "scripts": {
     "generate": "drizzle-kit generate:sqlite",
-    "migrate": "wrangler d1 migrations apply office-db --local"
+    "migrate": "wrangler d1 migrations apply ganova-db --local"
   },
   "dependencies": {
     "drizzle-orm": "^0.30.10"

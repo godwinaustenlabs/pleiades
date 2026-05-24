@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Key, AlertCircle, Loader2 } from 'lucide-react';
+import Logo from '../components/Logo';
 
 const API = '/api';
 
@@ -28,8 +29,8 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         return;
       }
 
-      localStorage.setItem('ganova_token', data.data.token);
-      localStorage.setItem('ganova_user', JSON.stringify(data.data.user));
+      localStorage.setItem('ga_token', data.data.token);
+      localStorage.setItem('ga_user', JSON.stringify(data.data.user));
       onLogin();
     } catch (err) {
       setError('Network error. Please try again.');
@@ -45,8 +46,8 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
       <div className="z-10 w-full max-w-md glass-panel p-8 rounded-3xl border border-white/10 shadow-2xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mb-6 shadow-lg shadow-primary/20">
-            <Shield className="w-8 h-8 text-primary" />
+          <div className="w-16 h-16 mb-6">
+            <Logo className="w-full h-full" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white mb-2">Secure Login</h1>
           <p className="text-sm text-textSecondary text-center">

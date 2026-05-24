@@ -21,6 +21,7 @@ export const usersLogins = sqliteTable('users_logins', {
   id: text('id').primaryKey(),
   employeeId: text('employee_id'),              // optional FK → employees.employee_id
   email: text('email').notNull().unique(),
+  phone: text('phone'),
   username: text('username').unique(),          // for global profile management
   name: text('name'),                           // display name
   passwordHash: text('password_hash').notNull(), // SHA-256 hex
@@ -144,4 +145,13 @@ export const userAppPermissions = sqliteTable('user_app_permissions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+export const calendarFeeds = sqliteTable('calendar_feeds', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => usersLogins.id),
+  token: text('token').notNull().unique(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
 

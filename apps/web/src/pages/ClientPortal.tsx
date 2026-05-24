@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { 
   Shield, Ticket, AlertCircle, Send, LogOut, 
-  MessageSquare, Building2, ChevronRight
+  Building2, ChevronRight, Trash2
 } from 'lucide-react';
 
 const API = '/api';
 
 export default function ClientPortal() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ganova_client_token'));
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ga_client_token'));
   const [loading, setLoading] = useState(false);
   const [clientData, setClientData] = useState<any>(null);
   const [tickets, setTickets] = useState<any[]>([]);
@@ -30,7 +30,7 @@ export default function ClientPortal() {
   const fetchClientData = async () => {
     try {
       const res = await fetch(`${API}/portal/whoami`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('ganova_client_token')}` }
+        headers: { Authorization: `Bearer ${localStorage.getItem('ga_client_token')}` }
       });
       if (res.ok) {
         const d = await res.json();
@@ -44,7 +44,7 @@ export default function ClientPortal() {
   const fetchTickets = async () => {
     try {
       const res = await fetch(`${API}/portal/tickets`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('ganova_client_token')}` }
+        headers: { Authorization: `Bearer ${localStorage.getItem('ga_client_token')}` }
       });
       const d = await res.json();
       setTickets(d.data || []);
@@ -54,7 +54,7 @@ export default function ClientPortal() {
   const fetchCommittees = async () => {
     try {
       const res = await fetch(`${API}/portal/committees`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('ganova_client_token')}` }
+        headers: { Authorization: `Bearer ${localStorage.getItem('ga_client_token')}` }
       });
       const d = await res.json();
       setCommittees(d.data || []);
@@ -73,7 +73,7 @@ export default function ClientPortal() {
       });
       const d = await res.json();
       if (res.ok) {
-        localStorage.setItem('ganova_client_token', d.data.token);
+        localStorage.setItem('ga_client_token', d.data.token);
         setIsLoggedIn(true);
       } else {
         setError(d.error || 'Login failed');
@@ -86,7 +86,7 @@ export default function ClientPortal() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('ganova_client_token');
+    localStorage.removeItem('ga_client_token');
     setIsLoggedIn(false);
     setClientData(null);
   };
@@ -103,7 +103,7 @@ export default function ClientPortal() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('ganova_client_token')}` 
+          Authorization: `Bearer ${localStorage.getItem('ga_client_token')}` 
         },
         body: JSON.stringify(data)
       });
@@ -116,6 +116,19 @@ export default function ClientPortal() {
     finally { setLoading(false); }
   };
 
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this ticket? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`${API}/portal/tickets/${ticketId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('ga_client_token')}` }
+      });
+      if (res.ok) {
+        fetchTickets();
+      }
+    } catch (err) { console.error(err); }
+  };
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 font-sans">
@@ -125,7 +138,7 @@ export default function ClientPortal() {
               <div className="w-12 h-12 rounded-2xl bg-indigo-500 flex items-center justify-center shadow-2xl shadow-indigo-500/20">
                 <Shield className="w-7 h-7 text-white" />
               </div>
-              <h1 className="text-2xl font-black text-white tracking-tight italic">GAnova<span className="text-indigo-500">Portal</span></h1>
+              <h1 className="text-2xl font-black text-white tracking-tight italic">GA<span className="text-indigo-500">Portal</span></h1>
             </div>
           </div>
 
@@ -170,7 +183,7 @@ export default function ClientPortal() {
           </div>
           
           <p className="text-center mt-10 text-slate-500 text-xs font-medium">
-            Authorized Personnel Only. © 2026 GAnova Labs.
+            Authorized Personnel Only. © 2026 GA Labs.
           </p>
         </div>
       </div>
@@ -187,7 +200,7 @@ export default function ClientPortal() {
                 <Shield className="w-6 h-6 text-white" />
              </div>
              <div className="flex flex-col">
-                <h1 className="font-black text-lg leading-tight tracking-tight italic">GAnova<span className="text-indigo-500">Portal</span></h1>
+                <h1 className="font-black text-lg leading-tight tracking-tight italic">GA<span className="text-indigo-500">Portal</span></h1>
                 <span className="text-[10px] uppercase font-black text-indigo-400 tracking-widest">Global Operations</span>
              </div>
           </div>
@@ -263,9 +276,14 @@ export default function ClientPortal() {
                         <div className="w-8 h-8 rounded-full border-2 border-slate-900 bg-indigo-500 flex items-center justify-center text-[10px] font-black">GA</div>
                         <div className="w-8 h-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center text-[10px] font-black">?</div>
                       </div>
-                      <button className="flex items-center gap-2 text-xs font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 transition-colors">
-                        View Progress <ChevronRight className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-4">
+                        <button onClick={() => handleDeleteTicket(t.id)} className="flex items-center gap-2 text-xs font-black text-red-500 uppercase tracking-widest hover:text-red-400 transition-colors">
+                          <Trash2 className="w-4 h-4" /> Delete Ticket
+                        </button>
+                        <button className="flex items-center gap-2 text-xs font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 transition-colors">
+                          View Progress <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -386,20 +404,7 @@ export default function ClientPortal() {
                 </div>
              </div>
 
-             <div className="bg-white/5 border border-white/10 rounded-[2rem] p-8">
-                <h3 className="font-bold text-white mb-6 flex items-center gap-2">
-                   <MessageSquare className="w-4 h-4 text-indigo-400" /> Notifications
-                </h3>
-                <div className="space-y-6">
-                   <div className="flex gap-4">
-                      <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
-                      <div>
-                         <p className="text-xs font-medium text-slate-300 leading-relaxed">Your ticket <span className="text-indigo-400 font-bold">#TKT-9122</span> has been assigned to an expert.</p>
-                         <p className="text-[10px] text-slate-500 font-black mt-1 uppercase">2 hours ago</p>
-                      </div>
-                   </div>
-                </div>
-             </div>
+
           </div>
 
         </div>
@@ -410,7 +415,7 @@ export default function ClientPortal() {
             <div className="flex justify-center mb-6">
                <div className="flex items-center gap-2 opacity-50">
                   <Shield className="w-5 h-5 text-indigo-500" />
-                  <span className="text-sm font-black italic tracking-tight">GAnova<span className="text-indigo-500">Portal</span></span>
+                  <span className="text-sm font-black italic tracking-tight">GA<span className="text-indigo-500">Portal</span></span>
                </div>
             </div>
             <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">

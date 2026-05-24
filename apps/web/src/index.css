@@ -1,32 +1,73 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0B0F1A;
-  --color-surface: #161B2E;
-  --color-primary: #38BDF8;
-  --color-accent: #818CF8;
-  --color-textPrimary: #F8FAFC;
-  --color-textSecondary: #94A3B8;
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-textPrimary: var(--text-main);
+  --color-textSecondary: var(--text-sec);
+  --color-white: var(--dynamic-white);
+  --color-black: var(--dynamic-black);
   --font-sans: "Outfit", "Inter", sans-serif;
 }
 
 @layer base {
+  :root {
+    --bg: #F8FAFC;
+    --surface: #FFFFFF;
+    --primary: #1267ea;
+    --accent: #4b8efa;
+    --text-main: #0F172A;
+    --text-sec: #64748B;
+    --glass-border: rgba(18, 103, 234, 0.1);
+    --glass-shadow: rgba(18, 103, 234, 0.05);
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-bg-heavy: rgba(255, 255, 255, 0.95);
+    --gradient-start: hsla(217, 91%, 95%, 1);
+    --gradient-end: hsla(217, 91%, 98%, 1);
+    --dynamic-white: #0F172A;
+    --dynamic-black: #FFFFFF;
+  }
+
+  .dark {
+    --bg: #0F172A;
+    --surface: #1E293B;
+    --primary: #1267ea;
+    --accent: #4b8efa;
+    --text-main: #F8FAFC;
+    --text-sec: #94A3B8;
+    --glass-border: rgba(255, 255, 255, 0.05);
+    --glass-shadow: rgba(0, 0, 0, 0.3);
+    --glass-bg: rgba(15, 23, 42, 0.4);
+    --glass-bg-heavy: rgba(15, 23, 42, 0.8);
+    --gradient-start: hsla(217, 33%, 10%, 1);
+    --gradient-end: hsla(217, 33%, 5%, 1);
+    --dynamic-white: #ffffff;
+    --dynamic-black: #000000;
+  }
+
   body {
-    @apply bg-background text-textPrimary antialiased selection:bg-primary/30;
+    @apply bg-background text-textPrimary antialiased selection:bg-primary/30 overflow-x-hidden;
     background-image: 
-      radial-gradient(at 0% 0%, hsla(200,100%,10%,1) 0, transparent 50%),
-      radial-gradient(at 100% 100%, hsla(240,100%,10%,1) 0, transparent 50%);
+      radial-gradient(at 0% 0%, var(--gradient-start) 0, transparent 50%),
+      radial-gradient(at 100% 100%, var(--gradient-end) 0, transparent 50%);
     min-height: 100vh;
+    width: 100%;
   }
 }
 
 @layer utilities {
   .glass-panel {
-    @apply bg-surface/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)];
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    @apply backdrop-blur-xl border border-solid shadow-[0_8px_32px_0_var(--glass-shadow)];
   }
   
   .glass-panel-heavy {
-    @apply bg-surface/80 backdrop-blur-2xl border border-white/20 shadow-2xl;
+    background-color: var(--glass-bg-heavy);
+    border-color: var(--glass-border);
+    @apply backdrop-blur-2xl border border-solid shadow-2xl;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -40,6 +81,14 @@
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
     @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 

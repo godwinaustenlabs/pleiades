@@ -41,6 +41,7 @@ acquisitionRouter.patch('/campaigns/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.campaigns).set(body).where(eq(schema.campaigns.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'campaigns', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -85,6 +86,7 @@ acquisitionRouter.patch('/contacts/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.contactsLeads).set(body).where(eq(schema.contactsLeads.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'contacts_leads', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -126,6 +128,7 @@ acquisitionRouter.patch('/activity/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.leadsActivity).set(body).where(eq(schema.leadsActivity.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'leads_activity', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -147,6 +150,9 @@ acquisitionRouter.post('/funnels', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('fun');
+    if (typeof body.stages === 'string') {
+      try { body.stages = JSON.parse(body.stages); } catch {}
+    }
     await db.insert(schema.funnelsPipelines).values({ ...body, id, createdAt: new Date() });
     await logAudit(c.env, user.id, 'CREATE', 'funnels_pipelines', id, body);
     return created(c, { id });
@@ -162,6 +168,10 @@ acquisitionRouter.patch('/funnels/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
+    if (typeof body.stages === 'string') {
+      try { body.stages = JSON.parse(body.stages); } catch {}
+    }
     await db.update(schema.funnelsPipelines).set(body).where(eq(schema.funnelsPipelines.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'funnels_pipelines', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -206,6 +216,7 @@ acquisitionRouter.patch('/content/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.contentCalendar).set(body).where(eq(schema.contentCalendar.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'content_calendar', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -247,6 +258,7 @@ acquisitionRouter.patch('/sprints/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.sprints).set(body).where(eq(schema.sprints.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'sprints', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
@@ -292,6 +304,7 @@ acquisitionRouter.patch('/tasks/:id', async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.acqTasks).set(body).where(eq(schema.acqTasks.id, id));
     await logAudit(c.env, user.id, 'UPDATE', 'acq_tasks', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }

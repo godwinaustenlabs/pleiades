@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Clock, Tags } from 'lucide-react';
 
 const API = '/api';
-const token = () => localStorage.getItem('ganova_token') || '';
+const token = () => localStorage.getItem('ga_token') || '';
 
 type Status = 'todo' | 'in_progress' | 'completed' | 'blocked';
 const STATUSES: { key: Status; label: string; color: string; bg: string }[] = [
@@ -169,13 +169,13 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="flex md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4 -mx-4 px-4 md:mx-0 md:px-0">
         {grouped.map(col => (
           <div key={col.key}
             onDragOver={(e) => handleDragOver(e, col.key)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, col.key)}
-            className={`rounded-2xl border p-4 min-h-[300px] transition-all duration-200 ${dragOverCol === col.key
+            className={`rounded-2xl border p-4 min-h-[300px] transition-all duration-200 w-[85vw] shrink-0 snap-center md:w-auto md:flex-1 ${dragOverCol === col.key
               ? 'border-primary/50 bg-primary/5 shadow-lg shadow-primary/10 scale-[1.01]'
               : col.bg
               }`}>
@@ -224,10 +224,12 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                             {committees.find(cm => cm.id === task.committeeId)?.committeeName || 'Committee'}
                           </span>
                         )}
-                        {task.dueDate && (
+                        {(task.startDate || task.dueDate) && (
                           <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
                             <CalendarDays className="w-2.5 h-2.5" />
-                            {new Date(task.dueDate).toLocaleDateString()}
+                            {task.startDate ? new Date(task.startDate).toLocaleDateString() : '—'} 
+                            <span className="mx-1">→</span> 
+                            {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
                           </span>
                         )}
                         {task.taskType && (
@@ -322,6 +324,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     status: initialData?.status || 'todo',
     assigneeId: initialData?.assigneeId || '',
     committeeId: initialData?.committeeId || defaultCommitteeId || '',
+    startDate: initialData?.startDate ? initialData.startDate.substring(0, 10) : '',
     dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
     taskType: initialData?.taskType || 'operational',
     estimatedHours: initialData?.estimatedHours || 0,
@@ -383,6 +386,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     const data: any = { ...form };
     if (!data.assigneeId) data.assigneeId = null;
     if (!data.committeeId) data.committeeId = null;
+    if (!data.startDate) data.startDate = null;
     if (!data.dueDate) data.dueDate = null;
     try {
       await onSubmit(data);
@@ -395,10 +399,10 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
   const labelCls = 'block text-[10px] font-black uppercase tracking-[0.2em] text-textSecondary mb-2';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
-      <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md md:p-4 animate-in fade-in" onClick={onClose}>
+      <div className="bg-surface md:border border-white/10 md:rounded-[2.5rem] w-full h-full md:h-auto md:max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-8 border-b border-white/5 bg-white/5 flex-shrink-0">
+        <div className="flex items-center justify-between p-6 md:p-8 border-b border-white/5 bg-white/5 flex-shrink-0">
           <div>
             <h2 className="text-xl font-black tracking-tight">{mode === 'create' ? 'Create Task' : 'Edit Task'}</h2>
             <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary mt-1">
@@ -409,7 +413,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-8 space-y-5 overflow-y-auto custom-scrollbar">
+        <form onSubmit={handleSubmit} className="flex-1 p-6 md:p-8 space-y-5 overflow-y-auto custom-scrollbar">
           {error && (
             <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-bold">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
@@ -467,14 +471,18 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
             </div>
           </div>
 
-          {/* Assignee / Due Date row */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Assignee / Date row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className={labelCls}>Assign To</label>
               <select value={form.assigneeId} onChange={e => setForm({ ...form, assigneeId: e.target.value })} className={inputCls}>
                 <option value="">— Unassigned —</option>
                 {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
+            </div>
+            <div>
+              <label className={labelCls}>Start Date</label>
+              <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Due Date</label>
@@ -504,7 +512,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
                       <FileText className="w-4 h-4 text-textSecondary" />
                       <span className="text-xs font-bold truncate max-w-[200px]">{att.title}</span>
                     </div>
-                    <a href={`https://office.galabs.workers.dev/api/assets/view/${att.r2Key}`} target="_blank" rel="noreferrer" className="text-[10px] font-black uppercase text-primary hover:underline">View</a>
+                    <a href={`/api/assets/download/${att.r2Key}?token=${token()}`} target="_blank" rel="noreferrer" className="text-[10px] font-black uppercase text-primary hover:underline">View</a>
                   </div>
                 ))}
 

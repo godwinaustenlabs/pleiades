@@ -3,12 +3,15 @@ import {
   Building2, Ticket, CheckCircle2,
   Plus, Search, Filter, MoreHorizontal,
   ChevronRight, Calendar, FileText, LayoutDashboard,
-  Shield, ExternalLink, Home, Lock, Loader2, X, Send
+  Shield, ExternalLink, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon
 } from 'lucide-react';
 import TaskBoard from '../components/TaskBoard';
+import EntityForm from '../components/EntityForm';
+import NotificationCenter from '../components/NotificationCenter';
+import MobileTabMenu from '../components/MobileTabMenu';
 
 const API = '/api';
-const token = () => localStorage.getItem('ganova_token') || '';
+const token = () => localStorage.getItem('ga_token') || '';
 
 interface UserPermission {
   appName: string;
@@ -28,19 +31,21 @@ export default function CRM() {
   const [ticketFilter, setTicketFilter] = useState<'active' | 'resolved'>('active');
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [newTicketLoading, setNewTicketLoading] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [notes, setNotes] = useState<any[]>([]);
   const [newNote, setNewNote] = useState('');
   const [noteLoading, setNoteLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
   const [plannerEvents, setPlannerEvents] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [showEntityForm, setShowEntityForm] = useState<'planner' | 'document' | null>(null);
+  const [editingPlanner, setEditingPlanner] = useState<any>(null);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ganova_user') || '{}'), []);
+  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
   const fetchPermissions = async () => {
     try {
@@ -68,32 +73,25 @@ export default function CRM() {
       const d = await res.json();
       const list = d.data || [];
       setCommittees(list);
-      if (list.length > 0) setSelectedCommittee(list[0]);
+      
+      const searchParams = new URLSearchParams(window.location.search);
+      const targetId = searchParams.get('id');
+      
+      if (targetId) {
+        const target = list.find((c: any) => c.id === targetId);
+        if (target) setSelectedCommittee(target);
+        else if (list.length > 0) setSelectedCommittee(list[0]);
+      } else if (list.length > 0) setSelectedCommittee(list[0]);
+      
       setLoading(false);
     } catch (err) {
       setLoading(false);
     }
   };
 
-  const fetchNotifications = async () => {
-    try {
-      const res = await fetch(`${API}/notifications`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setNotifications(d.data || []);
-    } catch (err) { }
-  };
-
-  const clearNotifications = async () => {
-    try {
-      await fetch(`${API}/notifications`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
-      setNotifications([]);
-    } catch (err) { }
-  };
-
   useEffect(() => {
     fetchPermissions();
     fetchCommittees();
-    fetchNotifications();
   }, []);
 
   const fetchTickets = async () => {
@@ -160,6 +158,66 @@ export default function CRM() {
     } catch (err) { }
   };
 
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this ticket? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`${API}/crm/tickets/${ticketId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        setShowConversation(false);
+        fetchTickets();
+      }
+    } catch (err) { }
+  };
+
+  const handleDeletePlanner = async (plannerId: string) => {
+    if (!confirm('Delete this event?')) return;
+    try {
+      const res = await fetch(`${API}/crm/planner/${plannerId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        fetchPlanner();
+      }
+    } catch (err) { }
+  };
+
+  const handleEntitySubmit = async (data: any) => {
+    if (!selectedCommittee) return;
+    try {
+      if (showEntityForm === 'planner' || editingPlanner) {
+        const isEdit = !!editingPlanner;
+        const method = isEdit ? 'PATCH' : 'POST';
+        const url = isEdit 
+          ? `${API}/crm/planner/${editingPlanner.id}`
+          : `${API}/crm/committees/${selectedCommittee.id}/planner`;
+        
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error(`Failed to ${isEdit ? 'update' : 'create'} event`);
+        fetchPlanner();
+      } else if (showEntityForm === 'document') {
+        const res = await fetch(`${API}/crm/committees/${selectedCommittee.id}/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error('Failed to secure document upload');
+        fetchDocuments();
+      }
+      setShowEntityForm(null);
+      setEditingPlanner(null);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim() || !selectedTicket) return;
@@ -224,19 +282,33 @@ export default function CRM() {
   }
 
   return (
-    <div className="flex h-screen bg-black text-white overflow-hidden animate-in fade-in duration-700">
+    <div className="flex h-screen bg-black text-white overflow-hidden animate-in fade-in duration-700 relative">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar - Committee List */}
-      <aside className="w-80 border-r border-white/10 bg-white/5 flex flex-col">
+      <aside className={`fixed inset-y-0 left-0 z-50 w-80 border-r border-white/10 bg-slate-900 flex flex-col transition-transform duration-300 transform lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center shadow-lg shadow-rose-500/20">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-black text-lg tracking-tight">GAnova<span className="text-rose-500">CRM</span></h1>
+              <h1 className="font-black text-lg tracking-tight">GA<span className="text-rose-500">CRM</span></h1>
               <p className="text-[10px] uppercase font-black text-rose-500 tracking-widest leading-none">Unified Committees</p>
             </div>
-            <button onClick={() => window.location.href = '/'} className="ml-auto p-2 text-textSecondary hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all">
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="lg:hidden ml-auto p-2 text-textSecondary hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <button onClick={() => window.location.href = '/'} className="hidden lg:block ml-auto p-2 text-textSecondary hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all">
               <Home className="w-5 h-5" />
             </button>
           </div>
@@ -253,11 +325,14 @@ export default function CRM() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           {committees
-            .filter(c => c.committeeName?.toLowerCase().includes(committeeSearch.toLowerCase()))
+            .filter(c => (c.committeeName || '').toLowerCase().includes(committeeSearch.toLowerCase()))
             .map((c) => (
             <button
               key={c.id}
-              onClick={() => setSelectedCommittee(c)}
+              onClick={() => {
+                setSelectedCommittee(c);
+                setIsSidebarOpen(false);
+              }}
               className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all group ${selectedCommittee?.id === c.id
                 ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02]'
                 : 'hover:bg-white/5 text-textSecondary hover:text-white'
@@ -296,31 +371,60 @@ export default function CRM() {
       {/* Main Content Area */}
       {selectedCommittee ? (
         <main className="flex-1 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-rose-500/10 via-transparent to-transparent">
-          <header className="p-8 pb-4 flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="px-3 py-1 bg-rose-500/10 text-rose-500 text-[9px] font-black uppercase tracking-widest rounded-full border border-rose-500/20">Operational Instance</div>
-                <span className="text-textSecondary text-[10px] font-mono tracking-tighter">REF: {selectedCommittee.id}</span>
+          <header className="p-4 md:p-8 pb-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="lg:hidden p-2 bg-white/5 rounded-xl border border-white/10 text-textSecondary"
+              >
+                <MenuIcon className="w-6 h-6" />
+              </button>
+              <div>
+                <div className="hidden sm:flex items-center gap-3 mb-2">
+                  <div className="px-3 py-1 bg-rose-500/10 text-rose-500 text-[9px] font-black uppercase tracking-widest rounded-full border border-rose-500/20">Operational Instance</div>
+                  <span className="text-textSecondary text-[10px] font-mono tracking-tighter">REF: {selectedCommittee.id}</span>
+                </div>
+                <h2 className="text-xl md:text-4xl font-black tracking-tight">{selectedCommittee.committeeName}</h2>
               </div>
-              <h2 className="text-4xl font-black tracking-tight">{selectedCommittee.committeeName}</h2>
             </div>
-            <div className="flex items-center gap-3">
-              <button className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 transition-all text-textSecondary hover:text-white">
-                <ExternalLink className="w-5 h-5" />
+            <div className="flex items-center gap-2 md:gap-3">
+              <button onClick={() => window.location.href = '/'} className="p-2 md:p-3 bg-white/5 hover:bg-white/10 rounded-xl md:rounded-2xl border border-white/10 transition-all text-textSecondary hover:text-white">
+                <Home className="w-4 h-4 md:w-5 h-5" />
               </button>
               {getPerm('tickets').canEdit && (
                 <button
                   onClick={() => setShowNewTicket(true)}
-                  className="px-6 py-3 bg-rose-500 text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
+                  className="px-4 md:px-6 py-2 md:py-3 bg-rose-500 text-white text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
                 >
-                  <Plus className="w-4 h-4" /> New Ticket
+                  <Plus className="w-3 h-3 md:w-4 md:h-4" /> <span className="hidden sm:inline">New Ticket</span>
                 </button>
               )}
             </div>
           </header>
 
-          <nav className="px-8 flex items-center gap-2 border-b border-white/10">
-            {TABS.map((tab) => (
+          <div className="px-4 md:px-8">
+            <MobileTabMenu
+              tabs={[
+                { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+                { id: 'tickets', label: 'Support Tickets', icon: Ticket },
+                { id: 'tasks', label: 'Operational Tasks', icon: CheckCircle2 },
+                { id: 'planner', label: 'Project Planner', icon: Calendar },
+                { id: 'documents', label: 'Resources', icon: FileText },
+              ]}
+              activeTab={activeTab}
+              onTabChange={(id) => setActiveTab(id as any)}
+              accentColor="rose-500"
+            />
+          </div>
+
+          <nav className="hidden md:flex px-8 items-center gap-2 border-b border-white/10">
+            {[
+              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'tickets', label: 'Support Tickets', icon: Ticket },
+              { id: 'tasks', label: 'Operational Tasks', icon: CheckCircle2 },
+              { id: 'planner', label: 'Project Planner', icon: Calendar },
+              { id: 'documents', label: 'Resources', icon: FileText },
+            ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
@@ -336,7 +440,7 @@ export default function CRM() {
             ))}
           </nav>
 
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
             {activeTab === 'overview' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -354,7 +458,7 @@ export default function CRM() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 gap-8">
                   <div className="space-y-4">
                     <h3 className="font-black text-sm uppercase tracking-widest text-textSecondary">Recent Communications</h3>
                     <div className="space-y-3">
@@ -373,52 +477,6 @@ export default function CRM() {
                         </div>
                       ))}
                       {tickets.length === 0 && <p className="text-xs text-textSecondary italic py-10 text-center glass-panel rounded-2xl border-white/5">No support history available.</p>}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-black text-sm uppercase tracking-widest text-textSecondary">Notifications</h3>
-                      <div className="flex gap-4">
-                        {getPerm('tickets').canEdit && (
-                          <button 
-                            onClick={() => {
-                              const title = prompt('Notification Title:');
-                              const message = prompt('Notification Message:');
-                              if (title && message) {
-                                fetch(`${API}/notifications/send`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-                                  body: JSON.stringify({ userId: user.id, title, message, type: 'manual' })
-                                }).then(() => fetchNotifications());
-                              }
-                            }}
-                            className="text-[10px] font-black uppercase text-emerald-500 hover:text-emerald-400"
-                          >
-                            Broadcast Alert
-                          </button>
-                        )}
-                        {notifications.length > 0 && (
-                          <button onClick={clearNotifications} className="text-[10px] font-black uppercase text-rose-500 hover:text-rose-400">Clear All</button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      {notifications.map((n) => (
-                        <div key={n.id} className="glass-panel p-4 rounded-2xl border border-white/10 flex gap-4 items-start bg-white/[0.01]">
-                          <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 flex-shrink-0 animate-pulse" />
-                          <div>
-                            <p className="text-xs font-bold text-white mb-1">{n.title}</p>
-                            <p className="text-[11px] text-textSecondary leading-relaxed">{n.message}</p>
-                            <p className="text-[9px] text-textSecondary mt-2 uppercase font-black">{new Date(n.createdAt).toLocaleTimeString()}</p>
-                          </div>
-                        </div>
-                      ))}
-                      {notifications.length === 0 && (
-                        <div className="p-8 text-center glass-panel rounded-2xl border-white/5 opacity-40">
-                          <p className="text-[10px] font-black uppercase tracking-widest">No new alerts</p>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -487,6 +545,9 @@ export default function CRM() {
                           {ticket.status !== 'resolved' && getPerm('tickets').canEdit && (
                             <button onClick={() => handleResolveTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors">Mark Resolved</button>
                           )}
+                          {getPerm('tickets').canDelete && (
+                            <button onClick={() => handleDeleteTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 transition-colors">Delete Ticket</button>
+                          )}
                           <button onClick={() => handleOpenConversation(ticket)} className="text-[10px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-400 transition-colors">Open Conversation</button>
                         </div>
                       </div>
@@ -513,7 +574,10 @@ export default function CRM() {
                 <div className="flex items-center justify-between mb-8">
                   <h3 className="text-2xl font-black tracking-tight">Institutional Assets</h3>
                   {getPerm('documents').canEdit && (
-                    <button className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all border border-white/10 shadow-xl">
+                    <button 
+                      onClick={() => setShowEntityForm('document')}
+                      className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all border border-white/10 shadow-xl"
+                    >
                       <Plus className="w-4 h-4" /> Secure Upload
                     </button>
                   )}
@@ -526,7 +590,7 @@ export default function CRM() {
                       </div>
                       <h4 className="font-bold text-sm mb-1 truncate group-hover:text-rose-500 transition-colors">{doc.title}</h4>
                       <p className="text-[9px] text-textSecondary font-black uppercase tracking-widest">{doc.docType || 'Document'} • {Math.round(doc.fileSize / 1024)} KB</p>
-                      <a href={`https://office.galabs.workers.dev/api/assets/view/${doc.r2Key}`} target="_blank" rel="noreferrer" className="mt-4 block text-center py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">View Asset</a>
+                      <a href={`/api/assets/download/${doc.r2Key}?token=${token()}`} target="_blank" rel="noreferrer" className="mt-4 block text-center py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">View Asset</a>
                     </div>
                   ))}
                   {documents.length === 0 && (
@@ -541,14 +605,17 @@ export default function CRM() {
                 <div className="flex items-center justify-between mb-8">
                   <h3 className="text-2xl font-black tracking-tight">Committee Planner</h3>
                   {getPerm('planner').canEdit && (
-                    <button className="px-6 py-3 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20">
+                    <button 
+                      onClick={() => setShowEntityForm('planner')}
+                      className="px-6 py-3 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20"
+                    >
                       New Event
                     </button>
                   )}
                 </div>
                 <div className="space-y-4">
                   {plannerEvents.map(evt => (
-                    <div key={evt.id} className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center justify-between group hover:border-rose-500/30 transition-all">
+                    <div key={evt.id} className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center justify-between group hover:border-rose-500/30 transition-all cursor-pointer" onClick={() => setEditingPlanner(evt)}>
                       <div className="flex items-center gap-6">
                         <div className="w-14 h-14 rounded-2xl bg-white/5 flex flex-col items-center justify-center border border-white/10">
                           <span className="text-[9px] font-black uppercase text-rose-500">{new Date(evt.startDate).toLocaleString('default', { month: 'short' })}</span>
@@ -562,7 +629,14 @@ export default function CRM() {
                           </div>
                         </div>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-textSecondary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      <div className="flex items-center gap-2">
+                        {getPerm('planner').canDelete && (
+                          <button onClick={(e) => { e.stopPropagation(); handleDeletePlanner(evt.id); }} className="p-2 text-red-500 hover:bg-red-500/20 rounded-xl transition-all opacity-0 group-hover:opacity-100">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                        <ChevronRight className="w-5 h-5 text-textSecondary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      </div>
                     </div>
                   ))}
                   {plannerEvents.length === 0 && (
@@ -664,7 +738,17 @@ export default function CRM() {
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
                 <h2 className="text-xl font-black uppercase tracking-tight">{selectedTicket.title}</h2>
-                <p className="text-[10px] text-textSecondary font-black uppercase tracking-widest mt-1">Ticket Conversation #{selectedTicket.id}</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <p className="text-[10px] text-textSecondary font-black uppercase tracking-widest">Ticket Conversation #{selectedTicket.id}</p>
+                  {getPerm('tickets').canDelete && (
+                    <button 
+                      onClick={() => handleDeleteTicket(selectedTicket.id)}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" /> Delete
+                    </button>
+                  )}
+                </div>
               </div>
               <button onClick={() => setShowConversation(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
             </div>
@@ -714,6 +798,37 @@ export default function CRM() {
           </div>
         </div>
       )}
+
+      {/* Entity Forms */}
+      {(showEntityForm === 'planner' || editingPlanner) && (
+        <EntityForm
+          title={editingPlanner ? 'Edit Milestone' : 'Schedule New Milestone'}
+          initialData={editingPlanner || {}}
+          fields={[
+            { key: 'title', label: 'Event Title', type: 'text', required: true },
+            { key: 'description', label: 'Description', type: 'textarea' },
+            { key: 'eventType', label: 'Event Type', type: 'select', options: [{value: 'meeting', label: 'Meeting'}, {value: 'deadline', label: 'Deadline'}, {value: 'review', label: 'Review'}], required: true },
+            { key: 'startDate', label: 'Date', type: 'date', required: true }
+          ]}
+          onClose={() => { setShowEntityForm(null); setEditingPlanner(null); }}
+          onSubmit={handleEntitySubmit}
+        />
+      )}
+
+      {showEntityForm === 'document' && (
+        <EntityForm
+          title="Upload Institutional Asset"
+          fields={[
+            { key: 'title', label: 'Document Title', type: 'text', required: true },
+            { key: 'docType', label: 'Document Type', type: 'select', options: [{value: 'contract', label: 'Contract'}, {value: 'report', label: 'Report'}, {value: 'presentation', label: 'Presentation'}, {value: 'other', label: 'Other'}], required: true },
+            { key: 'r2Key', label: 'File', type: 'file', required: true }
+          ]}
+          onClose={() => setShowEntityForm(null)}
+          onSubmit={handleEntitySubmit}
+        />
+      )}
+
+      <NotificationCenter currentApp="crm" />
     </div>
   );
 }

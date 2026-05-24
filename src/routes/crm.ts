@@ -147,9 +147,14 @@ crmRouter.delete('/tickets/:id', requireFeatureAccess('crm', 'tickets', 'delete'
     const db = getDb(c.env);
     const user = c.get('user');
     const id = c.req.param('id');
-    await db.update(schema.crmTickets).set({ status: 'closed', updatedAt: new Date() }).where(eq(schema.crmTickets.id, id!));
+    
+    // Delete child notes first
+    await db.delete(schema.crmTicketNotes).where(eq(schema.crmTicketNotes.ticketId, id!));
+    // Delete the ticket
+    await db.delete(schema.crmTickets).where(eq(schema.crmTickets.id, id!));
+    
     await logAudit(c.env, user.id, 'DELETE', 'crm_tickets', id!);
-    return ok(c, { id, status: 'closed' });
+    return ok(c, { id, deleted: true });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -201,6 +206,7 @@ crmRouter.patch('/documents/:id', requireFeatureAccess('crm', 'documents', 'edit
     const user = c.get('user');
     const id = c.req.param('id');
     const body = await c.req.json();
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.crmDocuments).set(body).where(eq(schema.crmDocuments.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'crm_documents', id!, body);
     return ok(c, { id });
@@ -256,6 +262,7 @@ crmRouter.patch('/planner/:id', requireFeatureAccess('crm', 'planner', 'edit'), 
     const user = c.get('user');
     const id = c.req.param('id');
     const body = await c.req.json();
+    delete body.id; delete body.createdAt; delete body.updatedAt;
     await db.update(schema.crmPlannerEvents).set({ ...body, updatedAt: new Date() }).where(eq(schema.crmPlannerEvents.id, id!));
     await logAudit(c.env, user.id, 'UPDATE', 'crm_planner_events', id!, body);
     return ok(c, { id });

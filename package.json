@@ -25,6 +25,8 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "react-router-dom": "^7.15.0"
+    "nova-agent-framework": "^1.1.3",
+    "react-router-dom": "^7.15.0",
+    "zod": "^3.25.76"
   }
 }
