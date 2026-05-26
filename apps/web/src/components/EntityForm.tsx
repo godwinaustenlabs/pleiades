@@ -9,6 +9,7 @@ export interface Field {
   required?: boolean;
   initialValue?: any;
   action?: { label: string; onClick: () => void };
+  pathPrefix?: string;
 }
 
 function StagesEditor({ value, onChange }: { value: any, onChange: (val: string) => void }) {
@@ -145,12 +146,13 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
     }
   };
 
-  const handleFileUpload = async (key: string, file: File) => {
+  const handleFileUpload = async (key: string, file: File, pathPrefix?: string) => {
     setUploading(key);
     setError('');
     try {
       const token = localStorage.getItem('ga_token') || '';
-      const r2Key = `${title.toLowerCase().replace(/\s+/g, '_')}/${Date.now()}_${file.name}`;
+      const prefix = pathPrefix || title.toLowerCase().replace(/\s+/g, '_');
+      const r2Key = `${prefix}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const res = await fetch(`/api/assets/upload/${r2Key}`, {
         method: 'PUT',
         headers: {
@@ -254,7 +256,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                       <div className="relative group">
                         <input
                           type="file"
-                          onChange={e => e.target.files?.[0] && handleFileUpload(field.key, e.target.files[0])}
+                          onChange={e => e.target.files?.[0] && handleFileUpload(field.key, e.target.files[0], field.pathPrefix)}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                         />
                         <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-white/10 rounded-2xl group-hover:border-primary/50 group-hover:bg-primary/5 transition-all">
