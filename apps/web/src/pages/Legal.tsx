@@ -83,7 +83,7 @@ function Legal() {
   const fetchRelations = () => {
     const fetchWithAuth = (url: string, setter: any) => {
       fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
-        .then(r => r.json()).then(d => setter(d.data || [])).catch(()=>{});
+        .then(r => r.json()).then(d => setter(d.data || [])).catch(() => { });
     };
     fetchWithAuth(`${API}/core/committees`, setCommittees);
     fetchWithAuth(`${API}/core/clients`, setClients);
@@ -140,7 +140,7 @@ function Legal() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Legal Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
-            Confidential counsel access is strictly gated by legal compliance. 
+            Confidential counsel access is strictly gated by legal compliance.
             Contact the General Counsel to provision your granular feature access.
           </p>
           <button onClick={() => window.location.href = '/'} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-full font-bold text-sm transition-all border border-white/10">
@@ -154,7 +154,7 @@ function Legal() {
   const handleEntitySubmit = async (formData: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
     const url = editingRecord ? `${API}/legal/${tab}/${editingRecord.id}` : `${API}/legal/${tab}`;
-    
+
     // Ensure boolean fields are correctly typed
     const cleanData = { ...formData };
     if (tab === 'agreements' && typeof cleanData.autoRenewal === 'string') {
@@ -195,7 +195,7 @@ function Legal() {
             <Scale className="w-5 h-5 md:w-6 h-6 text-amber-400" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-amber-400">LEGAL</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-amber-400">LEGAL</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Corporate Compliance</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-amber-400 hover:bg-amber-400/10 rounded-xl transition-all">
@@ -315,9 +315,9 @@ function Legal() {
             onDelete={async (r) => {
               if (!confirm(`Irreversible deletion of legal record. Confirm? This action cannot be undone.`)) return;
               try {
-                const res = await fetch(`${API}/legal/${tab}/${r.id}`, { 
-                  method: 'DELETE', 
-                  headers: { Authorization: `Bearer ${token()}` } 
+                const res = await fetch(`${API}/legal/${tab}/${r.id}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token()}` }
                 });
                 if (res.status === 401) { handleLogout(); return; }
                 if (!res.ok) {
@@ -346,15 +346,19 @@ function Legal() {
           fields={
             tab === 'agreements' ? [
               { key: 'agreementName', label: 'Agreement Title', type: 'text' as const, required: true },
-              { key: 'contractType', label: 'Contract Type', type: 'select' as const, options: [
-                { value: 'nda', label: 'NDA' }, { value: 'service', label: 'Service Agreement' },
-                { value: 'employment', label: 'Employment' }, { value: 'vendor', label: 'Vendor Contract' },
-                { value: 'partnership', label: 'Partnership' }, { value: 'mou', label: 'MOU' },
-              ]},
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'draft', label: 'Draft' }, { value: 'pending_review', label: 'Pending Review' },
-                { value: 'active', label: 'Active' }, { value: 'expired', label: 'Expired' }, { value: 'terminated', label: 'Terminated' },
-              ], required: true},
+              {
+                key: 'contractType', label: 'Contract Type', type: 'select' as const, options: [
+                  { value: 'nda', label: 'NDA' }, { value: 'service', label: 'Service Agreement' },
+                  { value: 'employment', label: 'Employment' }, { value: 'vendor', label: 'Vendor Contract' },
+                  { value: 'partnership', label: 'Partnership' }, { value: 'mou', label: 'MOU' },
+                ]
+              },
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'draft', label: 'Draft' }, { value: 'pending_review', label: 'Pending Review' },
+                  { value: 'active', label: 'Active' }, { value: 'expired', label: 'Expired' }, { value: 'terminated', label: 'Terminated' },
+                ], required: true
+              },
               { key: 'effectiveDate', label: 'Effective Date', type: 'date' as const },
               { key: 'expiryDate', label: 'Expiry Date', type: 'date' as const },
               { key: 'autoRenewal', label: 'Auto Renewal', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
@@ -376,27 +380,35 @@ function Legal() {
               { key: 'obligationName', label: 'Obligation Name', type: 'text' as const, required: true },
               { key: 'appliesTo', label: 'Applies To (Dept/Role)', type: 'text' as const },
               { key: 'dueDate', label: 'Due Date', type: 'date' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' },
-                { value: 'completed', label: 'Completed' }, { value: 'overdue', label: 'Overdue' },
-              ], required: true},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' },
+                  { value: 'completed', label: 'Completed' }, { value: 'overdue', label: 'Overdue' },
+                ], required: true
+              },
               { key: 'jurisdiction', label: 'Jurisdiction', type: 'text' as const },
               { key: 'assignedOfficer', label: 'Assigned Officer', type: 'text' as const },
               { key: 'supportingDoc', label: 'Supporting Document', type: 'file' as const },
               { key: 'agreementId', label: 'Linked Agreement', type: 'select' as const, options: agreements.map(a => ({ value: a.id, label: a.agreementName })) },
             ] : tab === 'requests' ? [
               { key: 'requestTitle', label: 'Request Title', type: 'text' as const, required: true },
-              { key: 'category', label: 'Category', type: 'select' as const, options: [
-                { value: 'contract_review', label: 'Contract Review' }, { value: 'compliance', label: 'Compliance' },
-                { value: 'dispute', label: 'Dispute' }, { value: 'advice', label: 'Legal Advice' }, { value: 'filing', label: 'Filing' },
-              ]},
-              { key: 'priority', label: 'Priority', type: 'select' as const, options: [
-                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
-              ]},
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'pending', label: 'Pending' }, { value: 'in_progress', label: 'In Progress' },
-                { value: 'resolved', label: 'Resolved' }, { value: 'closed', label: 'Closed' },
-              ]},
+              {
+                key: 'category', label: 'Category', type: 'select' as const, options: [
+                  { value: 'contract_review', label: 'Contract Review' }, { value: 'compliance', label: 'Compliance' },
+                  { value: 'dispute', label: 'Dispute' }, { value: 'advice', label: 'Legal Advice' }, { value: 'filing', label: 'Filing' },
+                ]
+              },
+              {
+                key: 'priority', label: 'Priority', type: 'select' as const, options: [
+                  { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
+                ]
+              },
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'pending', label: 'Pending' }, { value: 'in_progress', label: 'In Progress' },
+                  { value: 'resolved', label: 'Resolved' }, { value: 'closed', label: 'Closed' },
+                ]
+              },
               { key: 'assignedMember', label: 'Assigned Member', type: 'text' as const },
               { key: 'dateSubmitted', label: 'Date Submitted', type: 'date' as const },
               { key: 'resolutionNotes', label: 'Resolution Notes', type: 'textarea' as const },
@@ -406,46 +418,58 @@ function Legal() {
             ] : tab === 'sops' ? [
               { key: 'sopTitle', label: 'SOP Title', type: 'text' as const, required: true },
               { key: 'applicableDept', label: 'Applicable Department', type: 'text' as const },
-              { key: 'policyType', label: 'Policy Type', type: 'select' as const, options: [
-                { value: 'operational', label: 'Operational' }, { value: 'hr', label: 'HR' },
-                { value: 'compliance', label: 'Compliance' }, { value: 'financial', label: 'Financial' }, { value: 'it', label: 'IT/Security' },
-              ]},
+              {
+                key: 'policyType', label: 'Policy Type', type: 'select' as const, options: [
+                  { value: 'operational', label: 'Operational' }, { value: 'hr', label: 'HR' },
+                  { value: 'compliance', label: 'Compliance' }, { value: 'financial', label: 'Financial' }, { value: 'it', label: 'IT/Security' },
+                ]
+              },
               { key: 'effectiveDate', label: 'Effective Date', type: 'date' as const },
               { key: 'lastReviewed', label: 'Last Reviewed', type: 'date' as const },
               { key: 'owner', label: 'SOP Owner', type: 'text' as const },
-              { key: 'approvalStatus', label: 'Approval Status', type: 'select' as const, options: [
-                { value: 'draft', label: 'Draft' }, { value: 'under_review', label: 'Under Review' },
-                { value: 'approved', label: 'Approved' }, { value: 'deprecated', label: 'Deprecated' },
-              ]},
+              {
+                key: 'approvalStatus', label: 'Approval Status', type: 'select' as const, options: [
+                  { value: 'draft', label: 'Draft' }, { value: 'under_review', label: 'Under Review' },
+                  { value: 'approved', label: 'Approved' }, { value: 'deprecated', label: 'Deprecated' },
+                ]
+              },
               { key: 'docAttachment', label: 'SOP Document', type: 'file' as const },
             ] : tab === 'ip' ? [
               { key: 'assetName', label: 'Asset Name', type: 'text' as const, required: true },
-              { key: 'ipType', label: 'IP Type', type: 'select' as const, options: [
-                { value: 'trademark', label: 'Trademark' }, { value: 'patent', label: 'Patent' },
-                { value: 'copyright', label: 'Copyright' }, { value: 'trade_secret', label: 'Trade Secret' }, { value: 'design', label: 'Industrial Design' },
-              ]},
+              {
+                key: 'ipType', label: 'IP Type', type: 'select' as const, options: [
+                  { value: 'trademark', label: 'Trademark' }, { value: 'patent', label: 'Patent' },
+                  { value: 'copyright', label: 'Copyright' }, { value: 'trade_secret', label: 'Trade Secret' }, { value: 'design', label: 'Industrial Design' },
+                ]
+              },
               { key: 'registrationNumber', label: 'Registration Number', type: 'text' as const },
               { key: 'registeredOwner', label: 'Registered Owner', type: 'text' as const },
               { key: 'jurisdiction', label: 'Jurisdiction', type: 'text' as const },
               { key: 'filingDate', label: 'Filing Date', type: 'date' as const },
               { key: 'expiryDate', label: 'Expiry Date', type: 'date' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'pending', label: 'Pending' }, { value: 'active', label: 'Active' },
-                { value: 'opposed', label: 'Opposed' }, { value: 'expired', label: 'Expired' }, { value: 'abandoned', label: 'Abandoned' },
-              ], required: true},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'pending', label: 'Pending' }, { value: 'active', label: 'Active' },
+                  { value: 'opposed', label: 'Opposed' }, { value: 'expired', label: 'Expired' }, { value: 'abandoned', label: 'Abandoned' },
+                ], required: true
+              },
               { key: 'partyId', label: 'Owning Party', type: 'select' as const, options: parties.map(p => ({ value: p.id, label: p.entityName })), action: { label: '+ New Party', onClick: () => setShowNestedForm('party') } },
               { key: 'supportingDocs', label: 'Supporting Documents', type: 'file' as const },
             ] : [
               { key: 'entityName', label: 'Entity Name', type: 'text' as const, required: true },
-              { key: 'type', label: 'Party Type', type: 'select' as const, options: [
-                { value: 'individual', label: 'Individual' }, { value: 'company', label: 'Company' },
-                { value: 'government', label: 'Government' }, { value: 'ngo', label: 'NGO' },
-              ]},
+              {
+                key: 'type', label: 'Party Type', type: 'select' as const, options: [
+                  { value: 'individual', label: 'Individual' }, { value: 'company', label: 'Company' },
+                  { value: 'government', label: 'Government' }, { value: 'ngo', label: 'NGO' },
+                ]
+              },
               { key: 'contactInformation', label: 'Contact Information', type: 'textarea' as const },
               { key: 'jurisdiction', label: 'Jurisdiction', type: 'text' as const },
-              { key: 'riskStatus', label: 'Risk Status', type: 'select' as const, options: [
-                { value: 'low', label: 'Low Risk' }, { value: 'medium', label: 'Medium Risk' }, { value: 'high', label: 'High Risk' },
-              ]},
+              {
+                key: 'riskStatus', label: 'Risk Status', type: 'select' as const, options: [
+                  { value: 'low', label: 'Low Risk' }, { value: 'medium', label: 'Medium Risk' }, { value: 'high', label: 'High Risk' },
+                ]
+              },
               { key: 'partyPhoto', label: 'Party Logo/Photo', type: 'file' as const },
             ]
           }
@@ -460,14 +484,18 @@ function Legal() {
           title="New Legal Party"
           fields={[
             { key: 'entityName', label: 'Entity Name', type: 'text' as const, required: true },
-            { key: 'type', label: 'Type', type: 'select' as const, options: [
-              { value: 'vendor', label: 'Vendor' }, { value: 'client', label: 'Client' },
-              { value: 'regulator', label: 'Regulator' }, { value: 'partner', label: 'Partner' },
-            ]},
+            {
+              key: 'type', label: 'Type', type: 'select' as const, options: [
+                { value: 'vendor', label: 'Vendor' }, { value: 'client', label: 'Client' },
+                { value: 'regulator', label: 'Regulator' }, { value: 'partner', label: 'Partner' },
+              ]
+            },
             { key: 'contactInformation', label: 'Contact Info', type: 'textarea' as const },
-            { key: 'riskStatus', label: 'Risk Status', type: 'select' as const, options: [
-              { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' },
-            ]},
+            {
+              key: 'riskStatus', label: 'Risk Status', type: 'select' as const, options: [
+                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' },
+              ]
+            },
             { key: 'jurisdiction', label: 'Jurisdiction', type: 'text' as const },
           ]}
           onClose={() => setShowNestedForm(null)}

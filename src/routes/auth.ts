@@ -239,12 +239,30 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
     const user = c.get('user')!;
     const body = await c.req.parseBody();
     const file = body.file as File;
+    const targetEmployeeId = body.employeeId as string || user.employeeId;
 
     if (!file) return badRequest(c, 'No file uploaded');
     if (!c.env.CRM_BUCKET) return badRequest(c, 'Storage bucket not configured');
 
+    // If targeting someone else, must be superadmin or have HR edit permission
+    if (targetEmployeeId !== user.employeeId) {
+      if (!user.isSuperadmin) {
+        // Check for HR app access if not superadmin
+        const db = getDb(c.env);
+        const access = await db.query.userAppAccess.findFirst({
+          where: and(
+            eq(schema.userAppAccess.userId, user.id),
+            eq(schema.userAppAccess.appName, 'hr')
+          )
+        });
+        if (!access || (access.accessLevel !== 'edit' && access.accessLevel !== 'admin' && access.accessLevel !== 'owner')) {
+          return forbidden(c, 'You do not have permission to update other employee photos');
+        }
+      }
+    }
+
     const extension = file.name.split('.').pop() || 'png';
-    const key = `avatars/${user.id}_${Date.now()}.${extension}`;
+    const key = `avatars/${targetEmployeeId || user.id}_${Date.now()}.${extension}`;
     
     await c.env.CRM_BUCKET.put(key, await file.arrayBuffer(), {
       httpMetadata: { contentType: file.type }
@@ -253,11 +271,11 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
     const avatarUrl = `/api/assets/download/${key}`;
     const db = getDb(c.env);
     
-    // Sync with employee record if linked
-    if (user.employeeId) {
+    // Sync with employee record
+    if (targetEmployeeId) {
       await db.update(schema.employees)
         .set({ profilePhoto: avatarUrl, updatedAt: new Date() })
-        .where(eq(schema.employees.id, user.employeeId));
+        .where(eq(schema.employees.id, targetEmployeeId));
     }
 
     return ok(c, { avatarUrl });

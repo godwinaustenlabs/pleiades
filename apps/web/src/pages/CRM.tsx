@@ -5,6 +5,7 @@ import {
   ChevronRight, Calendar, FileText, LayoutDashboard,
   Shield, ExternalLink, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon
 } from 'lucide-react';
+import AssetPreviewModal from '../components/AssetPreviewModal';
 import TaskBoard from '../components/TaskBoard';
 import EntityForm from '../components/EntityForm';
 import NotificationCenter from '../components/NotificationCenter';
@@ -44,6 +45,8 @@ export default function CRM() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [showEntityForm, setShowEntityForm] = useState<'planner' | 'document' | null>(null);
   const [editingPlanner, setEditingPlanner] = useState<any>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<'image' | 'pdf'>('image');
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
@@ -181,6 +184,19 @@ export default function CRM() {
       });
       if (res.ok) {
         fetchPlanner();
+      }
+    } catch (err) { }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this asset?')) return;
+    try {
+      const res = await fetch(`${API}/crm/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        setDocuments(prev => prev.filter(d => d.id !== docId));
       }
     } catch (err) { }
   };
@@ -482,6 +498,14 @@ export default function CRM() {
                 </div>
               </div>
             )}
+            
+            {activeTab === 'documents' && (
+              <AssetPreviewModal
+                url={previewUrl}
+                type={previewType}
+                onClose={() => setPreviewUrl(null)}
+              />
+            )}
 
             {activeTab === 'tickets' && (
               <div className="animate-in fade-in slide-in-from-right-4 duration-500">
@@ -562,6 +586,14 @@ export default function CRM() {
                 </div>
               </div>
             )}
+            
+            {activeTab === 'documents' && (
+              <AssetPreviewModal
+                url={previewUrl}
+                type={previewType}
+                onClose={() => setPreviewUrl(null)}
+              />
+            )}
 
             {activeTab === 'tasks' && (
               <div className="animate-in fade-in zoom-in-95 duration-500">
@@ -590,7 +622,26 @@ export default function CRM() {
                       </div>
                       <h4 className="font-bold text-sm mb-1 truncate group-hover:text-rose-500 transition-colors">{doc.title}</h4>
                       <p className="text-[9px] text-textSecondary font-black uppercase tracking-widest">{doc.docType || 'Document'} • {Math.round(doc.fileSize / 1024)} KB</p>
-                      <a href={`/api/assets/download/${doc.r2Key}?token=${token()}`} target="_blank" rel="noreferrer" className="mt-4 block text-center py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">View Asset</a>
+                      <button 
+                        onClick={() => {
+                          const baseUrl = doc.r2Key.startsWith('/api/assets/download/') ? '' : '/api/assets/download/';
+                          const url = `${baseUrl}${doc.r2Key}?token=${token()}`;
+                          const isPdf = /\.(pdf)(\?|$)/i.test(doc.r2Key);
+                          setPreviewType(isPdf ? 'pdf' : 'image');
+                          setPreviewUrl(url);
+                        }}
+                        className="mt-4 block w-full text-center py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all"
+                      >
+                        View Asset
+                      </button>
+                      {getPerm('documents').canDelete && (
+                        <button 
+                          onClick={() => handleDeleteDocument(doc.id)}
+                          className="mt-2 block w-full text-center py-2 bg-red-500/10 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                        >
+                          Delete Asset
+                        </button>
+                      )}
                     </div>
                   ))}
                   {documents.length === 0 && (
@@ -598,6 +649,14 @@ export default function CRM() {
                   )}
                 </div>
               </div>
+            )}
+            
+            {activeTab === 'documents' && (
+              <AssetPreviewModal
+                url={previewUrl}
+                type={previewType}
+                onClose={() => setPreviewUrl(null)}
+              />
             )}
 
             {activeTab === 'planner' && (
@@ -647,6 +706,14 @@ export default function CRM() {
                   )}
                 </div>
               </div>
+            )}
+            
+            {activeTab === 'documents' && (
+              <AssetPreviewModal
+                url={previewUrl}
+                type={previewType}
+                onClose={() => setPreviewUrl(null)}
+              />
             )}
           </div>
         </main>

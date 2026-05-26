@@ -85,7 +85,7 @@ function Finance() {
   const fetchRelations = () => {
     const fetchWithAuth = (url: string, setter: any) => {
       fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
-        .then(r => r.json()).then(d => setter(d.data || [])).catch(()=>{});
+        .then(r => r.json()).then(d => setter(d.data || [])).catch(() => { });
     };
     fetchWithAuth(`${API}/finance/accounts`, setAccounts);
     fetchWithAuth(`${API}/finance/channels`, setChannels);
@@ -141,7 +141,7 @@ function Finance() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Finance Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
-            Financial ledger access requires explicit CRUD provisioning. 
+            Financial ledger access requires explicit CRUD provisioning.
             Please contact the Controller to request feature permissions.
           </p>
           <button onClick={() => window.location.href = '/'} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-full font-bold text-sm transition-all border border-white/10">
@@ -178,7 +178,7 @@ function Finance() {
             <Wallet className="w-5 h-5 md:w-6 h-6 text-emerald-400" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-emerald-400">FINANCE</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-emerald-400">FINANCE</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Controllership</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
@@ -301,10 +301,12 @@ function Finance() {
               { key: 'name', label: 'Transaction Name', type: 'text' as const, required: true },
               { key: 'description', label: 'Description', type: 'textarea' as const },
               { key: 'amount', label: 'Amount ($)', type: 'number' as const, required: true },
-              { key: 'transactionType', label: 'Type', type: 'select' as const, options: [
-                { value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' },
-                { value: 'transfer', label: 'Transfer' }, { value: 'refund', label: 'Refund' },
-              ], required: true},
+              {
+                key: 'transactionType', label: 'Type', type: 'select' as const, options: [
+                  { value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' },
+                  { value: 'transfer', label: 'Transfer' }, { value: 'refund', label: 'Refund' },
+                ], required: true
+              },
               { key: 'transactionDate', label: 'Transaction Date', type: 'date' as const },
               { key: 'approved', label: 'Approved', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
               { key: 'createdBy', label: 'Created By', type: 'text' as const },
@@ -316,19 +318,23 @@ function Finance() {
               { key: 'fundRequestId', label: 'Fund Request', type: 'select' as const, options: fundRequests.map(f => ({ value: f.id, label: f.requestName })), action: { label: '+ New Request', onClick: () => setShowNestedForm('fund-request') } },
             ] : tab === 'invoices' ? [
               { key: 'invoiceNumber', label: 'Invoice Number', type: 'text' as const, required: true },
-              { key: 'type', label: 'Invoice Type', type: 'select' as const, options: [
-                { value: 'standard', label: 'Standard' }, { value: 'proforma', label: 'Pro Forma' },
-                { value: 'credit_note', label: 'Credit Note' }, { value: 'debit_note', label: 'Debit Note' },
-              ]},
+              {
+                key: 'type', label: 'Invoice Type', type: 'select' as const, options: [
+                  { value: 'standard', label: 'Standard' }, { value: 'proforma', label: 'Pro Forma' },
+                  { value: 'credit_note', label: 'Credit Note' }, { value: 'debit_note', label: 'Debit Note' },
+                ]
+              },
               { key: 'vendorName', label: 'Vendor / Billed To', type: 'text' as const },
               { key: 'description', label: 'Description', type: 'textarea' as const },
               { key: 'amount', label: 'Total Amount ($)', type: 'number' as const, required: true },
               { key: 'issueDate', label: 'Issue Date', type: 'date' as const },
               { key: 'dueDate', label: 'Due Date', type: 'date' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'draft', label: 'Draft' }, { value: 'pending', label: 'Pending' },
-                { value: 'paid', label: 'Paid' }, { value: 'overdue', label: 'Overdue' }, { value: 'cancelled', label: 'Cancelled' },
-              ], required: true},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'draft', label: 'Draft' }, { value: 'pending', label: 'Pending' },
+                  { value: 'paid', label: 'Paid' }, { value: 'overdue', label: 'Overdue' }, { value: 'cancelled', label: 'Cancelled' },
+                ], required: true
+              },
               { key: 'clientId', label: 'Client', type: 'select' as const, options: clients.map(c => ({ value: c.id, label: c.clientName })) },
               { key: 'committeeId', label: 'Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
               { key: 'fundRequestId', label: 'Fund Request', type: 'select' as const, options: fundRequests.map(f => ({ value: f.id, label: f.requestName })), action: { label: '+ New Request', onClick: () => setShowNestedForm('fund-request') } },
@@ -338,43 +344,55 @@ function Finance() {
               { key: 'requestDate', label: 'Request Date', type: 'date' as const },
               { key: 'amountRequested', label: 'Amount Requested ($)', type: 'number' as const, required: true },
               { key: 'purpose', label: 'Detailed Purpose', type: 'textarea' as const },
-              { key: 'approvalStatus', label: 'Approval Status', type: 'select' as const, options: [
-                { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' },
-                { value: 'rejected', label: 'Rejected' }, { value: 'on_hold', label: 'On Hold' },
-              ]},
+              {
+                key: 'approvalStatus', label: 'Approval Status', type: 'select' as const, options: [
+                  { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' },
+                  { value: 'rejected', label: 'Rejected' }, { value: 'on_hold', label: 'On Hold' },
+                ]
+              },
               { key: 'approvedBy', label: 'Approved By', type: 'text' as const },
               { key: 'approvalDate', label: 'Approval Date', type: 'date' as const },
-              { key: 'disbursementStatus', label: 'Disbursement Status', type: 'select' as const, options: [
-                { value: 'pending', label: 'Pending' }, { value: 'partial', label: 'Partial' },
-                { value: 'disbursed', label: 'Disbursed' }, { value: 'cancelled', label: 'Cancelled' },
-              ]},
+              {
+                key: 'disbursementStatus', label: 'Disbursement Status', type: 'select' as const, options: [
+                  { value: 'pending', label: 'Pending' }, { value: 'partial', label: 'Partial' },
+                  { value: 'disbursed', label: 'Disbursed' }, { value: 'cancelled', label: 'Cancelled' },
+                ]
+              },
               { key: 'disbursementDate', label: 'Disbursement Date', type: 'date' as const },
               { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
             ] : tab === 'accounts' ? [
               { key: 'accountName', label: 'Account Name', type: 'text' as const, required: true },
-              { key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
-                { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
-                { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
-                { value: 'investment', label: 'Investment' },
-              ]},
+              {
+                key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
+                  { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
+                  { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
+                  { value: 'investment', label: 'Investment' },
+                ]
+              },
               { key: 'bankName', label: 'Bank Name', type: 'text' as const },
               { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
               { key: 'openingBalance', label: 'Opening Balance ($)', type: 'number' as const },
               { key: 'currentBalance', label: 'Current Balance ($)', type: 'number' as const },
-              { key: 'currency', label: 'Currency', type: 'select' as const, options: [
-                { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' },
-                { value: 'GBP', label: 'GBP' }, { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
-              ]},
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'closed', label: 'Closed' },
-              ]},
+              {
+                key: 'currency', label: 'Currency', type: 'select' as const, options: [
+                  { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' },
+                  { value: 'GBP', label: 'GBP' }, { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
+                ]
+              },
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'closed', label: 'Closed' },
+                ]
+              },
             ] : [
               { key: 'channelName', label: 'Channel Name', type: 'text' as const, required: true },
-              { key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
-                { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
-                { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
-                { value: 'mobile_money', label: 'Mobile Money' }, { value: 'crypto', label: 'Crypto' },
-              ]},
+              {
+                key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
+                  { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
+                  { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
+                  { value: 'mobile_money', label: 'Mobile Money' }, { value: 'crypto', label: 'Crypto' },
+                ]
+              },
               { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
               { key: 'lastUsedDate', label: 'Last Used Date', type: 'date' as const },
             ]
@@ -393,7 +411,7 @@ function Finance() {
             { key: 'clientId', label: 'Client', type: 'select', options: clients.map(c => ({ value: c.id, label: c.clientName })) },
             { key: 'amount', label: 'Total Amount', type: 'number', required: true },
             { key: 'status', label: 'Status', type: 'select', options: [{ value: 'pending', label: 'Pending' }, { value: 'paid', label: 'Paid' }], required: true },
-            { key: 'invoiceDoc', label: 'Invoice Document', type: 'file' },
+            { key: 'invoiceDoc', label: 'Invoice Document', type: 'file', pathPrefix: 'invoices' },
           ]}
           onClose={() => setShowSecondaryForm(false)}
           onSubmit={async (formData) => {
@@ -415,20 +433,26 @@ function Finance() {
           title="New Account"
           fields={[
             { key: 'accountName', label: 'Account Name', type: 'text' as const, required: true },
-            { key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
-              { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
-              { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
-            ]},
+            {
+              key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
+                { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
+                { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
+              ]
+            },
             { key: 'bankName', label: 'Bank Name', type: 'text' as const },
             { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
             { key: 'openingBalance', label: 'Opening Balance ($)', type: 'number' as const },
-            { key: 'currency', label: 'Currency', type: 'select' as const, options: [
-              { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' }, { value: 'GBP', label: 'GBP' },
-              { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
-            ]},
-            { key: 'status', label: 'Status', type: 'select' as const, options: [
-              { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' },
-            ]},
+            {
+              key: 'currency', label: 'Currency', type: 'select' as const, options: [
+                { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' }, { value: 'GBP', label: 'GBP' },
+                { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
+              ]
+            },
+            {
+              key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' },
+              ]
+            },
           ]}
           onClose={() => setShowNestedForm(null)}
           onSubmit={async (formData) => {
@@ -449,11 +473,13 @@ function Finance() {
           title="New Channel"
           fields={[
             { key: 'channelName', label: 'Channel Name', type: 'text' as const, required: true },
-            { key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
-              { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
-              { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
-              { value: 'mobile_money', label: 'Mobile Money' },
-            ]},
+            {
+              key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
+                { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
+                { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
+                { value: 'mobile_money', label: 'Mobile Money' },
+              ]
+            },
             { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
           ]}
           onClose={() => setShowNestedForm(null)}
@@ -477,9 +503,11 @@ function Finance() {
             { key: 'requestName', label: 'Request Name', type: 'text' as const, required: true },
             { key: 'amountRequested', label: 'Amount ($)', type: 'number' as const, required: true },
             { key: 'purpose', label: 'Purpose', type: 'textarea' as const },
-            { key: 'approvalStatus', label: 'Status', type: 'select' as const, options: [
-              { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' },
-            ]},
+            {
+              key: 'approvalStatus', label: 'Status', type: 'select' as const, options: [
+                { value: 'pending', label: 'Pending' }, { value: 'approved', label: 'Approved' },
+              ]
+            },
             { key: 'committeeId', label: 'Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
           ]}
           onClose={() => setShowNestedForm(null)}

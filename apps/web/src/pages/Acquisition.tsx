@@ -70,7 +70,7 @@ function Acquisition() {
   const fetchRelations = () => {
     const fetchWithAuth = (url: string, setter: any) => {
       fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
-        .then(r => r.json()).then(d => setter(d.data || [])).catch(()=>{});
+        .then(r => r.json()).then(d => setter(d.data || [])).catch(() => { });
     };
     fetchWithAuth(`${API}/acquisition/funnels`, setFunnels);
     fetchWithAuth(`${API}/acquisition/campaigns`, setCampaigns);
@@ -139,7 +139,7 @@ function Acquisition() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Acquisition Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
-            Market expansion and lead generation data is strictly provisioned. 
+            Market expansion and lead generation data is strictly provisioned.
             Contact HQ to authorize your granular feature-level access.
           </p>
           <button onClick={() => window.location.href = '/'} className="px-8 py-3 bg-white/5 hover:bg-white/10 rounded-full font-bold text-sm transition-all border border-white/10">
@@ -174,21 +174,21 @@ function Acquisition() {
       const text = await file.text();
       const rows = text.split('\n').map(row => row.split(','));
       const headers = rows[0].map(h => h.trim());
-      
+
       const promises = rows.slice(1).map(async (row) => {
         if (!row || row.length === 0 || !row[0]) return;
         const body: any = {};
         headers.forEach((h, i) => {
           body[h] = row[i]?.trim() || '';
         });
-        
+
         await fetch(`${API}/acquisition/contacts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
           body: JSON.stringify(body),
         });
       });
-      
+
       await Promise.all(promises);
       fetchData();
     } catch (err) {
@@ -209,7 +209,7 @@ function Acquisition() {
             <Target className="w-5 h-5 md:w-6 h-6 text-rose-400" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-rose-400">ACQ</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-rose-400">ACQUISITION</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Growth & Acquisition</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-rose-400 hover:bg-rose-400/10 rounded-xl transition-all">
@@ -261,7 +261,7 @@ function Acquisition() {
           accentColor="rose-400"
         />
         {tab === 'funnels' && (
-          <FunnelView 
+          <FunnelView
             funnels={funnels}
             canEdit={getPerm('funnels').canEdit}
             canDelete={getPerm('funnels').canDelete}
@@ -349,51 +349,63 @@ function Acquisition() {
               { key: 'stages', label: 'Stages (JSON)', type: 'textarea' as const },
             ] : tab === 'campaigns' ? [
               { key: 'campaignName', label: 'Campaign Name', type: 'text' as const, required: true },
-              { key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
-                { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
-                { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
-                { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
-              ]},
+              {
+                key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
+                  { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
+                  { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
+                  { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
+                ]
+              },
               { key: 'objective', label: 'Campaign Objective', type: 'text' as const },
               { key: 'budget', label: 'Budget ($)', type: 'number' as const },
               { key: 'startDate', label: 'Start Date', type: 'date' as const },
               { key: 'endDate', label: 'End Date', type: 'date' as const },
               { key: 'leadsGenerated', label: 'Leads Generated', type: 'number' as const },
               { key: 'roi', label: 'ROI (%)', type: 'number' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
-                { value: 'paused', label: 'Paused' }, { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
-              ]},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+                  { value: 'paused', label: 'Paused' }, { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
+                ]
+              },
             ] : tab === 'leads' ? [
               { key: 'fullName', label: 'Full Name', type: 'text' as const, required: true },
               { key: 'companyName', label: 'Company Name', type: 'text' as const },
               { key: 'email', label: 'Email Address', type: 'email' as const },
               { key: 'phone', label: 'Phone Number', type: 'text' as const },
-              { key: 'leadSource', label: 'Lead Source', type: 'select' as const, options: [
-                { value: 'website', label: 'Website' }, { value: 'referral', label: 'Referral' },
-                { value: 'social', label: 'Social Media' }, { value: 'cold_outreach', label: 'Cold Outreach' },
-                { value: 'event', label: 'Event' }, { value: 'ad', label: 'Advertisement' },
-              ]},
-              { key: 'pipelineStage', label: 'Pipeline Stage', type: 'select' as const, options: [
-                { value: 'new', label: 'New' }, { value: 'contacted', label: 'Contacted' },
-                { value: 'qualified', label: 'Qualified' }, { value: 'proposal', label: 'Proposal Sent' },
-                { value: 'negotiation', label: 'Negotiation' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' },
-              ]},
+              {
+                key: 'leadSource', label: 'Lead Source', type: 'select' as const, options: [
+                  { value: 'website', label: 'Website' }, { value: 'referral', label: 'Referral' },
+                  { value: 'social', label: 'Social Media' }, { value: 'cold_outreach', label: 'Cold Outreach' },
+                  { value: 'event', label: 'Event' }, { value: 'ad', label: 'Advertisement' },
+                ]
+              },
+              {
+                key: 'pipelineStage', label: 'Pipeline Stage', type: 'select' as const, options: [
+                  { value: 'new', label: 'New' }, { value: 'contacted', label: 'Contacted' },
+                  { value: 'qualified', label: 'Qualified' }, { value: 'proposal', label: 'Proposal Sent' },
+                  { value: 'negotiation', label: 'Negotiation' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' },
+                ]
+              },
               { key: 'contactOwner', label: 'Contact Owner', type: 'text' as const },
               { key: 'leadScore', label: 'Lead Score (0–100)', type: 'number' as const },
             ] : tab === 'content' ? [
               { key: 'contentTitle', label: 'Content Title', type: 'text' as const, required: true },
-              { key: 'channel', label: 'Channel', type: 'select' as const, options: [
-                { value: 'instagram', label: 'Instagram' }, { value: 'linkedin', label: 'LinkedIn' },
-                { value: 'twitter', label: 'Twitter/X' }, { value: 'blog', label: 'Blog' },
-                { value: 'email', label: 'Email Newsletter' }, { value: 'youtube', label: 'YouTube' },
-              ]},
+              {
+                key: 'channel', label: 'Channel', type: 'select' as const, options: [
+                  { value: 'instagram', label: 'Instagram' }, { value: 'linkedin', label: 'LinkedIn' },
+                  { value: 'twitter', label: 'Twitter/X' }, { value: 'blog', label: 'Blog' },
+                  { value: 'email', label: 'Email Newsletter' }, { value: 'youtube', label: 'YouTube' },
+                ]
+              },
               { key: 'owner', label: 'Content Owner', type: 'text' as const },
               { key: 'publishDate', label: 'Publish Date', type: 'date' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'draft', label: 'Draft' }, { value: 'review', label: 'In Review' },
-                { value: 'scheduled', label: 'Scheduled' }, { value: 'published', label: 'Published' }, { value: 'archived', label: 'Archived' },
-              ]},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'draft', label: 'Draft' }, { value: 'review', label: 'In Review' },
+                  { value: 'scheduled', label: 'Scheduled' }, { value: 'published', label: 'Published' }, { value: 'archived', label: 'Archived' },
+                ]
+              },
               { key: 'engagement', label: 'Engagement Count', type: 'number' as const },
               { key: 'views', label: 'Total Views', type: 'number' as const },
               { key: 'clickThroughRate', label: 'Click-Through Rate (%)', type: 'number' as const },
@@ -403,19 +415,25 @@ function Acquisition() {
               { key: 'startDate', label: 'Start Date', type: 'date' as const },
               { key: 'endDate', label: 'End Date', type: 'date' as const },
               { key: 'sprintGoals', label: 'Sprint Goals', type: 'textarea' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
-                { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
-              ]},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+                  { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
+                ]
+              },
             ] : [
               { key: 'taskName', label: 'Task Name', type: 'text' as const, required: true },
               { key: 'description', label: 'Description', type: 'textarea' as const },
-              { key: 'priority', label: 'Priority', type: 'select' as const, options: [
-                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
-              ]},
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'done', label: 'Done' },
-              ]},
+              {
+                key: 'priority', label: 'Priority', type: 'select' as const, options: [
+                  { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
+                ]
+              },
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'done', label: 'Done' },
+                ]
+              },
               { key: 'assignee', label: 'Assignee', type: 'text' as const },
               { key: 'dueDate', label: 'Due Date', type: 'date' as const },
               { key: 'estimatedEffort', label: 'Estimated Effort (hrs)', type: 'number' as const },
@@ -435,16 +453,20 @@ function Acquisition() {
           title="New Campaign"
           fields={[
             { key: 'campaignName', label: 'Campaign Name', type: 'text' as const, required: true },
-            { key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
-              { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
-              { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
-              { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
-            ]},
+            {
+              key: 'type', label: 'Campaign Type', type: 'select' as const, options: [
+                { value: 'email', label: 'Email' }, { value: 'social', label: 'Social Media' },
+                { value: 'paid_ads', label: 'Paid Ads' }, { value: 'seo', label: 'SEO' },
+                { value: 'event', label: 'Event' }, { value: 'content', label: 'Content' },
+              ]
+            },
             { key: 'objective', label: 'Campaign Objective', type: 'text' as const },
             { key: 'budget', label: 'Budget ($)', type: 'number' as const },
-            { key: 'status', label: 'Status', type: 'select' as const, options: [
-              { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
-            ]},
+            {
+              key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'planning', label: 'Planning' }, { value: 'active', label: 'Active' },
+              ]
+            },
           ]}
           onClose={() => setShowNestedForm(null)}
           onSubmit={async (formData) => {

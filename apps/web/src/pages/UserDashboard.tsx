@@ -150,6 +150,12 @@ export default function UserDashboard() {
     }
   };
 
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
+
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
   }
@@ -193,7 +199,11 @@ export default function UserDashboard() {
             >
               <div className="w-full h-full rounded-lg md:rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center relative overflow-hidden">
                 {data?.user?.profilePhoto ? (
-                  <img src={data.user.profilePhoto} alt="Profile" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                  <img 
+                    src={getProfileUrl(data.user.profilePhoto)!} 
+                    alt="Profile" 
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
+                  />
                 ) : (
                   <User className="w-6 h-6 md:w-8 md:h-8 text-white group-hover:scale-90 transition-transform" />
                 )}

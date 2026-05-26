@@ -96,7 +96,25 @@ function Home() {
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('ga_user') || '{}'));
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setUser(JSON.parse(localStorage.getItem('ga_user') || '{}'));
+    };
+    window.addEventListener('ga_user_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ga_user_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
 
   const fetchPermissions = async () => {
     if (!user.id) {
@@ -162,7 +180,11 @@ function Home() {
             >
               <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-primary/20 overflow-hidden">
                 {user.profilePhoto ? (
-                  <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                  <img 
+                    src={getProfileUrl(user.profilePhoto)!} 
+                    alt="User" 
+                    className="w-full h-full object-cover" 
+                  />
                 ) : (
                   user.name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'
                 )}

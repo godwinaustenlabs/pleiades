@@ -113,7 +113,7 @@ function Ops() {
           fetch(`${API}/core/clients/${client.id}/portal-status`, { headers: { Authorization: `Bearer ${token()}` } })
             .then(r => r.json()).then(d => {
               setClientPortalStatuses(prev => ({ ...prev, [client.id]: d.data }));
-            }).catch(() => {});
+            }).catch(() => { });
         }
       });
     }
@@ -165,7 +165,7 @@ function Ops() {
   const handleEntitySubmit = async (formData: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
     const url = editingRecord ? `${API}/core/${tab}/${editingRecord.id}` : `${API}/core/${tab}`;
-    
+
     // Ensure boolean fields are correctly typed
     const cleanData = { ...formData };
     if (tab === 'committees' && typeof cleanData.activeStatus === 'string') {
@@ -206,7 +206,7 @@ function Ops() {
             <Settings className="w-5 h-5 md:w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-indigo-400">OPS</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-indigo-400">OPS</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Infrastructure</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all">
@@ -258,115 +258,115 @@ function Ops() {
           accentColor="indigo-400"
         />
         {tab !== 'tasks' && (
-        <GAGrid
-          title={TABS.find(t => t.id === tab)?.label || 'Operations'}
-          entityName={tab.slice(0, -1)}
-          columns={
-            tab === 'labs' ? [
-              { key: 'labPhoto', label: 'Photo', type: 'image' },
-              { key: 'labName', label: 'Lab Name', type: 'text' },
-              { key: 'category', label: 'Category', type: 'badge' },
-              { key: 'status', label: 'Status', type: 'status' },
-              { key: 'createdAt', label: 'Established', type: 'date' },
-            ] : tab === 'committees' ? [
-              { key: 'committeeName', label: 'Committee Name', type: 'text' },
-              { key: 'type', label: 'Type', type: 'badge' },
-              { key: 'opsStatus', label: 'Ops Status', type: 'status' },
-              { key: 'activeStatus', label: 'Status', render: (v) => v ? '✅ Active' : '❌ Inactive' },
-            ] : tab === 'clients' ? [
-              { key: 'clientPhoto', label: 'Logo', type: 'image' },
-              { key: 'clientName', label: 'Company Name', type: 'text' },
-              { key: 'industry', label: 'Industry', type: 'badge' },
-              { key: 'contractStatus', label: 'Contract', type: 'status' },
-              { 
-                key: 'portalStatus', 
-                label: 'Portal Access', 
-                render: (_, record) => {
-                  const status = clientPortalStatuses[record.id];
-                  if (!status) return <span className="text-[10px] text-textSecondary italic animate-pulse">Checking...</span>;
-                  if (!status.hasLogin) return <span className="text-[10px] text-red-400 font-black uppercase tracking-widest">No Access</span>;
-                  return (
-                    <div className="flex items-center gap-2">
-                      <div className={`w-1.5 h-1.5 rounded-full ${status.isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${status.isActive ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {status.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                  );
-                }
-              },
-            ] : tab === 'docs' ? [
-              { key: 'docTitle', label: 'Document Title', type: 'avatar' as const },
-              { key: 'docType', label: 'Type', type: 'badge' as const },
-              { key: 'confidential', label: 'Confidential', render: (v: any) => v ? '🔒 Yes' : '🔓 No' },
-              { key: 'tags', label: 'Tags' },
-              { key: 'attachment', label: 'File', type: 'file' as const },
-              { key: 'uploadDate', label: 'Uploaded', type: 'date' as const },
-            ] : [
-              { key: 'reportName', label: 'Report', type: 'avatar' as const },
-              { key: 'reportNo', label: 'Report #', type: 'badge' as const },
-              { key: 'period', label: 'Period' },
-              { key: 'netProfit', label: 'Net Profit', type: 'currency' as const },
-              { key: 'opsFinalApproval', label: 'Approved', render: (v: any) => v ? '✅ Yes' : '⏳ Pending' },
-            ]
-          }
-          data={data}
-          loading={loading}
-          onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
-          onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
-          onDelete={async (r) => {
-            if (!confirm(`Confirm irreversible deletion of this ${tab.slice(0, -1)} record? This action cannot be undone.`)) return;
-            try {
-              const res = await fetch(`${API}/core/${tab}/${r.id}`, { 
-                method: 'DELETE', 
-                headers: { Authorization: `Bearer ${token()}` } 
-              });
-              if (res.status === 401) { handleLogout(); return; }
-              if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `Failed to delete ${tab.slice(0, -1)}`);
-              }
-              fetchData();
-            } catch (err: any) {
-              alert(err.message || 'An error occurred during deletion.');
-            }
-          }}
-          rowActions={tab === 'clients' ? [
-            {
-              label: 'Provision Portal',
-              icon: Key,
-              onClick: (r) => { setSelectedClient(r); setShowProvisionPortal(true); },
-              color: 'text-indigo-400 hover:bg-indigo-500/10'
-            }
-          ] : tab === 'committees' ? [
-            {
-              label: 'Deprovision CRM',
-              icon: Trash2,
-              onClick: async (r) => {
-                if (!confirm(`Are you sure you want to completely deprovision the CRM for ${r.committeeName}? This will delete all tickets, documents, and memberships associated with this committee.`)) return;
-                try {
-                  const res = await fetch(`${API}/crm/deprovision/${r.id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${token()}` }
-                  });
-                  if (res.ok) {
-                    alert('CRM Deprovisioned successfully');
-                    fetchData();
-                  } else {
-                    const err = await res.json();
-                    alert('Error: ' + (err.error || 'Failed to deprovision'));
+          <GAGrid
+            title={TABS.find(t => t.id === tab)?.label || 'Operations'}
+            entityName={tab.slice(0, -1)}
+            columns={
+              tab === 'labs' ? [
+                { key: 'labPhoto', label: 'Photo', type: 'image' },
+                { key: 'labName', label: 'Lab Name', type: 'text' },
+                { key: 'category', label: 'Category', type: 'badge' },
+                { key: 'status', label: 'Status', type: 'status' },
+                { key: 'createdAt', label: 'Established', type: 'date' },
+              ] : tab === 'committees' ? [
+                { key: 'committeeName', label: 'Committee Name', type: 'text' },
+                { key: 'type', label: 'Type', type: 'badge' },
+                { key: 'opsStatus', label: 'Ops Status', type: 'status' },
+                { key: 'activeStatus', label: 'Status', render: (v) => v ? '✅ Active' : '❌ Inactive' },
+              ] : tab === 'clients' ? [
+                { key: 'clientPhoto', label: 'Logo', type: 'image' },
+                { key: 'clientName', label: 'Company Name', type: 'text' },
+                { key: 'industry', label: 'Industry', type: 'badge' },
+                { key: 'contractStatus', label: 'Contract', type: 'status' },
+                {
+                  key: 'portalStatus',
+                  label: 'Portal Access',
+                  render: (_, record) => {
+                    const status = clientPortalStatuses[record.id];
+                    if (!status) return <span className="text-[10px] text-textSecondary italic animate-pulse">Checking...</span>;
+                    if (!status.hasLogin) return <span className="text-[10px] text-red-400 font-black uppercase tracking-widest">No Access</span>;
+                    return (
+                      <div className="flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${status.isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${status.isActive ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {status.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    );
                   }
-                } catch (err) {
-                  alert('Error: ' + (err as Error).message);
-                }
-              },
-              color: 'text-red-400 hover:bg-red-500/10'
+                },
+              ] : tab === 'docs' ? [
+                { key: 'docTitle', label: 'Document Title', type: 'avatar' as const },
+                { key: 'docType', label: 'Type', type: 'badge' as const },
+                { key: 'confidential', label: 'Confidential', render: (v: any) => v ? '🔒 Yes' : '🔓 No' },
+                { key: 'tags', label: 'Tags' },
+                { key: 'attachment', label: 'File', type: 'file' as const },
+                { key: 'uploadDate', label: 'Uploaded', type: 'date' as const },
+              ] : [
+                { key: 'reportName', label: 'Report', type: 'avatar' as const },
+                { key: 'reportNo', label: 'Report #', type: 'badge' as const },
+                { key: 'period', label: 'Period' },
+                { key: 'netProfit', label: 'Net Profit', type: 'currency' as const },
+                { key: 'opsFinalApproval', label: 'Approved', render: (v: any) => v ? '✅ Yes' : '⏳ Pending' },
+              ]
             }
-          ] : []}
-          canAdd={p.canEdit}
-          canEdit={p.canEdit}
-          canDelete={p.canDelete}
-        />
+            data={data}
+            loading={loading}
+            onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
+            onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
+            onDelete={async (r) => {
+              if (!confirm(`Confirm irreversible deletion of this ${tab.slice(0, -1)} record? This action cannot be undone.`)) return;
+              try {
+                const res = await fetch(`${API}/core/${tab}/${r.id}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token()}` }
+                });
+                if (res.status === 401) { handleLogout(); return; }
+                if (!res.ok) {
+                  const errData = await res.json().catch(() => ({}));
+                  throw new Error(errData.error || `Failed to delete ${tab.slice(0, -1)}`);
+                }
+                fetchData();
+              } catch (err: any) {
+                alert(err.message || 'An error occurred during deletion.');
+              }
+            }}
+            rowActions={tab === 'clients' ? [
+              {
+                label: 'Provision Portal',
+                icon: Key,
+                onClick: (r) => { setSelectedClient(r); setShowProvisionPortal(true); },
+                color: 'text-indigo-400 hover:bg-indigo-500/10'
+              }
+            ] : tab === 'committees' ? [
+              {
+                label: 'Deprovision CRM',
+                icon: Trash2,
+                onClick: async (r) => {
+                  if (!confirm(`Are you sure you want to completely deprovision the CRM for ${r.committeeName}? This will delete all tickets, documents, and memberships associated with this committee.`)) return;
+                  try {
+                    const res = await fetch(`${API}/crm/deprovision/${r.id}`, {
+                      method: 'DELETE',
+                      headers: { Authorization: `Bearer ${token()}` }
+                    });
+                    if (res.ok) {
+                      alert('CRM Deprovisioned successfully');
+                      fetchData();
+                    } else {
+                      const err = await res.json();
+                      alert('Error: ' + (err.error || 'Failed to deprovision'));
+                    }
+                  } catch (err) {
+                    alert('Error: ' + (err as Error).message);
+                  }
+                },
+                color: 'text-red-400 hover:bg-red-500/10'
+              }
+            ] : []}
+            canAdd={p.canEdit}
+            canEdit={p.canEdit}
+            canDelete={p.canDelete}
+          />
         )}
 
         {tab === 'committees' && (
@@ -444,27 +444,35 @@ function Ops() {
           fields={
             tab === 'labs' ? [
               { key: 'labName', label: 'Lab Name', type: 'text' as const, required: true },
-              { key: 'category', label: 'Category', type: 'select' as const, options: [
-                { value: 'research', label: 'Research' }, { value: 'development', label: 'Development' },
-                { value: 'innovation', label: 'Innovation' }, { value: 'operations', label: 'Operations' },
-              ]},
+              {
+                key: 'category', label: 'Category', type: 'select' as const, options: [
+                  { value: 'research', label: 'Research' }, { value: 'development', label: 'Development' },
+                  { value: 'innovation', label: 'Innovation' }, { value: 'operations', label: 'Operations' },
+                ]
+              },
               { key: 'description', label: 'Description', type: 'textarea' as const },
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' },
-                { value: 'blocked', label: 'Blocked' }, { value: 'closed', label: 'Closed' },
-              ], required: true},
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' },
+                  { value: 'blocked', label: 'Blocked' }, { value: 'closed', label: 'Closed' },
+                ], required: true
+              },
               { key: 'opsLeadId', label: 'Ops Lead', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
               { key: 'labPhoto', label: 'Lab Photo', type: 'file' as const },
             ] : tab === 'committees' ? [
               { key: 'committeeName', label: 'Committee Name', type: 'text' as const, required: true },
-              { key: 'type', label: 'Type', type: 'select' as const, options: [
-                { value: 'steering', label: 'Steering' }, { value: 'advisory', label: 'Advisory' },
-                { value: 'technical', label: 'Technical' }, { value: 'finance', label: 'Finance' },
-                { value: 'hr', label: 'HR' }, { value: 'legal', label: 'Legal' },
-              ]},
-              { key: 'opsStatus', label: 'Ops Status', type: 'select' as const, options: [
-                { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'closed', label: 'Closed' },
-              ], required: true},
+              {
+                key: 'type', label: 'Type', type: 'select' as const, options: [
+                  { value: 'steering', label: 'Steering' }, { value: 'advisory', label: 'Advisory' },
+                  { value: 'technical', label: 'Technical' }, { value: 'finance', label: 'Finance' },
+                  { value: 'hr', label: 'HR' }, { value: 'legal', label: 'Legal' },
+                ]
+              },
+              {
+                key: 'opsStatus', label: 'Ops Status', type: 'select' as const, options: [
+                  { value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'closed', label: 'Closed' },
+                ], required: true
+              },
               { key: 'purpose', label: 'Purpose / Mandate', type: 'textarea' as const },
               { key: 'dateFormed', label: 'Date Formed', type: 'date' as const },
               { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }], initialValue: 'true' },
@@ -472,23 +480,29 @@ function Ops() {
               { key: 'clientId', label: 'Associated Client', type: 'select' as const, options: clientsList.map(c => ({ value: c.id, label: c.clientName })), action: { label: '+ New Client', onClick: () => setShowNestedForm('client') } },
             ] : tab === 'clients' ? [
               { key: 'clientName', label: 'Client Name', type: 'text' as const, required: true },
-              { key: 'industry', label: 'Industry', type: 'select' as const, options: [
-                { value: 'technology', label: 'Technology' }, { value: 'finance', label: 'Finance' },
-                { value: 'healthcare', label: 'Healthcare' }, { value: 'retail', label: 'Retail' },
-                { value: 'manufacturing', label: 'Manufacturing' }, { value: 'other', label: 'Other' },
-              ]},
+              {
+                key: 'industry', label: 'Industry', type: 'select' as const, options: [
+                  { value: 'technology', label: 'Technology' }, { value: 'finance', label: 'Finance' },
+                  { value: 'healthcare', label: 'Healthcare' }, { value: 'retail', label: 'Retail' },
+                  { value: 'manufacturing', label: 'Manufacturing' }, { value: 'other', label: 'Other' },
+                ]
+              },
               { key: 'primaryContact', label: 'Primary Contact', type: 'text' as const },
               { key: 'contactEmail', label: 'Contact Email', type: 'email' as const },
               { key: 'phone', label: 'Phone', type: 'text' as const },
               { key: 'address', label: 'Address', type: 'textarea' as const },
               { key: 'onboardingDate', label: 'Onboarding Date', type: 'date' as const },
-              { key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
-                { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' },
-                { value: 'renewal', label: 'Up for Renewal' }, { value: 'expired', label: 'Expired' }, { value: 'terminated', label: 'Terminated' },
-              ], required: true},
-              { key: 'slaStatus', label: 'SLA Status', type: 'select' as const, options: [
-                { value: 'green', label: 'Green (On Track)' }, { value: 'amber', label: 'Amber (At Risk)' }, { value: 'red', label: 'Red (Breached)' },
-              ]},
+              {
+                key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
+                  { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' },
+                  { value: 'renewal', label: 'Up for Renewal' }, { value: 'expired', label: 'Expired' }, { value: 'terminated', label: 'Terminated' },
+                ], required: true
+              },
+              {
+                key: 'slaStatus', label: 'SLA Status', type: 'select' as const, options: [
+                  { value: 'green', label: 'Green (On Track)' }, { value: 'amber', label: 'Amber (At Risk)' }, { value: 'red', label: 'Red (Breached)' },
+                ]
+              },
               { key: 'clientPhoto', label: 'Client Logo/Photo', type: 'file' as const },
             ] : tab === 'reports' ? [
               { key: 'reportName', label: 'Report Name', type: 'text' as const, required: true },
@@ -517,11 +531,13 @@ function Ops() {
               { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committeesList.map(c => ({ value: c.id, label: c.committeeName })) },
             ] : tab === 'docs' ? [
               { key: 'docTitle', label: 'Document Title', type: 'text' as const, required: true },
-              { key: 'docType', label: 'Document Type', type: 'select' as const, options: [
-                { value: 'policy', label: 'Policy' }, { value: 'report', label: 'Report' },
-                { value: 'template', label: 'Template' }, { value: 'contract', label: 'Contract' },
-                { value: 'minutes', label: 'Meeting Minutes' }, { value: 'other', label: 'Other' },
-              ]},
+              {
+                key: 'docType', label: 'Document Type', type: 'select' as const, options: [
+                  { value: 'policy', label: 'Policy' }, { value: 'report', label: 'Report' },
+                  { value: 'template', label: 'Template' }, { value: 'contract', label: 'Contract' },
+                  { value: 'minutes', label: 'Meeting Minutes' }, { value: 'other', label: 'Other' },
+                ]
+              },
               { key: 'description', label: 'Description', type: 'textarea' as const },
               { key: 'uploadDate', label: 'Upload Date', type: 'date' as const },
               { key: 'confidential', label: 'Confidential', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
@@ -531,12 +547,16 @@ function Ops() {
               { key: 'attachment', label: 'Document File', type: 'file' as const },
             ] : [
               { key: 'title', label: 'Task Title', type: 'text' as const, required: true },
-              { key: 'priority', label: 'Priority', type: 'select' as const, options: [
-                { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
-              ], required: true},
-              { key: 'status', label: 'Status', type: 'select' as const, options: [
-                { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' },
-              ], required: true},
+              {
+                key: 'priority', label: 'Priority', type: 'select' as const, options: [
+                  { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' },
+                ], required: true
+              },
+              {
+                key: 'status', label: 'Status', type: 'select' as const, options: [
+                  { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'completed', label: 'Completed' },
+                ], required: true
+              },
               { key: 'assigneeId', label: 'Assignee', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
             ]
           }
@@ -553,9 +573,11 @@ function Ops() {
             { key: 'labName', label: 'Lab Name', type: 'text' as const, required: true },
             { key: 'category', label: 'Category', type: 'text' as const },
             { key: 'description', label: 'Description', type: 'textarea' as const },
-            { key: 'status', label: 'Status', type: 'select' as const, options: [
-              { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' },
-            ]},
+            {
+              key: 'status', label: 'Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' },
+              ]
+            },
             { key: 'opsLeadId', label: 'Ops Lead', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
           ]}
           onClose={() => setShowNestedForm(null)}
@@ -581,9 +603,11 @@ function Ops() {
             { key: 'primaryContact', label: 'Primary Contact', type: 'text' as const },
             { key: 'contactEmail', label: 'Contact Email', type: 'email' as const },
             { key: 'phone', label: 'Phone', type: 'text' as const },
-            { key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
-              { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' }, { value: 'expired', label: 'Expired' },
-            ], required: true},
+            {
+              key: 'contractStatus', label: 'Contract Status', type: 'select' as const, options: [
+                { value: 'active', label: 'Active' }, { value: 'onboarding', label: 'Onboarding' }, { value: 'expired', label: 'Expired' },
+              ], required: true
+            },
           ]}
           onClose={() => setShowNestedForm(null)}
           onSubmit={async (formData) => {

@@ -14,12 +14,46 @@ import ClientPortal from './pages/ClientPortal';
 
 function App() {
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'dark'; // default to dark mode per premium aesthetic
-    if (savedTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    const applyTheme = () => {
+      const savedTheme = localStorage.getItem('theme') || 'system';
+      let themeToApply = savedTheme;
+
+      if (savedTheme === 'system') {
+        themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+
+      if (themeToApply === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+
+    applyTheme();
+
+    // Listen for changes to localStorage from other components
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'theme') {
+        applyTheme();
+      }
+    };
+
+    // Listen for OS theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleMediaChange = () => {
+      const savedTheme = localStorage.getItem('theme') || 'system';
+      if (savedTheme === 'system') {
+        applyTheme();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    mediaQuery.addEventListener('change', handleMediaChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      mediaQuery.removeEventListener('change', handleMediaChange);
+    };
   }, []);
 
   return (

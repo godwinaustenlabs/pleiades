@@ -58,7 +58,25 @@ function HR() {
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('ga_user') || '{}'));
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setUser(JSON.parse(localStorage.getItem('ga_user') || '{}'));
+    };
+    window.addEventListener('ga_user_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ga_user_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
 
   const handleLogout = () => {
     localStorage.clear();
@@ -200,7 +218,7 @@ function HR() {
       setTimeout(() => setCopied(false), 2000);
     };
     return (
-      <button 
+      <button
         onClick={handleCopy}
         className="group/id flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/5 transition-all"
         title="Click to copy ID"
@@ -215,13 +233,13 @@ function HR() {
 
   const employeeColumns: Column[] = [
     { key: 'name', label: 'Name', type: 'avatar' },
-    { 
-      key: 'id', label: 'Employee ID', 
+    {
+      key: 'id', label: 'Employee ID',
       render: (v: string) => <CopyableId id={v} />
     },
-    { 
-      key: 'slackId', label: 'Slack ID', 
-      render: (v: string) => (!v || v === 'NULL') ? <span className="text-textSecondary italic text-[10px]">—</span> : <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{v}</span> 
+    {
+      key: 'slackId', label: 'Slack ID',
+      render: (v: string) => (!v || v === 'NULL') ? <span className="text-textSecondary italic text-[10px]">—</span> : <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{v}</span>
     },
     { key: 'email', label: 'Email', render: (v) => <span className="text-xs text-textSecondary truncate max-w-[120px] inline-block">{v || '—'}</span> },
     { key: 'phone', label: 'Phone', render: (v) => <span className="text-xs text-textSecondary whitespace-nowrap">{v || '—'}</span> },
@@ -335,7 +353,7 @@ function HR() {
             <Activity className="w-5 h-5 md:w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-none">GA<span className="text-primary">OS</span></h1>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-none"><span className="text-primary">OS</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-bold">HR Management</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-xl transition-all">
@@ -347,7 +365,11 @@ function HR() {
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-primary/20 overflow-hidden">
               {user.profilePhoto ? (
-                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                <img
+                  src={getProfileUrl(user.profilePhoto)!}
+                  alt="User"
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
               )}
@@ -522,7 +544,7 @@ function HR() {
             { key: 'bonuses', label: 'Bonuses', type: 'number' },
             { key: 'netPay', label: 'Net Pay', type: 'number', required: true },
             { key: 'raiseAmount', label: 'Raise Amount', type: 'number' },
-            { key: 'disbursementStatus', label: 'Disbursement Status', type: 'select', required: true, options: [{value: 'pending', label: 'Pending'}, {value: 'processed', label: 'Processed'}, {value: 'paid', label: 'Paid'}], initialValue: 'pending' },
+            { key: 'disbursementStatus', label: 'Disbursement Status', type: 'select', required: true, options: [{ value: 'pending', label: 'Pending' }, { value: 'processed', label: 'Processed' }, { value: 'paid', label: 'Paid' }], initialValue: 'pending' },
             { key: 'paymentDate', label: 'Payment Date', type: 'date' },
             { key: 'financeReference', label: 'Finance Reference', type: 'text' }
           ]}
@@ -556,25 +578,55 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
 
   const [rawImage, setRawImage] = useState<string | null>(null);
 
-  const handleSaveCrop = async (blob: Blob) => {
-    setUploading(true);
-    setError('');
-    try {
-      const token = localStorage.getItem('ga_token') || '';
-      const r2Key = `profiles/${Date.now()}_avatar.jpg`;
-      const res = await fetch(`/api/assets/upload/${r2Key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
-        body: blob
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const d = await res.json();
-      setFormData({ ...formData, profilePhoto: d.data.url });
-      setRawImage(null);
-    } catch (err) { setError('Photo upload failed'); }
-    finally { setUploading(false); }
+  const getProfileUrl = (url: string | null) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
+  const handleSaveCrop = async (blob: Blob) => {
+    setError('');
+    try {
+      const tokenString = localStorage.getItem('ga_token') || '';
+      const formData = new FormData();
+      formData.append('file', blob, 'avatar.jpg');
+      if (initialData?.id) {
+        formData.append('employeeId', initialData.id);
+      }
+
+      const res = await fetch(`${API}/auth/profile/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenString}` },
+        body: formData
+      });
+
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Upload failed');
+
+      if (d.success) {
+        const finalUrl = `${d.data.avatarUrl}?t=${Date.now()}`;
+        setFormData({ ...formData, profilePhoto: finalUrl });
+
+        // If we are editing the LOGGED IN user's employee record, update their profile photo too
+        const localUser = JSON.parse(localStorage.getItem('ga_user') || '{}');
+        if (localUser.employeeId === initialData?.id || localUser.id === initialData?.userId) {
+            localStorage.setItem('ga_user', JSON.stringify({
+                ...localUser,
+                profilePhoto: finalUrl
+            }));
+            window.dispatchEvent(new Event('ga_user_updated'));
+        }
+
+        setRawImage(null);
+      } else {
+        throw new Error(d.error || 'Upload failed');
+      }
+    } catch (err: any) { 
+      setError(err.message || 'Photo upload failed'); 
+      // Re-throw so CropModal knows it failed and shows its internal error UI
+      throw err;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -593,26 +645,31 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
 
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar min-h-0">
           {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">{error}</div>}
-          
+
           <div className="flex items-center gap-8">
             <div className="relative group">
               <div className="w-24 h-24 rounded-[2rem] overflow-hidden bg-white/5 border border-white/10 group-hover:border-primary/50 transition-all">
                 {formData.profilePhoto ? (
-                  <img src={formData.profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                  <img
+                    src={getProfileUrl(formData.profilePhoto)!}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-textSecondary"><Users className="w-8 h-8 opacity-20" /></div>
                 )}
               </div>
-              <input 
-                type="file" 
+              <input
+                type="file"
                 accept="image/*"
-                className="absolute inset-0 opacity-0 cursor-pointer" 
+                className="absolute inset-0 opacity-0 cursor-pointer"
                 onChange={e => {
                   const file = e.target.files?.[0];
                   if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => setRawImage(ev.target?.result as string);
-                      reader.readAsDataURL(file);
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setRawImage(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                    e.target.value = ''; // Reset
                   }
                 }}
               />
@@ -649,106 +706,104 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
 
           <div className="grid grid-cols-1 gap-6">
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-primary uppercase tracking-widest">Appointments & Access</h3>
-              {canEditPermissions && (
-                <button type="button" onClick={onAddAppointment} className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
-                  <Plus className="w-3 h-3" /> Grant Access
-                </button>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-primary uppercase tracking-widest">Appointments & Access</h3>
+                {canEditPermissions && (
+                  <button type="button" onClick={onAddAppointment} className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
+                    <Plus className="w-3 h-3" /> Grant Access
+                  </button>
+                )}
+              </div>
+
+              {appointments.length === 0 ? (
+                <div className="p-8 rounded-2xl border border-dashed border-white/10 bg-white/5 text-center">
+                  <Shield className="w-8 h-8 mx-auto mb-3 opacity-10 text-primary" />
+                  <p className="text-xs text-textSecondary italic">No active appointments or digital access granted.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {appointments.map(appt => (
+                    <div key={appt.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10 group hover:border-primary/30 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-xs border border-primary/20">{appt.roleOrTitle.charAt(0)}</div>
+                        <div>
+                          <p className="text-sm font-bold text-white leading-none mb-1">{appt.roleOrTitle}</p>
+                          <p className="text-[10px] text-textSecondary uppercase tracking-widest font-medium">{appt.termType} • {new Date(appt.appointmentDate).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                          {appt.isActive ? 'ACTIVE' : 'EXPIRED'}
+                        </div>
+                        {canEditPermissions && (
+                          <button type="button" onClick={() => onEditAppointment(appt)} className="p-1.5 hover:bg-white/10 rounded-lg text-textSecondary hover:text-primary transition-all">
+                            <Settings className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
-            {appointments.length === 0 ? (
-              <div className="p-8 rounded-2xl border border-dashed border-white/10 bg-white/5 text-center">
-                <Shield className="w-8 h-8 mx-auto mb-3 opacity-10 text-primary" />
-                <p className="text-xs text-textSecondary italic">No active appointments or digital access granted.</p>
+            <div className="grid grid-cols-4 gap-4 pt-4 border-t border-white/5">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Status</label>
+                <select value={formData.employmentStatus} onChange={e => setFormData({ ...formData, employmentStatus: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="on_leave">On Leave</option>
+                </select>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {appointments.map(appt => (
-                  <div key={appt.id} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10 group hover:border-primary/30 transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-xs border border-primary/20">{appt.roleOrTitle.charAt(0)}</div>
-                      <div>
-                        <p className="text-sm font-bold text-white leading-none mb-1">{appt.roleOrTitle}</p>
-                        <p className="text-[10px] text-textSecondary uppercase tracking-widest font-medium">{appt.termType} • {new Date(appt.appointmentDate).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                        {appt.isActive ? 'ACTIVE' : 'EXPIRED'}
-                      </div>
-                      {canEditPermissions && (
-                        <button type="button" onClick={() => onEditAppointment(appt)} className="p-1.5 hover:bg-white/10 rounded-lg text-textSecondary hover:text-primary transition-all">
-                          <Settings className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Base Salary</label>
+                <input type="number" value={formData.baseSalary || ''} onChange={e => setFormData({ ...formData, baseSalary: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
               </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-4 gap-4 pt-4 border-t border-white/5">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Status</label>
-              <select value={formData.employmentStatus} onChange={e => setFormData({ ...formData, employmentStatus: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="on_leave">On Leave</option>
-              </select>
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Efficiency</label>
+                <input type="number" step="0.01" value={formData.efficiencyScore || ''} onChange={e => setFormData({ ...formData, efficiencyScore: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Sector ID</label>
+                <input type="text" value={formData.sectorId || ''} onChange={e => setFormData({ ...formData, sectorId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Base Salary</label>
-              <input type="number" value={formData.baseSalary || ''} onChange={e => setFormData({ ...formData, baseSalary: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
+            <div className="space-y-3">
+              <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Departments</label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {DEPARTMENT_OPTIONS.filter(opt => opt.value).map(opt => {
+                  const isSelected = ((formData.department || '') || '').split(',').includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        const current = (formData.department || '').split(',').filter(Boolean);
+                        const next = isSelected
+                          ? current.filter((v: string) => v !== opt.value)
+                          : [...current, opt.value];
+                        setFormData({ ...formData, department: next.join(',') });
+                      }}
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${isSelected
+                          ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10'
+                          : 'bg-surface/50 border-white/10 text-textSecondary hover:border-white/20'
+                        }`}
+                    >
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-white/20 bg-black/20'
+                        }`}>
+                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </div>
+                      <span className="text-xs font-bold">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-textSecondary mt-1 italic ml-1">
+                {formData.department ? `Assigned to: ${formData.department.split(',').join(', ')}` : 'No departments assigned.'}
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Efficiency</label>
-              <input type="number" step="0.01" value={formData.efficiencyScore || ''} onChange={e => setFormData({ ...formData, efficiencyScore: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Sector ID</label>
-              <input type="text" value={formData.sectorId || ''} onChange={e => setFormData({ ...formData, sectorId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
-            </div>
-          </div>
-          <div className="space-y-3">
-            <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Departments</label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {DEPARTMENT_OPTIONS.filter(opt => opt.value).map(opt => {
-                const isSelected = ((formData.department || '') || '').split(',').includes(opt.value);
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      const current = (formData.department || '').split(',').filter(Boolean);
-                      const next = isSelected 
-                        ? current.filter((v: string) => v !== opt.value)
-                        : [...current, opt.value];
-                      setFormData({ ...formData, department: next.join(',') });
-                    }}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
-                      isSelected 
-                        ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10' 
-                        : 'bg-surface/50 border-white/10 text-textSecondary hover:border-white/20'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                      isSelected ? 'bg-primary border-primary' : 'border-white/20 bg-black/20'
-                    }`}>
-                      {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                    </div>
-                    <span className="text-xs font-bold">{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] text-textSecondary mt-1 italic ml-1">
-              {formData.department ? `Assigned to: ${formData.department.split(',').join(', ')}` : 'No departments assigned.'}
-            </p>
-          </div>
           </div>
         </form>
 

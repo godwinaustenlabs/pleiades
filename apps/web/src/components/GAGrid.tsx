@@ -423,7 +423,7 @@ export default function GAGrid({
       <AssetPreviewModal 
         url={previewUrl} 
         onClose={() => setPreviewUrl(null)} 
-        type={previewUrl && /\.(pdf)$/i.test(previewUrl) ? 'pdf' : 'image'} 
+        type={previewUrl && /\.(pdf)(\?|$)/i.test(previewUrl) ? 'pdf' : 'image'} 
       />
     </div>
   );

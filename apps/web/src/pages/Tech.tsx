@@ -82,11 +82,11 @@ function Tech() {
 
   const fetchRelations = () => {
     const auth = { headers: { Authorization: `Bearer ${token()}` } };
-    fetch(`${API}/core/employees`, auth).then(r => r.json()).then(d => setEmployees((d.data || []).filter((e: any) => e.employmentStatus === 'active'))).catch(() => {});
-    fetch(`${API}/tech/projects`, auth).then(r => r.json()).then(d => setProjects(d.data || [])).catch(() => {});
-    fetch(`${API}/tech/environments`, auth).then(r => r.json()).then(d => setEnvironments(d.data || [])).catch(() => {});
-    fetch(`${API}/tech/releases`, auth).then(r => r.json()).then(d => setReleases(d.data || [])).catch(() => {});
-    fetch(`${API}/tech/stories`, auth).then(r => r.json()).then(d => setStories(d.data || [])).catch(() => {});
+    fetch(`${API}/core/employees`, auth).then(r => r.json()).then(d => setEmployees((d.data || []).filter((e: any) => e.employmentStatus === 'active'))).catch(() => { });
+    fetch(`${API}/tech/projects`, auth).then(r => r.json()).then(d => setProjects(d.data || [])).catch(() => { });
+    fetch(`${API}/tech/environments`, auth).then(r => r.json()).then(d => setEnvironments(d.data || [])).catch(() => { });
+    fetch(`${API}/tech/releases`, auth).then(r => r.json()).then(d => setReleases(d.data || [])).catch(() => { });
+    fetch(`${API}/tech/stories`, auth).then(r => r.json()).then(d => setStories(d.data || [])).catch(() => { });
   };
 
   useEffect(() => {
@@ -104,12 +104,12 @@ function Tech() {
   // Tab filtering
   const TABS = useMemo(() => {
     const all = [
-      { id: 'projects',      label: 'Projects',      icon: Layout,   feature: 'projects' },
-      { id: 'environments',  label: 'Environments',  icon: Server,   feature: 'environments' },
-      { id: 'releases',      label: 'Releases',      icon: GitMerge, feature: 'releases' },
-      { id: 'issues',        label: 'Issues',        icon: AlertCircle, feature: 'issues' },
-      { id: 'deployments',   label: 'Deployments',   icon: Rocket,   feature: 'deployments' },
-      { id: 'tasks',         label: 'Tasks',         icon: List,     feature: 'tasks' },
+      { id: 'projects', label: 'Projects', icon: Layout, feature: 'projects' },
+      { id: 'environments', label: 'Environments', icon: Server, feature: 'environments' },
+      { id: 'releases', label: 'Releases', icon: GitMerge, feature: 'releases' },
+      { id: 'issues', label: 'Issues', icon: AlertCircle, feature: 'issues' },
+      { id: 'deployments', label: 'Deployments', icon: Rocket, feature: 'deployments' },
+      { id: 'tasks', label: 'Tasks', icon: List, feature: 'tasks' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -212,19 +212,23 @@ function Tech() {
       case 'projects': return [
         { key: 'projectName', label: 'Project Name', type: 'text' as const, required: true },
         { key: 'description', label: 'Description', type: 'textarea' as const },
-        { key: 'status', label: 'Status', type: 'select' as const, options: [
-          { value: 'planning', label: 'Planning' },
-          { value: 'active', label: 'Active' },
-          { value: 'paused', label: 'Paused' },
-          { value: 'completed', label: 'Completed' },
-          { value: 'cancelled', label: 'Cancelled' },
-        ]},
-        { key: 'priority', label: 'Priority', type: 'select' as const, options: [
-          { value: 'low', label: 'Low' },
-          { value: 'medium', label: 'Medium' },
-          { value: 'high', label: 'High' },
-          { value: 'critical', label: 'Critical' },
-        ]},
+        {
+          key: 'status', label: 'Status', type: 'select' as const, options: [
+            { value: 'planning', label: 'Planning' },
+            { value: 'active', label: 'Active' },
+            { value: 'paused', label: 'Paused' },
+            { value: 'completed', label: 'Completed' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ]
+        },
+        {
+          key: 'priority', label: 'Priority', type: 'select' as const, options: [
+            { value: 'low', label: 'Low' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'high', label: 'High' },
+            { value: 'critical', label: 'Critical' },
+          ]
+        },
         { key: 'startDate', label: 'Start Date', type: 'date' as const },
         { key: 'endDate', label: 'End Date', type: 'date' as const },
         { key: 'budget', label: 'Budget ($)', type: 'number' as const },
@@ -234,19 +238,23 @@ function Tech() {
       ];
       case 'environments': return [
         { key: 'envName', label: 'Environment Name', type: 'text' as const, required: true },
-        { key: 'envType', label: 'Type', type: 'select' as const, options: [
-          { value: 'production', label: 'Production' },
-          { value: 'staging', label: 'Staging' },
-          { value: 'development', label: 'Development' },
-          { value: 'testing', label: 'Testing' },
-          { value: 'disaster_recovery', label: 'Disaster Recovery' },
-        ]},
-        { key: 'status', label: 'Status', type: 'select' as const, options: [
-          { value: 'operational', label: 'Operational' },
-          { value: 'degraded', label: 'Degraded' },
-          { value: 'down', label: 'Down' },
-          { value: 'maintenance', label: 'Maintenance' },
-        ]},
+        {
+          key: 'envType', label: 'Type', type: 'select' as const, options: [
+            { value: 'production', label: 'Production' },
+            { value: 'staging', label: 'Staging' },
+            { value: 'development', label: 'Development' },
+            { value: 'testing', label: 'Testing' },
+            { value: 'disaster_recovery', label: 'Disaster Recovery' },
+          ]
+        },
+        {
+          key: 'status', label: 'Status', type: 'select' as const, options: [
+            { value: 'operational', label: 'Operational' },
+            { value: 'degraded', label: 'Degraded' },
+            { value: 'down', label: 'Down' },
+            { value: 'maintenance', label: 'Maintenance' },
+          ]
+        },
         { key: 'uptimePct', label: 'Uptime %', type: 'number' as const },
         { key: 'errorRatePct', label: 'Error Rate %', type: 'number' as const },
         { key: 'avgLatencyMs', label: 'Avg Latency (ms)', type: 'number' as const },
@@ -255,20 +263,24 @@ function Tech() {
       case 'releases': return [
         { key: 'releaseName', label: 'Release Name', type: 'text' as const, required: true },
         { key: 'version', label: 'Version (e.g. v2.1.0)', type: 'text' as const },
-        { key: 'status', label: 'Status', type: 'select' as const, options: [
-          { value: 'planned', label: 'Planned' },
-          { value: 'in_progress', label: 'In Progress' },
-          { value: 'released', label: 'Released' },
-          { value: 'rolled_back', label: 'Rolled Back' },
-          { value: 'cancelled', label: 'Cancelled' },
-        ]},
+        {
+          key: 'status', label: 'Status', type: 'select' as const, options: [
+            { value: 'planned', label: 'Planned' },
+            { value: 'in_progress', label: 'In Progress' },
+            { value: 'released', label: 'Released' },
+            { value: 'rolled_back', label: 'Rolled Back' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ]
+        },
         { key: 'releaseDate', label: 'Release Date', type: 'date' as const },
-        { key: 'ciCdResult', label: 'CI/CD Result', type: 'select' as const, options: [
-          { value: 'passed', label: 'Passed' },
-          { value: 'failed', label: 'Failed' },
-          { value: 'pending', label: 'Pending' },
-          { value: 'skipped', label: 'Skipped' },
-        ]},
+        {
+          key: 'ciCdResult', label: 'CI/CD Result', type: 'select' as const, options: [
+            { value: 'passed', label: 'Passed' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'skipped', label: 'Skipped' },
+          ]
+        },
         { key: 'releaseNotes', label: 'Release Notes', type: 'textarea' as const },
         { key: 'releaseOwner', label: 'Release Owner', type: 'text' as const },
         { key: 'projectId', label: 'Project', type: 'select' as const, options: projects.map(p => ({ value: p.id, label: p.projectName })) },
@@ -276,19 +288,23 @@ function Tech() {
       case 'issues': return [
         { key: 'issueTitle', label: 'Issue Title', type: 'text' as const, required: true },
         { key: 'description', label: 'Description', type: 'textarea' as const },
-        { key: 'severity', label: 'Severity', type: 'select' as const, options: [
-          { value: 'critical', label: 'Critical' },
-          { value: 'high', label: 'High' },
-          { value: 'medium', label: 'Medium' },
-          { value: 'low', label: 'Low' },
-        ], required: true },
-        { key: 'status', label: 'Status', type: 'select' as const, options: [
-          { value: 'open', label: 'Open' },
-          { value: 'in_progress', label: 'In Progress' },
-          { value: 'resolved', label: 'Resolved' },
-          { value: 'closed', label: 'Closed' },
-          { value: 'wont_fix', label: "Won't Fix" },
-        ]},
+        {
+          key: 'severity', label: 'Severity', type: 'select' as const, options: [
+            { value: 'critical', label: 'Critical' },
+            { value: 'high', label: 'High' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'low', label: 'Low' },
+          ], required: true
+        },
+        {
+          key: 'status', label: 'Status', type: 'select' as const, options: [
+            { value: 'open', label: 'Open' },
+            { value: 'in_progress', label: 'In Progress' },
+            { value: 'resolved', label: 'Resolved' },
+            { value: 'closed', label: 'Closed' },
+            { value: 'wont_fix', label: "Won't Fix" },
+          ]
+        },
         { key: 'reportedDate', label: 'Reported Date', type: 'date' as const },
         { key: 'slaTargetDate', label: 'SLA Target Date', type: 'date' as const },
         { key: 'resolvedDate', label: 'Resolved Date', type: 'date' as const },
@@ -299,24 +315,30 @@ function Tech() {
       ];
       case 'deployments': return [
         { key: 'deploymentName', label: 'Deployment Name', type: 'text' as const, required: true },
-        { key: 'deploymentStatus', label: 'Deployment Status', type: 'select' as const, options: [
-          { value: 'queued', label: 'Queued' },
-          { value: 'running', label: 'Running' },
-          { value: 'success', label: 'Success' },
-          { value: 'failed', label: 'Failed' },
-          { value: 'rolled_back', label: 'Rolled Back' },
-          { value: 'cancelled', label: 'Cancelled' },
-        ]},
+        {
+          key: 'deploymentStatus', label: 'Deployment Status', type: 'select' as const, options: [
+            { value: 'queued', label: 'Queued' },
+            { value: 'running', label: 'Running' },
+            { value: 'success', label: 'Success' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'rolled_back', label: 'Rolled Back' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ]
+        },
         { key: 'initiatedBy', label: 'Initiated By', type: 'text' as const },
-        { key: 'ciCdResult', label: 'CI/CD Result', type: 'select' as const, options: [
-          { value: 'passed', label: 'Passed' },
-          { value: 'failed', label: 'Failed' },
-          { value: 'pending', label: 'Pending' },
-        ]},
-        { key: 'rollbackAvailable', label: 'Rollback Available', type: 'select' as const, options: [
-          { value: 'true', label: 'Yes' },
-          { value: 'false', label: 'No' },
-        ]},
+        {
+          key: 'ciCdResult', label: 'CI/CD Result', type: 'select' as const, options: [
+            { value: 'passed', label: 'Passed' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'pending', label: 'Pending' },
+          ]
+        },
+        {
+          key: 'rollbackAvailable', label: 'Rollback Available', type: 'select' as const, options: [
+            { value: 'true', label: 'Yes' },
+            { value: 'false', label: 'No' },
+          ]
+        },
         { key: 'logs', label: 'Deployment Logs', type: 'textarea' as const },
         { key: 'projectId', label: 'Project', type: 'select' as const, options: projects.map(p => ({ value: p.id, label: p.projectName })) },
         { key: 'envId', label: 'Environment', type: 'select' as const, options: environments.map(e => ({ value: e.id, label: e.envName })) },
@@ -334,7 +356,7 @@ function Tech() {
             <Code className="w-5 h-5 md:w-6 h-6 text-teal-400" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none">GA<span className="text-teal-400">TECH</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-teal-400">TECH</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Unified Engineering</span>
           </div>
           <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-teal-400 hover:bg-teal-400/10 rounded-xl transition-all">
@@ -412,7 +434,7 @@ function Tech() {
 
       {showEntityForm && (
         <EntityForm
-          title={editingRecord ? `Update ${TABS.find(t => t.id === tab)?.label.slice(0,-1) || tab}` : `New ${TABS.find(t => t.id === tab)?.label.slice(0,-1) || tab}`}
+          title={editingRecord ? `Update ${TABS.find(t => t.id === tab)?.label.slice(0, -1) || tab}` : `New ${TABS.find(t => t.id === tab)?.label.slice(0, -1) || tab}`}
           fields={formFields()}
           initialData={editingRecord}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
