@@ -113,11 +113,16 @@ export default function GAGrid({
         );
       case 'avatar':
         const photoUrl = record.profilePhoto || record.photoUrl;
+        const fullPhotoUrl = photoUrl ? (
+          photoUrl.startsWith('http') || photoUrl.startsWith('/api') 
+            ? photoUrl 
+            : `/api/assets/download/${photoUrl.startsWith('/') ? photoUrl.slice(1) : photoUrl}`
+        ) : null;
         return (
           <div className="flex items-center gap-3 min-w-[140px]">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-xs shrink-0 shadow-lg shadow-primary/20 overflow-hidden border border-white/10">
-              {photoUrl ? (
-                <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+              {fullPhotoUrl ? (
+                <img src={fullPhotoUrl} alt="" className="w-full h-full object-cover" />
               ) : (
                 String(value).charAt(0).toUpperCase()
               )}
@@ -134,7 +139,7 @@ export default function GAGrid({
         if (!value) return <span className="text-xs text-textSecondary italic">No File</span>;
         
         const authenticatedUrl = String(value).startsWith('/api/') 
-          ? `/api${String(value).startsWith('/api/') ? String(value).slice(4) : value}?token=${localStorage.getItem('ga_token')}` 
+          ? `${value}?token=${localStorage.getItem('ga_token')}` 
           : value;
 
         if (isImage(value)) {
