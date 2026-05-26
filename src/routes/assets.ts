@@ -17,7 +17,7 @@ assetsRouter.use('*', async (c, next) => {
  * PUT /api/assets/upload/*
  * Upload a file to R2
  */
-assetsRouter.put('/upload/*', authMiddleware, async (c) => {
+assetsRouter.put('/upload/:key', authMiddleware, async (c) => {
   try {
     const r2 = c.env.CRM_BUCKET;
     if (!r2) {
@@ -25,7 +25,7 @@ assetsRouter.put('/upload/*', authMiddleware, async (c) => {
       return badRequest(c, 'R2 bucket not configured');
     }
     
-    const key = c.req.param('*');
+    const key = c.req.param('key');
     if (!key) {
       console.error('[Debug] No key provided');
       return badRequest(c, 'No key provided');
