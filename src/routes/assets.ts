@@ -17,7 +17,7 @@ assetsRouter.use('*', async (c, next) => {
  * PUT /api/assets/upload/*
  * Upload a file to R2
  */
-assetsRouter.put('/upload/:key', authMiddleware, async (c) => {
+assetsRouter.put('/upload/*', authMiddleware, async (c) => {
   try {
     const r2 = c.env.CRM_BUCKET;
     if (!r2) {
@@ -25,9 +25,13 @@ assetsRouter.put('/upload/:key', authMiddleware, async (c) => {
       return badRequest(c, 'R2 bucket not configured');
     }
     
-    const key = c.req.param('key');
+    // In Hono, c.req.path or splitting the URL is more reliable for multi-segment keys
+    const path = c.req.path;
+    const prefix = '/api/assets/upload/';
+    const key = path.substring(path.indexOf(prefix) + prefix.length);
+
     if (!key) {
-      console.error('[Debug] No key provided');
+      console.error('[Debug] No key provided, path:', path);
       return badRequest(c, 'No key provided');
     }
 
