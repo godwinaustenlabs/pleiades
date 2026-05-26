@@ -54,7 +54,16 @@ assetsRouter.put('/upload/*', authMiddleware, async (c) => {
  * GET /api/assets/download/*
  * Download/view a file from R2
  */
-assetsRouter.get('/*', async (c) => {
+assetsRouter.get('/*', async (c, next) => {
+  const path = c.req.path;
+  const key = path.includes('/download/') ? path.substring(path.indexOf('/download/') + '/download/'.length) : '';
+  const isPublicPrefix = key.startsWith('avatars/') || key.startsWith('profiles/');
+
+  if (!isPublicPrefix) {
+    return authMiddleware(c, next);
+  }
+  return next();
+}, async (c) => {
   const path = c.req.path;
   console.log(`[Debug] Incoming path in assetsRouter: ${path}`);
   
@@ -73,11 +82,9 @@ assetsRouter.get('/*', async (c) => {
       return badRequest(c, 'R2 bucket not configured');
     }
     
-    // Public access for avatars and profile photos
+    // Check auth if not public
     const isPublicPrefix = key.startsWith('avatars/') || key.startsWith('profiles/');
-    
     if (!isPublicPrefix) {
-      // Manual check for auth since we want to allow some public keys
       const user = c.get('user');
       if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
