@@ -212,10 +212,12 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                             {PRIORITIES[task.priority]?.label}
                           </span>
                         )}
-                        {task.assigneeId && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <Users className="w-2.5 h-2.5" />
-                            {employees.find(e => e.id === task.assigneeId)?.name || 'Assigned'}
+                        {task.assignments?.length > 0 && (
+                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5" title={task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}>
+                            <Users className="w-2.5 h-2.5 flex-shrink-0" />
+                            <span className="truncate max-w-[120px]">
+                              {task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}
+                            </span>
                           </span>
                         )}
                         {task.committeeId && (
@@ -322,7 +324,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     description: initialData?.description || '',
     priority: initialData?.priority || 'medium',
     status: initialData?.status || 'todo',
-    assigneeId: initialData?.assigneeId || '',
+    assigneeIds: initialData?.assignments?.map((a: any) => a.employeeId) || [],
     committeeId: initialData?.committeeId || defaultCommitteeId || '',
     startDate: initialData?.startDate ? initialData.startDate.substring(0, 10) : '',
     dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
@@ -384,7 +386,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     setError('');
     setLoading(true);
     const data: any = { ...form };
-    if (!data.assigneeId) data.assigneeId = null;
+    if (!data.assigneeIds) data.assigneeIds = [];
     if (!data.committeeId) data.committeeId = null;
     if (!data.startDate) data.startDate = null;
     if (!data.dueDate) data.dueDate = null;
@@ -463,6 +465,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
                 <option value="technical">Technical</option>
                 <option value="review">Review</option>
                 <option value="urgent">Urgent</option>
+                <option value="meeting">Meeting</option>
               </select>
             </div>
             <div>
@@ -474,11 +477,14 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
           {/* Assignee / Date row */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className={labelCls}>Assign To</label>
-              <select value={form.assigneeId} onChange={e => setForm({ ...form, assigneeId: e.target.value })} className={inputCls}>
-                <option value="">— Unassigned —</option>
+              <label className={labelCls}>Assign To (Multiple)</label>
+              <select multiple value={form.assigneeIds} onChange={e => {
+                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                setForm({ ...form, assigneeIds: selected });
+              }} className={`${inputCls} h-24`}>
                 {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
+              <p className="text-[9px] text-textSecondary mt-1">Hold Cmd/Ctrl to select multiple</p>
             </div>
             <div>
               <label className={labelCls}>Start Date</label>

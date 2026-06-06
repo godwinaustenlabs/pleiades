@@ -16,7 +16,7 @@ tasksRouter.use('*', authMiddleware);
  * Sanitizes input body to ensure FK fields are null instead of empty strings
  */
 function sanitizeTaskBody(body: any) {
-  const fields = ['assigneeId', 'appointmentId', 'committeeId', 'creatorId'];
+  const fields = ['appointmentId', 'committeeId', 'creatorId'];
   const sanitized = { ...body };
   fields.forEach(f => {
     if (sanitized[f] === '') sanitized[f] = null;
@@ -51,15 +51,23 @@ tasksRouter.get('/', async (c) => {
 
     let conditions = [];
     if (dept) conditions.push(eq(schema.universalTasks.department, dept));
-    if (userId) conditions.push(eq(schema.universalTasks.assigneeId, userId));
+    // Note: userId filtering via task_assignments is done post-fetch below
     if (committeeId) conditions.push(eq(schema.universalTasks.committeeId, committeeId));
     if (appointmentId) conditions.push(eq(schema.universalTasks.appointmentId, appointmentId));
     if (status) conditions.push(eq(schema.universalTasks.status, status));
 
-    const tasks = await db.query.universalTasks.findMany({
+    let tasks = await db.query.universalTasks.findMany({
       where: conditions.length > 0 ? (conditions.length > 1 ? and(...conditions) : conditions[0]) : undefined,
       orderBy: (t, { asc }) => [asc(t.boardPosition), desc(t.createdAt)],
+      with: {
+        assignments: true
+      }
     });
+
+    // Filter by userId (employeeId) via assignments if specified
+    if (userId) {
+      tasks = tasks.filter(t => t.assignments?.some((a: any) => a.employeeId === userId));
+    }
 
     return ok(c, tasks);
   } catch (err) {
@@ -93,8 +101,9 @@ tasksRouter.post('/', async (c) => {
 
     const id = generateId('task');
 
+    const { assigneeIds: _assigneeIds, ...taskBody } = body;
     await db.insert(schema.universalTasks).values({
-      ...body,
+      ...taskBody,
       id,
       department: body.department.trim(),
       creatorId: user.id,
@@ -104,22 +113,34 @@ tasksRouter.post('/', async (c) => {
       updatedAt: new Date(),
     });
 
-    await logAudit(c.env, user.id, 'CREATE', 'universal_tasks', id, body);
-    
-    // Slack Notification
-    if (body.assigneeId) {
+    if (Array.isArray(body.assigneeIds) && body.assigneeIds.length > 0) {
+      const assignmentsToInsert = body.assigneeIds.filter((empId: string) => empId).map((empId: string) => ({
+        id: generateId('tassign'),
+        taskId: id,
+        employeeId: empId,
+        assignedAt: new Date()
+      }));
+      if (assignmentsToInsert.length > 0) {
+        await db.insert(schema.taskAssignments).values(assignmentsToInsert);
+      }
+
+      // Slack Notification for all assignees
       try {
-        const assignee = await db.query.employees.findFirst({
-          where: eq(schema.employees.id, body.assigneeId),
-          columns: { slackId: true }
-        });
-        if (assignee?.slackId) {
-          await postToSlack(c.env, assignee.slackId, `You have been assigned a new task: ${body.title}`);
+        for (const empId of body.assigneeIds) {
+          const assignee = await db.query.employees.findFirst({
+            where: eq(schema.employees.id, empId),
+            columns: { slackId: true }
+          });
+          if (assignee?.slackId) {
+            await postToSlack(c.env, assignee.slackId, `You have been assigned a new task: ${body.title}`);
+          }
         }
       } catch (err) {
         console.error('[Slack Notification Error]', err);
       }
     }
+
+    await logAudit(c.env, user.id, 'CREATE', 'universal_tasks', id, body);
     
     return created(c, { id });
   } catch (err) {
@@ -149,6 +170,9 @@ tasksRouter.patch('/:id', async (c) => {
     }
 
     delete body.id; delete body.createdAt; delete body.updatedAt; delete body.completedAt;
+    const assigneeIds = body.assigneeIds;
+    delete body.assigneeIds;
+
     const updates: any = { ...body, updatedAt: new Date() };
     if (body.status === 'completed') {
       updates.completedAt = new Date();
@@ -157,6 +181,22 @@ tasksRouter.patch('/:id', async (c) => {
     await db.update(schema.universalTasks)
       .set(updates)
       .where(eq(schema.universalTasks.id, id));
+
+    // Update Assignments
+    if (assigneeIds !== undefined) {
+      await db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id));
+      if (Array.isArray(assigneeIds) && assigneeIds.length > 0) {
+        const assignmentsToInsert = assigneeIds.filter((empId: string) => empId).map((empId: string) => ({
+          id: generateId('tassign'),
+          taskId: id,
+          employeeId: empId,
+          assignedAt: new Date()
+        }));
+        if (assignmentsToInsert.length > 0) {
+          await db.insert(schema.taskAssignments).values(assignmentsToInsert);
+        }
+      }
+    }
 
     await logAudit(c.env, user.id, 'UPDATE', 'universal_tasks', id, body);
     return ok(c, { id });
@@ -222,6 +262,7 @@ tasksRouter.delete('/:id', async (c) => {
       return c.json({ success: false, error: 'Permission denied: cannot delete tasks' }, 403);
     }
 
+    await db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id));
     await db.delete(schema.universalTasks).where(eq(schema.universalTasks.id, id));
     await logAudit(c.env, user.id, 'DELETE', 'universal_tasks', id);
     return ok(c, { id, deleted: true });

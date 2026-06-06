@@ -15,11 +15,18 @@ dashboardRouter.get('/me', async (c) => {
     const user = c.get('user');
     const db = getDb(c.env);
 
-    // Get all tasks assigned to user (by employeeId)
-    const tasks = user.employeeId
+    // Get all tasks assigned to user via task_assignments junction table
+    const myAssignments = user.employeeId
+      ? await db.query.taskAssignments.findMany({
+          where: eq(schema.taskAssignments.employeeId, user.employeeId),
+        })
+      : [];
+    const myTaskIds = myAssignments.map((a: any) => a.taskId);
+    const tasks = myTaskIds.length > 0
       ? await db.query.universalTasks.findMany({
-          where: eq(schema.universalTasks.assigneeId, user.employeeId),
+          where: inArray(schema.universalTasks.id, myTaskIds),
           orderBy: [desc(schema.universalTasks.createdAt)],
+          with: { assignments: true },
         })
       : [];
 
@@ -70,6 +77,7 @@ dashboardRouter.get('/me', async (c) => {
             committeeIds.length > 0 ? inArray(schema.universalTasks.committeeId, committeeIds) : undefined
           ),
           orderBy: [desc(schema.universalTasks.createdAt)],
+          with: { assignments: true },
         })
       : [];
 

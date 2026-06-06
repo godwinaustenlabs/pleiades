@@ -27,7 +27,7 @@ import {
   campaigns, contactsLeads, leadsActivity, funnelsPipelines,
   contentCalendar, sprints, acqTasks,
 } from './acquisition';
-import { universalTasks } from './unified_tasks';
+import { universalTasks, taskAssignments } from './unified_tasks';
 import {
   crmTickets, crmDocuments, crmPlannerEvents,
   clientLogins, userNotes, userDashboardState,
@@ -113,6 +113,7 @@ export const employeesRelations = relations(employees, ({ many, one }) => ({
   appointments: many(appointments),
   payrollRecords: many(payrollRecords),
   legalTrackers: many(legalTracker),
+  taskAssignments: many(taskAssignments),
   sector: one(sectors, { fields: [employees.sectorId], references: [sectors.id] }),
 }));
 
@@ -331,11 +332,16 @@ export const acqTasksRelations = relations(acqTasks, ({ one }) => ({
 }));
 
 /* ── UNIVERSAL TASKS ── */
-export const universalTasksRelations = relations(universalTasks, ({ one }) => ({
-  assignee: one(employees, { fields: [universalTasks.assigneeId], references: [employees.id] }),
+export const universalTasksRelations = relations(universalTasks, ({ one, many }) => ({
+  assignments: many(taskAssignments),
   creator: one(usersLogins, { fields: [universalTasks.creatorId], references: [usersLogins.id], relationName: 'taskCreator' }),
   appointment: one(appointments, { fields: [universalTasks.appointmentId], references: [appointments.id] }),
   committee: one(committees, { fields: [universalTasks.committeeId], references: [committees.id] }),
+}));
+
+export const taskAssignmentsRelations = relations(taskAssignments, ({ one }) => ({
+  task: one(universalTasks, { fields: [taskAssignments.taskId], references: [universalTasks.id] }),
+  employee: one(employees, { fields: [taskAssignments.employeeId], references: [employees.id] }),
 }));
 
 /* ── CRM ── */

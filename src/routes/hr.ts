@@ -375,9 +375,24 @@ hrRouter.delete('/appointments/:id', async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
-    const id = c.req.param('id');
-    await db.delete(schema.appointments).where(eq(schema.appointments.id, id!));
-    await logAudit(c.env, user.id, 'DELETE', 'appointments', id!);
+    const id = c.req.param('id')!;
+
+    // 1. Find appointment to get accountId
+    const appointment = await db.query.appointments.findFirst({
+      where: eq(schema.appointments.id, id)
+    });
+
+    // 2. Deactivate linked account if it exists
+    if (appointment?.accountId) {
+      await db.update(schema.usersLogins)
+        .set({ isActive: false })
+        .where(eq(schema.usersLogins.id, appointment.accountId));
+      await logAudit(c.env, user.id, 'UPDATE', 'users_logins', appointment.accountId, { action: 'deactivate_via_appointment_delete', appointmentId: id });
+    }
+
+    // 3. Delete appointment
+    await db.delete(schema.appointments).where(eq(schema.appointments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'appointments', id);
     return ok(c, { id, deleted: true });
   } catch (err: any) { 
     if (err.message?.includes('FOREIGN KEY constraint failed')) {

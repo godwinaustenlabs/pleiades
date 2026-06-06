@@ -28,59 +28,33 @@ const HR_EMAIL = 'hr@godwinausten.org';
 const HR_PASSWORD = 'ChangeMe_HR_2026!';    // ← CHANGE before seeding production
 
 // ── Role IDs (must match what's already in roles table from migration) ────────
-// These are the IDs that the seed script will INSERT. If your roles table already
-// has rows from a previous seed, adjust or skip the role inserts.
 const ROLES = [
   { id: 'role-ceo', name: 'CEO' },
-  { id: 'role-hr', name: 'HR_Manager' },
-  { id: 'role-finance', name: 'Finance_Manager' },
+  { id: 'role-director', name: 'Director' },
   { id: 'role-legal', name: 'Legal_Officer' },
-  { id: 'role-tech', name: 'Tech_Lead' },
-  { id: 'role-acq', name: 'Marketing_Lead' },
   { id: 'role-emp', name: 'Employee' },
   { id: 'role-agent', name: 'Agent' },
 ] as const;
 
 // ── Hierarchy configuration ───────────────────────────────────────────────────
-// level: lower = higher authority.
-// canProvisionRoleIds: which role IDs this role may create accounts for.
-// allowedModules: which app modules this role may access.
 const HIERARCHY = [
   {
     roleId: 'role-ceo',
     level: 1,
-    canProvisionRoleIds: ['role-ceo', 'role-hr', 'role-finance', 'role-legal', 'role-tech', 'role-acq', 'role-emp', 'role-agent'],
+    canProvisionRoleIds: ['role-ceo', 'role-director', 'role-legal', 'role-emp', 'role-agent'],
     allowedModules: ['hr', 'finance', 'legal', 'ops', 'acquisition', 'tech', 'mcp_server'],
   },
   {
-    roleId: 'role-hr',
+    roleId: 'role-director',
     level: 2,
-    canProvisionRoleIds: ['role-finance', 'role-legal', 'role-tech', 'role-acq', 'role-emp'],
-    allowedModules: ['hr', 'ops', 'mcp_server'],
-  },
-  {
-    roleId: 'role-finance',
-    level: 3,
-    canProvisionRoleIds: [],
-    allowedModules: ['finance', 'ops', 'mcp_server'],
+    canProvisionRoleIds: ['role-emp'],
+    allowedModules: ['acquisition', 'tech', 'ops', 'mcp_server'],
   },
   {
     roleId: 'role-legal',
     level: 3,
     canProvisionRoleIds: [],
     allowedModules: ['legal', 'ops', 'mcp_server'],
-  },
-  {
-    roleId: 'role-tech',
-    level: 3,
-    canProvisionRoleIds: [],
-    allowedModules: ['tech', 'ops', 'mcp_server'],
-  },
-  {
-    roleId: 'role-acq',
-    level: 3,
-    canProvisionRoleIds: [],
-    allowedModules: ['acquisition', 'mcp_server'],
   },
   {
     roleId: 'role-emp',
@@ -148,16 +122,8 @@ for (const r of ROLES) {
   );
 }
 
-lines.push('', '-- 2. Role Hierarchy');
-for (const h of HIERARCHY) {
-  lines.push(
-    `INSERT OR IGNORE INTO role_hierarchy (role_id, level, can_provision_role_ids, allowed_modules, created_at) VALUES (` +
-    `'${h.roleId}', ${h.level}, '${JSON.stringify(h.canProvisionRoleIds)}', '${JSON.stringify(h.allowedModules)}', ${now});`
-  );
-  lines.push(
-    `UPDATE role_hierarchy SET level = ${h.level}, can_provision_role_ids = '${JSON.stringify(h.canProvisionRoleIds)}', allowed_modules = '${JSON.stringify(h.allowedModules)}' WHERE role_id = '${h.roleId}';`
-  );
-}
+lines.push('', '-- 2. Role Hierarchy (Skipped)');
+
 
 lines.push('', '-- 3. Permissions');
 for (const p of PERMISSIONS) {
@@ -167,27 +133,8 @@ for (const p of PERMISSIONS) {
   );
 }
 
-lines.push('', '-- 4. Role ↔ Permission grants (CEO gets all)');
-for (const p of PERMISSIONS) {
-  const permId = `perm-${p.replace(/_/g, '-')}`;
-  lines.push(
-    `INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-ceo', '${permId}');`
-  );
-}
-// HR Manager gets HR + admin permissions
-const hrPerms = PERMISSIONS.filter(p =>
-  p.startsWith('view_employee') || p.startsWith('edit_employee') ||
-  p.startsWith('view_payroll') || p.startsWith('view_appointments') ||
-  p.startsWith('edit_appointments') || p.startsWith('view_sectors') ||
-  p.startsWith('view_audit_logs') || p === 'provision_user' ||
-  p === 'deactivate_user' || p === 'approve_reset'
-);
-for (const p of hrPerms) {
-  const permId = `perm-${p.replace(/_/g, '-')}`;
-  lines.push(
-    `INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-hr', '${permId}');`
-  );
-}
+lines.push('', '-- 4. Role ↔ Permission grants (Skipped)');
+
 
 lines.push('', '-- 5. CEO user account');
 lines.push(

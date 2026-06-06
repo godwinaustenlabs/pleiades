@@ -10,10 +10,9 @@ export const universalTasks = sqliteTable('universal_tasks', {
   status: text('status').notNull(), // todo | in_progress | completed | blocked
   priority: text('priority'), // low | medium | high | urgent
   department: text('department').notNull(), // HR | Finance | Legal | Ops | Acquisition | Tech
-  taskType: text('task_type'), // operational | administrative | technical | review | urgent
+  taskType: text('task_type'), // operational | administrative | technical | review | urgent | meeting
   
-  // Relations — assignee is an EMPLOYEE (not a login user)
-  assigneeId: text('assignee_id').references(() => employees.id),
+  // Relations
   creatorId: text('creator_id').references(() => usersLogins.id),
   
   // Assignment to appointments and committees
@@ -33,4 +32,11 @@ export const universalTasks = sqliteTable('universal_tasks', {
   completedAt: integer('completed_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const taskAssignments = sqliteTable('task_assignments', {
+  id: text('assignment_id').primaryKey(),
+  taskId: text('task_id').notNull().references(() => universalTasks.id),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  assignedAt: integer('assigned_at', { mode: 'timestamp' }).notNull(),
 });
