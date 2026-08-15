@@ -371,7 +371,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
                                     : event.status === 'blocked'
                                       ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
-                                      : 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
+                                      : event.status === 'in_progress'
+                                        ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/30'
+                                        : 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
                               } ${!event.isStart && !isPreview ? 'rounded-l-none border-l-transparent' : ''} ${!event.isEnd && !isPreview ? 'rounded-r-none border-r-transparent' : ''}`}
                               onClick={() => {
                                 if (isTask && !wasDragged) onEditTask?.(event);
@@ -383,7 +385,7 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                               <div className="flex items-center gap-1.5 overflow-hidden select-none pointer-events-none">
                                 {event.isStart && (
                                   <div className={`w-1 h-1 rounded-full flex-shrink-0 ${
-                                    event.type === 'appt' ? 'bg-accent' : event.status === 'completed' ? 'bg-emerald-400' : 'bg-primary'
+                                    event.type === 'appt' ? 'bg-accent' : event.status === 'completed' ? 'bg-emerald-400' : event.status === 'blocked' ? 'bg-red-400' : event.status === 'in_progress' ? 'bg-yellow-400' : 'bg-primary'
                                   }`} />
                                 )}
                                 <span className="truncate">{event.title || event.roleOrTitle}</span>
@@ -444,7 +446,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                       ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
                       : event.status === 'blocked'
                         ? 'bg-red-500/5 border-red-500/20 hover:bg-red-500/10'
-                        : 'bg-primary/5 border-primary/20 hover:bg-primary/10'
+                        : event.status === 'in_progress'
+                          ? 'bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10'
+                          : 'bg-primary/5 border-primary/20 hover:bg-primary/10'
                 }`}
               >
                 <div className="flex items-center gap-4 min-w-0">
@@ -495,7 +499,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                         ? 'bg-emerald-400' 
                         : event.status === 'blocked' 
                           ? 'bg-red-400' 
-                          : 'bg-primary'
+                          : event.status === 'in_progress'
+                            ? 'bg-yellow-400'
+                            : 'bg-primary'
                   }`} />
                 </div>
               </div>

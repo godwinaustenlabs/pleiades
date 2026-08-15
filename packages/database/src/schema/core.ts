@@ -15,6 +15,25 @@ export const employees = sqliteTable('employees', {
   efficiencyScore: real('efficiency_score'),
   profilePhoto: text('profile_photo'),
   sectorId: text('sector_id'),
+  
+  // HRMS Upgrade Fields
+  cnic: text('cnic'),
+  dob: text('dob'),
+  gender: text('gender'),
+  address: text('address'),
+  contactInfo: text('contact_info'),
+  emergencyContact: text('emergency_contact'),
+  designation: text('designation'),
+  reportingManagerId: text('reporting_manager_id'),
+  employmentType: text('employment_type'),
+  confirmationDate: text('confirmation_date'),
+  contractStartDate: text('contract_start_date'),
+  contractEndDate: text('contract_end_date'),
+  bankDetails: text('bank_details'), // JSON
+  taxInformation: text('tax_information'), // JSON
+  assignedOffice: text('assigned_office'),
+  notes: text('notes'),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });

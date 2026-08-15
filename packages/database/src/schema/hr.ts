@@ -25,6 +25,126 @@ export const appointments = sqliteTable('appointments', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+// -- NEW HRMS TABLES --
+
+export const attendance = sqliteTable('attendance', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  date: text('date').notNull(), // YYYY-MM-DD
+  checkIn: text('check_in'), // ISO string or time
+  checkOut: text('check_out'),
+  status: text('status'), // Present, Absent, Late, Overtime, Remote
+  totalHours: real('total_hours'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const leaveRequests = sqliteTable('leave_requests', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  leaveType: text('leave_type').notNull(), // Annual, Sick, Casual, Unpaid
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
+  status: text('status').notNull().default('Pending'), // Pending, Approved, Rejected
+  approvedBy: text('approved_by').references(() => employees.id),
+  reason: text('reason'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const leaveBalances = sqliteTable('leave_balances', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  leaveType: text('leave_type').notNull(),
+  totalAccrued: real('total_accrued').default(0),
+  totalUsed: real('total_used').default(0),
+  year: integer('year').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const employeeDocuments = sqliteTable('employee_documents', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  documentType: text('document_type').notNull(), // Resume, Offer, CNIC
+  url: text('url').notNull(),
+  uploadDate: text('upload_date').notNull(),
+  expiryDate: text('expiry_date'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const companyDocuments = sqliteTable('company_documents', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  documentType: text('document_type').notNull(), // SOP, Policy, Manual, Other
+  url: text('url').notNull(),
+  uploadedBy: text('uploaded_by').references(() => employees.id),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const salaryStructures = sqliteTable('salary_structures', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  baseSalary: real('base_salary').notNull(),
+  effectiveDate: text('effective_date').notNull(),
+  active: integer('active', { mode: 'boolean' }).default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const salaryComponents = sqliteTable('salary_components', {
+  id: text('id').primaryKey(),
+  structureId: text('structure_id').notNull().references(() => salaryStructures.id),
+  componentName: text('component_name').notNull(), // e.g., HRA, Medical, Tax
+  componentType: text('component_type').notNull(), // Earning, Deduction
+  amountType: text('amount_type').notNull(), // Fixed, Percentage
+  value: real('value').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const salaryRevisions = sqliteTable('salary_revisions', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  previousSalary: real('previous_salary').notNull(),
+  newSalary: real('new_salary').notNull(),
+  effectiveDate: text('effective_date').notNull(),
+  reason: text('reason'),
+  approvedBy: text('approved_by').references(() => employees.id),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const loans = sqliteTable('loans', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  originalAmount: real('original_amount').notNull(),
+  remainingBalance: real('remaining_balance').notNull(),
+  monthlyInstallment: real('monthly_installment').notNull(),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date'),
+  status: text('status').notNull().default('Active'), // Active, Paid
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const assets = sqliteTable('assets', {
+  id: text('id').primaryKey(),
+  assetName: text('asset_name').notNull(),
+  assetType: text('asset_type').notNull(), // Laptop, Monitor
+  assignedTo: text('assigned_to').references(() => employees.id),
+  issueDate: text('issue_date'),
+  returnDate: text('return_date'),
+  condition: text('condition'),
+  status: text('status').notNull().default('Available'), // Available, Assigned, Damaged
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const performanceReviews = sqliteTable('performance_reviews', {
+  id: text('id').primaryKey(),
+  employeeId: text('employee_id').notNull().references(() => employees.id),
+  reviewPeriod: text('review_period').notNull(), // Q1 2026
+  reviewerId: text('reviewer_id').notNull().references(() => employees.id),
+  score: real('score'),
+  feedback: text('feedback'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// -- EXISTING HR TABLES (Modified) --
+
 export const payrollRecords = sqliteTable('payroll_records', {
   id: text('payroll_id').primaryKey(),
   payrollMonth: text('payroll_month'),
@@ -38,6 +158,9 @@ export const payrollRecords = sqliteTable('payroll_records', {
   paymentDate: text('payment_date'),
   financeReference: text('finance_reference'), // Reference ID to transactions
   employeeId: text('employee_id').references(() => employees.id),
+  // New JSON fields to make the payroll run perfectly auditable
+  allowancesBreakdown: text('allowances_breakdown'), // JSON
+  deductionsBreakdown: text('deductions_breakdown'), // JSON
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

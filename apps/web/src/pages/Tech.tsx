@@ -45,6 +45,12 @@ function Tech() {
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
+
   const fetchPermissions = async () => {
     try {
       const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
@@ -368,7 +374,7 @@ function Tech() {
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-teal-500 to-emerald-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-teal-500/20 overflow-hidden">
               {user.profilePhoto ? (
-                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
                 user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
               )}

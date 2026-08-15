@@ -54,6 +54,12 @@ function Ops() {
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
+
   const fetchPermissions = async () => {
     try {
       const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
@@ -218,7 +224,7 @@ function Ops() {
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-indigo-500/20 overflow-hidden">
               {user.profilePhoto ? (
-                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
                 user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
               )}
@@ -641,7 +647,7 @@ function ProvisionCrmModal({ committees, employees, onClose, onSubmit }: { commi
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
-      <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
           <div><h2 className="text-xl font-black uppercase tracking-tight">Provision CRM Instance</h2><p className="text-[10px] text-textSecondary font-black uppercase tracking-widest mt-1">Operational Lifecycle Management</p></div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
@@ -685,7 +691,7 @@ function ProvisionPortalModal({ client, onClose, onSubmit }: { client: any; onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
-      <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
           <div>
             <h2 className="text-xl font-black uppercase tracking-tight">Provision Portal</h2>

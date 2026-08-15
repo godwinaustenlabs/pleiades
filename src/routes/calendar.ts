@@ -36,11 +36,18 @@ calendarRouter.get('/feed/:token', async (c) => {
   const employeeId = feed.user.employeeId;
 
   // Fetch tasks
-  const tasks = employeeId 
-    ? await db.query.universalTasks.findMany({
-        where: eq(schema.universalTasks.assigneeId, employeeId)
-      })
-    : [];
+  let tasks: any[] = [];
+  if (employeeId) {
+    const assignments = await db.query.taskAssignments.findMany({
+      where: eq(schema.taskAssignments.employeeId, employeeId)
+    });
+    const taskIds = assignments.map((a: any) => a.taskId);
+    if (taskIds.length > 0) {
+      tasks = await db.query.universalTasks.findMany({
+        where: inArray(schema.universalTasks.id, taskIds)
+      });
+    }
+  }
 
   // Fetch appointments
   const appointments = await db.query.appointments.findMany({
@@ -73,7 +80,7 @@ calendarRouter.get('/feed/:token', async (c) => {
 
   tasks.forEach(task => {
     if (!task.dueDate) return;
-    const start = formatDate(new Date(task.createdAt).toISOString().split('T')[0]);
+    const start = formatDate(new Date(task.startDate || task.createdAt).toISOString().split('T')[0]);
     const end = new Date(task.dueDate);
     end.setDate(end.getDate() + 1); // ICS DTEND is exclusive
     const endStr = formatDate(end.toISOString().split('T')[0]);
@@ -85,7 +92,8 @@ calendarRouter.get('/feed/:token', async (c) => {
     lines.push(`DTSTAMP:${new Date(task.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0]}Z`);
     lines.push(`DTSTART;VALUE=DATE:${start}`);
     lines.push(`DTEND;VALUE=DATE:${endStr}`);
-    lines.push(`SUMMARY:[Task] ${task.title}`);
+    lines.push(`SUMMARY:${task.title}`);
+    lines.push(`STATUS:${task.status.toUpperCase()}`);
     lines.push(`DESCRIPTION:${task.description || ''}\\nStatus: ${task.status}\\nPriority: ${task.priority || 'N/A'}`);
     lines.push('END:VEVENT');
   });

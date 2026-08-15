@@ -14,7 +14,8 @@ import {
 } from './core';
 import { sectors, appointments, payrollRecords, legalTracker } from './hr';
 import {
-  accounts, channels, fundRequests, invoices, transactions, plReports,
+  accounts, fundRequests, invoices, transactions, plReports,
+  ledgers, generalJournals,
 } from './finance';
 import {
   legalTemplates, partiesStakeholders, activeAgreements, agreementParties,
@@ -25,7 +26,7 @@ import {
 } from './tech';
 import {
   campaigns, contactsLeads, leadsActivity, funnelsPipelines,
-  contentCalendar, sprints, acqTasks,
+  contentCalendar, sprints, acqTasks, dealPipelines, dealStages, deals,
 } from './acquisition';
 import { universalTasks, taskAssignments } from './unified_tasks';
 import {
@@ -184,13 +185,24 @@ export const legalTrackerRelations = relations(legalTracker, ({ one }) => ({
 }));
 
 /* ── FINANCE ── */
-export const accountsRelations = relations(accounts, ({ many }) => ({
+export const accountsRelations = relations(accounts, ({ many, one }) => ({
   transactions: many(transactions),
+  ledger: one(ledgers, { fields: [accounts.ledgerId], references: [ledgers.id] }),
+  debitJournals: many(generalJournals, { relationName: 'debitAccountRelation' }),
+  creditJournals: many(generalJournals, { relationName: 'creditAccountRelation' }),
 }));
 
-export const channelsRelations = relations(channels, ({ many }) => ({
-  transactions: many(transactions),
+export const ledgersRelations = relations(ledgers, ({ many }) => ({
+  accounts: many(accounts),
+  generalJournals: many(generalJournals),
 }));
+
+export const generalJournalsRelations = relations(generalJournals, ({ one }) => ({
+  ledger: one(ledgers, { fields: [generalJournals.ledgerId], references: [ledgers.id] }),
+  debitAccount: one(accounts, { fields: [generalJournals.debitAccountId], references: [accounts.id], relationName: 'debitAccountRelation' }),
+  creditAccount: one(accounts, { fields: [generalJournals.creditAccountId], references: [accounts.id], relationName: 'creditAccountRelation' }),
+}));
+
 
 export const fundRequestsRelations = relations(fundRequests, ({ one, many }) => ({
   committee: one(committees, { fields: [fundRequests.committeeId], references: [committees.id] }),
@@ -208,7 +220,6 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   committee: one(committees, { fields: [transactions.committeeId], references: [committees.id] }),
   client: one(clients, { fields: [transactions.clientId], references: [clients.id] }),
   account: one(accounts, { fields: [transactions.accountId], references: [accounts.id] }),
-  channel: one(channels, { fields: [transactions.channelId], references: [channels.id] }),
   invoice: one(invoices, { fields: [transactions.invoiceId], references: [invoices.id] }),
   fundRequest: one(fundRequests, { fields: [transactions.fundRequestId], references: [fundRequests.id] }),
 }));
@@ -329,6 +340,22 @@ export const sprintsRelations = relations(sprints, ({ many }) => ({
 export const acqTasksRelations = relations(acqTasks, ({ one }) => ({
   sprint: one(sprints, { fields: [acqTasks.sprintId], references: [sprints.id] }),
   campaign: one(campaigns, { fields: [acqTasks.campaignId], references: [campaigns.id] }),
+}));
+
+export const dealPipelinesRelations = relations(dealPipelines, ({ many }) => ({
+  dealStages: many(dealStages),
+  deals: many(deals),
+}));
+
+export const dealStagesRelations = relations(dealStages, ({ one, many }) => ({
+  pipeline: one(dealPipelines, { fields: [dealStages.pipelineId], references: [dealPipelines.id] }),
+  deals: many(deals),
+}));
+
+export const dealsRelations = relations(deals, ({ one }) => ({
+  pipeline: one(dealPipelines, { fields: [deals.pipelineId], references: [dealPipelines.id] }),
+  stage: one(dealStages, { fields: [deals.stageId], references: [dealStages.id] }),
+  contact: one(contactsLeads, { fields: [deals.contactId], references: [contactsLeads.id] }),
 }));
 
 /* ── UNIVERSAL TASKS ── */

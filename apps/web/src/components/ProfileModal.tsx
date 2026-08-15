@@ -138,7 +138,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+      <div className="glass-panel rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/20">

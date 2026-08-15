@@ -241,11 +241,13 @@ Always confirm destructive actions like deleting a task or note. If an API call 
             department: z.string(),
             description: z.string().optional(),
             status: z.enum(['todo', 'in_progress', 'completed', 'blocked']).optional(),
-            assigneeId: z.string().optional().describe('Assignee Employee ID'),
+            assigneeIds: z.array(z.string()).optional().describe('Array of Assignee Employee IDs'),
             committeeId: z.string().optional(),
             appointmentId: z.string().optional()
           }),
-          func: async (args: any) => await callApi('POST', '/api/tasks', args)
+          func: async (args: any) => {
+            return await callApi('POST', '/api/tasks', args);
+          }
         },
         {
           name: 'update_task',
@@ -255,7 +257,7 @@ Always confirm destructive actions like deleting a task or note. If an API call 
             title: z.string().optional(),
             status: z.enum(['todo', 'in_progress', 'completed', 'blocked']).optional(),
             description: z.string().optional(),
-            assigneeId: z.string().optional()
+            assigneeIds: z.array(z.string()).optional().describe('Array of Assignee Employee IDs')
           }),
           func: async (args: { [x: string]: any; id: any; }) => {
             const { id, ...updates } = args;

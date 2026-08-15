@@ -20,7 +20,7 @@ export const APP_FEATURES: Record<string, string[]> = {
   acquisition: ['campaigns', 'contacts', 'content', 'sprints', 'tasks'],
   ops: ['labs', 'committees', 'clients', 'docs', 'tasks'],
   crm: ['tickets', 'documents', 'planner', 'tasks'],
-  dashboard: ['overview', 'notes'],
+  dashboard: ['overview', 'notes', 'tasks'],
 };
 
 // ── Helper: check if user is superadmin ──────────────────────────
@@ -116,10 +116,10 @@ export function requireFeatureAccess(appName: string, feature: string, level: 'v
       return c.json({ error: `Forbidden: no access to ${appName}/${feature}` }, 403);
     }
 
-    if (level === 'view' && !perm.canView) {
+    if (level === 'view' && !perm.canView && !perm.canEdit && !perm.canDelete) {
       return c.json({ error: `Forbidden: cannot view ${appName}/${feature}` }, 403);
     }
-    if (level === 'edit' && !perm.canEdit) {
+    if (level === 'edit' && !perm.canEdit && !perm.canDelete) {
       return c.json({ error: `Forbidden: cannot edit ${appName}/${feature}` }, 403);
     }
     if (level === 'delete' && !perm.canDelete) {
@@ -154,8 +154,8 @@ export async function checkFeaturePermission(
   });
 
   if (!perm) return false;
-  if (level === 'view') return perm.canView === true;
-  if (level === 'edit') return perm.canEdit === true;
+  if (level === 'view') return perm.canView === true || perm.canEdit === true || perm.canDelete === true;
+  if (level === 'edit') return perm.canEdit === true || perm.canDelete === true;
   if (level === 'delete') return perm.canDelete === true;
   return false;
 }

@@ -10,11 +10,12 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
+import JournalEntryForm from '../components/JournalEntryForm';
 
 const API = '/api';
 const token = () => localStorage.getItem('ga_token') || '';
 
-type Tab = 'transactions' | 'invoices' | 'fund-requests' | 'accounts' | 'channels' | 'tasks';
+type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'tasks';
 
 interface UserPermission {
   appName: string;
@@ -26,7 +27,7 @@ interface UserPermission {
 
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
-  const [tab, setTab] = useState<Tab>('transactions');
+  const [tab, setTab] = useState<Tab>('ledger-view');
   const [showProfile, setShowProfile] = useState(false);
   const [showEntityForm, setShowEntityForm] = useState(false);
   const [showSecondaryForm, setShowSecondaryForm] = useState(false);
@@ -35,7 +36,43 @@ function Finance() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [channels, setChannels] = useState<any[]>([]);
+
+  const [ledgers, setLedgers] = useState<any[]>([]);
+  const [trialBalanceData, setTrialBalanceData] = useState<any>(null);
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const day = today.getDate();
+    let start: Date;
+    if (day >= 15) {
+      start = new Date(year, month, 15);
+    } else {
+      start = new Date(year, month - 1, 15);
+    }
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const day = today.getDate();
+    let end: Date;
+    if (day >= 15) {
+      end = new Date(year, month + 1, 15);
+    } else {
+      end = new Date(year, month, 15);
+    }
+    const yyyy = end.getFullYear();
+    const mm = String(end.getMonth() + 1).padStart(2, '0');
+    const dd = String(end.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [selectedLedgerAccount, setSelectedLedgerAccount] = useState('');
+  const [ledgerViewData, setLedgerViewData] = useState<any>(null);
   const [committees, setCommittees] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [fundRequests, setFundRequests] = useState<any[]>([]);
@@ -46,6 +83,12 @@ function Finance() {
   const [permsLoaded, setPermsLoaded] = useState(false);
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
+
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
 
   const fetchPermissions = async () => {
     try {
@@ -73,12 +116,34 @@ function Finance() {
   const fetchData = () => {
     if (!permsLoaded) return;
     setLoading(true);
-    fetch(`${API}/finance/${tab}`, { headers: { Authorization: `Bearer ${token()}` } })
+    let url = `${API}/finance/${tab}`;
+    if (tab === 'journals') {
+      url += `?startDate=${startDate}&endDate=${endDate}`;
+    }
+    if (tab === 'accounts') {
+      url += `?startDate=${startDate}&endDate=${endDate}`;
+    }
+    if (tab === 'ledger-view' && selectedLedgerAccount) {
+      url = `${API}/finance/ledger-view?account_id=${selectedLedgerAccount}&startDate=${startDate}&endDate=${endDate}`;
+    }
+    if (tab === 'trial-balance') {
+      url += `?startDate=${startDate}&endDate=${endDate}`;
+    }
+    fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => {
         if (r.status === 401) { handleLogout(); throw new Error('Unauthorized'); }
         return r.json();
       })
-      .then(d => { setData(d.data || []); setLoading(false); })
+      .then(d => {
+        if (tab === 'trial-balance') {
+          setTrialBalanceData(d.data || null);
+        } else if (tab === 'ledger-view' && selectedLedgerAccount) {
+          setLedgerViewData(d.data || null);
+        } else {
+          setData(d.data || []);
+        }
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   };
 
@@ -87,8 +152,8 @@ function Finance() {
       fetch(url, { headers: { Authorization: `Bearer ${token()}` } })
         .then(r => r.json()).then(d => setter(d.data || [])).catch(() => { });
     };
+    fetchWithAuth(`${API}/finance/ledgers`, setLedgers);
     fetchWithAuth(`${API}/finance/accounts`, setAccounts);
-    fetchWithAuth(`${API}/finance/channels`, setChannels);
     fetchWithAuth(`${API}/finance/invoices`, setInvoices);
     fetchWithAuth(`${API}/finance/fund-requests`, setFundRequests);
     fetchWithAuth(`${API}/core/committees`, setCommittees);
@@ -104,18 +169,20 @@ function Finance() {
       fetchData();
       fetchRelations();
     }
-  }, [tab, isAuthenticated, permsLoaded]);
+  }, [tab, isAuthenticated, permsLoaded, startDate, endDate, selectedLedgerAccount]);
 
 
 
   // Tab filtering
   const TABS = useMemo(() => {
     const all = [
-      { id: 'transactions', label: 'Ledger', icon: Receipt, feature: 'transactions' },
+      { id: 'ledger-view', label: 'Ledger Viewer', icon: FileText, feature: 'ledgers' },
+      { id: 'ledgers', label: 'Ledgers', icon: Wallet, feature: 'ledgers' },
+      { id: 'accounts', label: 'Accounts', icon: CreditCard, feature: 'accounts' },
+      { id: 'journals', label: 'General Journal', icon: Receipt, feature: 'journals' },
+      { id: 'trial-balance', label: 'Trial Balance', icon: FileText, feature: 'trial_balance' },
       { id: 'invoices', label: 'Invoices', icon: FileText, feature: 'invoices' },
       { id: 'fund-requests', label: 'Fund Requests', icon: ArrowUpRight, feature: 'fund_requests' },
-      { id: 'accounts', label: 'Accounts', icon: CreditCard, feature: 'accounts' },
-      { id: 'channels', label: 'Channels', icon: Wallet, feature: 'channels' },
       { id: 'tasks', label: 'Tasks', icon: Receipt, feature: 'tasks' },
     ] as const;
 
@@ -167,7 +234,7 @@ function Finance() {
     fetchData();
   };
 
-  const currentFeature = TABS.find(t => t.id === tab)?.feature || 'transactions';
+  const currentFeature = TABS.find(t => t.id === tab)?.feature || 'ledgers';
   const p = getPerm(currentFeature);
 
   return (
@@ -190,7 +257,7 @@ function Finance() {
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-emerald-500/20 overflow-hidden">
               {user.profilePhoto ? (
-                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
                 user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
               )}
@@ -229,18 +296,175 @@ function Finance() {
           onTabChange={(id) => setTab(id as Tab)}
           accentColor="emerald-400"
         />
-        {tab !== 'tasks' && (
+        {tab === 'ledger-view' && (
+          <div className="space-y-4 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
+              <div className="flex-1 w-full md:w-auto">
+                <label className="text-xs text-textSecondary mb-1 block">Account</label>
+                <select value={selectedLedgerAccount} onChange={e => setSelectedLedgerAccount(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white">
+                  <option value="">Select Account...</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 w-full md:w-auto">
+                <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+              </div>
+              <div className="flex-1 w-full md:w-auto">
+                <label className="text-xs text-textSecondary mb-1 block">End Date</label>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+              </div>
+            </div>
+            
+            {selectedLedgerAccount && ledgerViewData && (
+              <div className="glass-panel p-6 md:p-10 rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-5">
+                  <Wallet className="w-32 h-32" />
+                </div>
+                
+                <h2 className="text-2xl font-black mb-8 flex items-center gap-3 relative z-10">
+                  <Wallet className="w-6 h-6 text-emerald-400" />
+                  Ledger: {accounts.find(a => a.id === selectedLedgerAccount)?.accountName}
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                  <div className="hidden md:block absolute left-1/2 top-0 bottom-0 w-px bg-white/10 -translate-x-1/2"></div>
+                  
+                  <div>
+                    <h3 className="font-black text-lg mb-4 text-emerald-400 border-b border-white/10 pb-2 tracking-widest uppercase">Debit (Dr)</h3>
+                    <div className="space-y-2">
+                      {ledgerViewData.debits.map((d: any) => (
+                        <div key={d.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${d.isBalanceEntry ? 'bg-amber-500/10 border-amber-500/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`font-bold transition-colors ${d.isBalanceEntry ? 'text-amber-400' : 'text-white group-hover:text-emerald-400'}`}>{d.description || 'Entry'}</span>
+                            <span className="text-[10px] text-textSecondary font-mono">{new Date(d.entryDate).toLocaleDateString()}</span>
+                            {!d.isBalanceEntry && d.id && <span className="text-[10px] font-mono text-emerald-500/60 bg-emerald-500/5 border border-emerald-500/10 px-1.5 py-0.5 rounded self-start">{d.id}</span>}
+                          </div>
+                          <span className={`font-mono font-black ${d.isBalanceEntry ? 'text-amber-400' : 'text-emerald-400'}`}>${(d.amount || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h3 className="font-black text-lg mb-4 text-rose-400 border-b border-white/10 pb-2 tracking-widest uppercase">Credit (Cr)</h3>
+                    <div className="space-y-2">
+                      {ledgerViewData.credits.map((c: any) => (
+                        <div key={c.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${c.isBalanceEntry ? 'bg-amber-500/10 border-amber-500/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`font-bold transition-colors ${c.isBalanceEntry ? 'text-amber-400' : 'text-white group-hover:text-rose-400'}`}>{c.description || 'Entry'}</span>
+                            <span className="text-[10px] text-textSecondary font-mono">{new Date(c.entryDate).toLocaleDateString()}</span>
+                            {!c.isBalanceEntry && c.id && <span className="text-[10px] font-mono text-rose-500/60 bg-rose-500/5 border border-rose-500/10 px-1.5 py-0.5 rounded self-start">{c.id}</span>}
+                          </div>
+                          <span className={`font-mono font-black ${c.isBalanceEntry ? 'text-amber-400' : 'text-rose-400'}`}>${(c.amount || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-8 pt-6 border-t-2 border-white/20 grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                  <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
+                    <span>Total Dr</span>
+                    <span className="text-emerald-400 font-mono">${(ledgerViewData.totalDebit || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
+                    <span>Total Cr</span>
+                    <span className="text-rose-400 font-mono">${(ledgerViewData.totalCredit || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+                
+                <div className="mt-8 flex justify-center relative z-10">
+                  <div className={`px-8 py-4 rounded-2xl border-2 font-black text-xl flex gap-4 items-center shadow-2xl ${ledgerViewData.balanceSide === 'debit' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-emerald-500/20' : 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-rose-500/20'}`}>
+                    <span>Balance b/d:</span>
+                    <span className="font-mono">${(ledgerViewData.closingBalance || 0).toLocaleString()}</span>
+                    <span className="text-xs uppercase tracking-widest bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">{ledgerViewData.balanceSide}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {!selectedLedgerAccount && (
+              <div className="glass-panel p-16 rounded-[2.5rem] border border-white/10 text-center text-textSecondary shadow-2xl flex flex-col items-center justify-center">
+                <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10 shadow-inner">
+                  <Wallet className="w-10 h-10 opacity-50" />
+                </div>
+                <h3 className="text-xl font-bold mb-2 text-white">No Account Selected</h3>
+                <p className="max-w-sm mx-auto text-sm">Please select an account from the dropdown above to view its dynamic T-Account ledger and transaction history.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && (
+          <div className="space-y-4">
+            {tab === 'journals' && (
+              <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
+                <div className="flex-1 w-full md:w-auto">
+                  <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                </div>
+                <div className="flex-1 w-full md:w-auto">
+                  <label className="text-xs text-textSecondary mb-1 block">End Date</label>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                </div>
+                <button 
+                  onClick={() => window.open(`${API}/finance/export/${tab}?startDate=${startDate}&endDate=${endDate}`, '_blank')}
+                  className="w-full md:w-auto px-6 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 rounded-xl font-bold text-sm transition-all border border-emerald-500/30"
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Finance'}
             entityName={tab.slice(0, -1)}
             columns={
-              tab === 'transactions' ? [
-                { key: 'name', label: 'Name' },
+              tab === 'ledgers' ? [
+                { key: 'ledgerName', label: 'Ledger Name' },
                 { key: 'description', label: 'Description' },
-                { key: 'amount', label: 'Amount', type: 'currency' as const },
-                { key: 'transactionType', label: 'Type', type: 'badge' as const },
-                { key: 'transactionDate', label: 'Date', type: 'date' as const },
-                { key: 'approved', label: 'Approved', render: (v: any) => v ? '✅ Yes' : '⏳ Pending' },
+                { key: 'createdAt', label: 'Created At', type: 'date' as const },
+              ] : tab === 'journals' ? [
+                { key: 'id', label: '#', render: (v: any) => <span className="font-mono text-[10px] text-textSecondary bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">{v}</span> },
+                { key: 'entryDate', label: 'Date', type: 'date' as const },
+                { key: 'description', label: 'Description' },
+                { key: 'amount', label: 'Amount', render: (v: any, row: any) => {
+                    let lines = [];
+                    if (row.lines) {
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                    }
+                    if (lines.length > 0) {
+                      const total = lines.filter((l: any) => l.type === 'debit').reduce((acc: number, l: any) => acc + (l.amount || 0), 0);
+                      return <span className="font-mono">${total.toLocaleString()}</span>;
+                    }
+                    return <span className="font-mono">${(v || 0).toLocaleString()}</span>;
+                  }
+                },
+                { key: 'debitAccountId', label: 'Debit Account', render: (v: any, row: any) => {
+                    let lines = [];
+                    if (row.lines) {
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                    }
+                    if (lines.length > 0) {
+                      const drs = lines.filter((l: any) => l.type === 'debit');
+                      return drs.length > 1 ? <span className="text-emerald-400/70 italic text-xs">Multiple ({drs.length})</span> : (accounts.find(a => a.id === drs[0]?.accountId)?.accountName || '—');
+                    }
+                    return accounts.find(a => a.id === v)?.accountName || v || '—';
+                  }
+                },
+                { key: 'creditAccountId', label: 'Credit Account', render: (v: any, row: any) => {
+                    let lines = [];
+                    if (row.lines) {
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                    }
+                    if (lines.length > 0) {
+                      const crs = lines.filter((l: any) => l.type === 'credit');
+                      return crs.length > 1 ? <span className="text-rose-400/70 italic text-xs">Multiple ({crs.length})</span> : (accounts.find(a => a.id === crs[0]?.accountId)?.accountName || '—');
+                    }
+                    return accounts.find(a => a.id === v)?.accountName || v || '—';
+                  }
+                },
+                { key: 'invoiceId', label: 'Invoice', render: (v: any) => { const inv = invoices.find((i: any) => i.id === v); return inv ? <span className="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">{inv.invoiceNumber}</span> : <span className="text-textSecondary text-xs">—</span>; } },
               ] : tab === 'invoices' ? [
                 { key: 'invoiceNumber', label: 'Invoice #' },
                 { key: 'vendorName', label: 'Vendor' },
@@ -256,17 +480,12 @@ function Finance() {
                 { key: 'approvalStatus', label: 'Approval', type: 'status' as const },
                 { key: 'disbursementStatus', label: 'Disbursement', type: 'badge' as const },
                 { key: 'requestDate', label: 'Date', type: 'date' as const },
-              ] : tab === 'channels' ? [
-                { key: 'channelName', label: 'Channel', type: 'avatar' as const },
-                { key: 'channelType', label: 'Type', type: 'badge' as const },
-                { key: 'activeStatus', label: 'Active', render: (v: any) => v ? '✅ Active' : '❌ Inactive' },
-                { key: 'lastUsedDate', label: 'Last Used', type: 'date' as const },
               ] : [
                 { key: 'accountName', label: 'Account', type: 'avatar' as const },
                 { key: 'accountType', label: 'Type', type: 'badge' as const },
                 { key: 'bankName', label: 'Bank' },
-                { key: 'openingBalance', label: 'Opening', type: 'currency' as const },
-                { key: 'currentBalance', label: 'Balance', type: 'currency' as const },
+                { key: 'openingBalance', label: 'Opening Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.openingBalanceSide === 'debit' ? 'text-emerald-400 font-bold' : row.openingBalanceSide === 'credit' ? 'text-rose-400 font-bold' : 'text-textSecondary'}>{row.openingBalanceSide === 'debit' ? 'Dr' : row.openingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
+                { key: 'closingBalance', label: 'Closing Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.closingBalanceSide === 'debit' ? 'text-emerald-400 font-bold' : row.closingBalanceSide === 'credit' ? 'text-rose-400 font-bold' : 'text-textSecondary'}>{row.closingBalanceSide === 'debit' ? 'Dr' : row.closingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
                 { key: 'currency', label: 'Currency' },
                 { key: 'status', label: 'Status', type: 'status' as const },
               ]
@@ -276,14 +495,72 @@ function Finance() {
             onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
             onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
             onDelete={async (r) => {
-              if (!confirm(`Irreversible deletion of financial record. Confirm?`)) return;
-              await fetch(`${API}/finance/${tab}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+              if (!confirm(`Delete this record? This cannot be undone.`)) return;
+              const res = await fetch(`${API}/finance/${tab}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+              if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                alert(body.error || `Failed to delete. Please check dependencies and try again.`);
+                return;
+              }
               fetchData();
             }}
             canAdd={p.canEdit}
             canEdit={p.canEdit}
             canDelete={p.canDelete}
           />
+          </div>
+        )}
+        {tab === 'trial-balance' && trialBalanceData && (
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
+              <div className="flex-1 w-full md:w-auto">
+                <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+              </div>
+              <div className="flex-1 w-full md:w-auto">
+                <label className="text-xs text-textSecondary mb-1 block">End Date</label>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+              </div>
+            </div>
+            
+            <div className="glass-panel p-6 md:p-8 rounded-[2.5rem] border border-white/10 shadow-2xl">
+              <h2 className="text-2xl font-black mb-6 flex items-center gap-3">
+                <FileText className="w-6 h-6 text-emerald-400" />
+                Trial Balance
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-textSecondary text-xs tracking-widest uppercase">
+                      <th className="p-4 font-black">Account</th>
+                      <th className="p-4 font-black text-right">Debit</th>
+                      <th className="p-4 font-black text-right">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {trialBalanceData.balances.map((b: any) => (
+                      <tr key={b.id} className="hover:bg-white/5 transition-colors">
+                        <td className="p-4">
+                          <div className="font-bold">{b.accountName}</div>
+                          <div className="text-xs text-textSecondary">{b.accountNumber}</div>
+                        </td>
+                        <td className="p-4 text-right font-mono text-emerald-400">{b.type === 'debit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
+                        <td className="p-4 text-right font-mono text-rose-400">{b.type === 'credit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-black/20 font-black text-lg">
+                      <td className="p-4 text-right">TOTAL</td>
+                      <td className="p-4 text-right font-mono text-emerald-400 border-t-2 border-emerald-500/30">${trialBalanceData.totalDebit.toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono text-rose-400 border-t-2 border-rose-500/30">${trialBalanceData.totalCredit.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className={`mt-6 p-4 rounded-xl text-center font-bold border ${trialBalanceData.isBalanced ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                {trialBalanceData.isBalanced ? '✅ Accounts are Balanced' : '❌ Accounts are NOT Balanced'}
+              </div>
+            </div>
+          </div>
         )}
         {tab === 'tasks' && <TaskBoard department="Finance" canEdit={getPerm('tasks').canEdit} />}
       </main>
@@ -293,29 +570,21 @@ function Finance() {
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
       <NotificationCenter currentApp="finance" />
 
-      {showEntityForm && (
+      {showEntityForm && tab === 'journals' ? (
+        <JournalEntryForm
+          initialData={editingRecord}
+          accounts={accounts}
+          invoices={invoices}
+          onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
+          onSubmit={handleEntitySubmit}
+        />
+      ) : showEntityForm && (
         <EntityForm
           title={editingRecord ? `Update ${TABS.find(t => t.id === tab)?.label || tab}` : `New ${TABS.find(t => t.id === tab)?.label || tab}`}
           fields={
-            tab === 'transactions' ? [
-              { key: 'name', label: 'Transaction Name', type: 'text' as const, required: true },
+            tab === 'ledgers' ? [
+              { key: 'ledgerName', label: 'Ledger Name', type: 'text' as const, required: true },
               { key: 'description', label: 'Description', type: 'textarea' as const },
-              { key: 'amount', label: 'Amount ($)', type: 'number' as const, required: true },
-              {
-                key: 'transactionType', label: 'Type', type: 'select' as const, options: [
-                  { value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' },
-                  { value: 'transfer', label: 'Transfer' }, { value: 'refund', label: 'Refund' },
-                ], required: true
-              },
-              { key: 'transactionDate', label: 'Transaction Date', type: 'date' as const },
-              { key: 'approved', label: 'Approved', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
-              { key: 'createdBy', label: 'Created By', type: 'text' as const },
-              { key: 'accountId', label: 'Account', type: 'select' as const, options: accounts.map(a => ({ value: a.id, label: a.accountName })), action: { label: '+ New Account', onClick: () => setShowNestedForm('account') } },
-              { key: 'channelId', label: 'Channel', type: 'select' as const, options: channels.map(c => ({ value: c.id, label: c.channelName })), action: { label: '+ New Channel', onClick: () => setShowNestedForm('channel') } },
-              { key: 'committeeId', label: 'Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
-              { key: 'clientId', label: 'Client', type: 'select' as const, options: clients.map(c => ({ value: c.id, label: c.clientName })) },
-              { key: 'invoiceId', label: 'Linked Invoice', type: 'select' as const, options: invoices.map(i => ({ value: i.id, label: i.invoiceNumber })), action: { label: '+ New Invoice', onClick: () => setShowSecondaryForm(true) } },
-              { key: 'fundRequestId', label: 'Fund Request', type: 'select' as const, options: fundRequests.map(f => ({ value: f.id, label: f.requestName })), action: { label: '+ New Request', onClick: () => setShowNestedForm('fund-request') } },
             ] : tab === 'invoices' ? [
               { key: 'invoiceNumber', label: 'Invoice Number', type: 'text' as const, required: true },
               {
@@ -361,18 +630,20 @@ function Finance() {
               { key: 'disbursementDate', label: 'Disbursement Date', type: 'date' as const },
               { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
             ] : tab === 'accounts' ? [
+              { key: 'ledgerId', label: 'Linked Ledger', type: 'select' as const, options: ledgers.map(l => ({ value: l.id, label: l.ledgerName })) },
               { key: 'accountName', label: 'Account Name', type: 'text' as const, required: true },
               {
                 key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
-                  { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
-                  { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
-                  { value: 'investment', label: 'Investment' },
+                  { value: 'asset', label: 'Asset (Dr Normal)' },
+                  { value: 'liability', label: 'Liability (Cr Normal)' },
+                  { value: 'equity', label: 'Equity (Cr Normal)' },
+                  { value: 'revenue', label: 'Revenue (Cr Normal)' },
+                  { value: 'expense', label: 'Expense (Dr Normal)' },
                 ]
               },
               { key: 'bankName', label: 'Bank Name', type: 'text' as const },
               { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
-              { key: 'openingBalance', label: 'Opening Balance ($)', type: 'number' as const },
-              { key: 'currentBalance', label: 'Current Balance ($)', type: 'number' as const },
+
               {
                 key: 'currency', label: 'Currency', type: 'select' as const, options: [
                   { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' },
@@ -384,18 +655,7 @@ function Finance() {
                   { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'closed', label: 'Closed' },
                 ]
               },
-            ] : [
-              { key: 'channelName', label: 'Channel Name', type: 'text' as const, required: true },
-              {
-                key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
-                  { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
-                  { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
-                  { value: 'mobile_money', label: 'Mobile Money' }, { value: 'crypto', label: 'Crypto' },
-                ]
-              },
-              { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
-              { key: 'lastUsedDate', label: 'Last Used Date', type: 'date' as const },
-            ]
+            ] : []
           }
           initialData={editingRecord}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
@@ -432,16 +692,20 @@ function Finance() {
         <EntityForm
           title="New Account"
           fields={[
+            { key: 'ledgerId', label: 'Linked Ledger', type: 'select' as const, options: ledgers.map(l => ({ value: l.id, label: l.ledgerName })) },
             { key: 'accountName', label: 'Account Name', type: 'text' as const, required: true },
             {
               key: 'accountType', label: 'Account Type', type: 'select' as const, options: [
-                { value: 'current', label: 'Current' }, { value: 'savings', label: 'Savings' },
-                { value: 'credit', label: 'Credit' }, { value: 'petty_cash', label: 'Petty Cash' },
+                { value: 'asset', label: 'Asset (Dr Normal)' },
+                { value: 'liability', label: 'Liability (Cr Normal)' },
+                { value: 'equity', label: 'Equity (Cr Normal)' },
+                { value: 'revenue', label: 'Revenue (Cr Normal)' },
+                { value: 'expense', label: 'Expense (Dr Normal)' },
               ]
             },
             { key: 'bankName', label: 'Bank Name', type: 'text' as const },
             { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
-            { key: 'openingBalance', label: 'Opening Balance ($)', type: 'number' as const },
+
             {
               key: 'currency', label: 'Currency', type: 'select' as const, options: [
                 { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' }, { value: 'GBP', label: 'GBP' },
@@ -468,33 +732,7 @@ function Finance() {
         />
       )}
 
-      {showNestedForm === 'channel' && (
-        <EntityForm
-          title="New Channel"
-          fields={[
-            { key: 'channelName', label: 'Channel Name', type: 'text' as const, required: true },
-            {
-              key: 'channelType', label: 'Channel Type', type: 'select' as const, options: [
-                { value: 'bank_transfer', label: 'Bank Transfer' }, { value: 'cash', label: 'Cash' },
-                { value: 'cheque', label: 'Cheque' }, { value: 'card', label: 'Card' },
-                { value: 'mobile_money', label: 'Mobile Money' },
-              ]
-            },
-            { key: 'activeStatus', label: 'Is Active', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
-          ]}
-          onClose={() => setShowNestedForm(null)}
-          onSubmit={async (formData) => {
-            const res = await fetch(`${API}/finance/channels`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-              body: JSON.stringify(formData),
-            });
-            if (!res.ok) throw new Error('Failed to create channel');
-            fetchRelations();
-            setShowNestedForm(null);
-          }}
-        />
-      )}
+
 
       {showNestedForm === 'fund-request' && (
         <EntityForm

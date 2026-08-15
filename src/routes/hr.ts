@@ -527,4 +527,372 @@ hrRouter.get('/employees/:id/permissions', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+/* ── ATTENDANCE ── */
+hrRouter.get('/attendance', async (c) => {
+  try { return ok(c, await getDb(c.env).query.attendance.findMany({ where: c.req.query('employee_id') ? eq(schema.attendance.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/attendance', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('att');
+    await db.insert(schema.attendance).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'attendance', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── LEAVE REQUESTS ── */
+hrRouter.get('/leave-requests', async (c) => {
+  try { return ok(c, await getDb(c.env).query.leaveRequests.findMany({ where: c.req.query('employee_id') ? eq(schema.leaveRequests.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/leave-requests', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('lr');
+    await db.insert(schema.leaveRequests).values({ ...body, id, status: 'Pending', createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'leave_requests', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+hrRouter.patch('/leave-requests/:id/approve', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id'); const body = await c.req.json();
+    await db.update(schema.leaveRequests).set({ status: body.status, approvedBy: user.employeeId }).where(eq(schema.leaveRequests.id, id));
+    await logAudit(c.env, user.id, 'UPDATE', 'leave_requests', id, { status: body.status });
+    return ok(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── LEAVE BALANCES ── */
+hrRouter.get('/leave-balances', async (c) => {
+  try { return ok(c, await getDb(c.env).query.leaveBalances.findMany({ where: c.req.query('employee_id') ? eq(schema.leaveBalances.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+
+/* ── EMPLOYEE DOCUMENTS ── */
+hrRouter.get('/documents', async (c) => {
+  try { return ok(c, await getDb(c.env).query.employeeDocuments.findMany({ where: c.req.query('employee_id') ? eq(schema.employeeDocuments.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/documents', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('doc');
+    await db.insert(schema.employeeDocuments).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'employee_documents', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+hrRouter.delete('/documents/:id', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id');
+    await db.delete(schema.employeeDocuments).where(eq(schema.employeeDocuments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'employee_documents', id);
+    return ok(c, { id, deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── SALARY STRUCTURES ── */
+hrRouter.get('/salary-structures', async (c) => {
+  try { return ok(c, await getDb(c.env).query.salaryStructures.findMany({ where: c.req.query('employee_id') ? eq(schema.salaryStructures.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/salary-structures', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ss');
+    await db.insert(schema.salaryStructures).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'salary_structures', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── LOANS ── */
+hrRouter.get('/loans', async (c) => {
+  try { return ok(c, await getDb(c.env).query.loans.findMany({ where: c.req.query('employee_id') ? eq(schema.loans.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/loans', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ln');
+    await db.insert(schema.loans).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'loans', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── ASSETS ── */
+hrRouter.get('/assets', async (c) => {
+  try { return ok(c, await getDb(c.env).query.assets.findMany({ where: c.req.query('assigned_to') ? eq(schema.assets.assignedTo, c.req.query('assigned_to')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/assets', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ast');
+    await db.insert(schema.assets).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'assets', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+hrRouter.patch('/assets/:id', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id'); const body = await c.req.json();
+    await db.update(schema.assets).set(body).where(eq(schema.assets.id, id));
+    await logAudit(c.env, user.id, 'UPDATE', 'assets', id, body);
+    return ok(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── PERFORMANCE REVIEWS ── */
+hrRouter.get('/performance', async (c) => {
+  try { return ok(c, await getDb(c.env).query.performanceReviews.findMany({ where: c.req.query('employee_id') ? eq(schema.performanceReviews.employeeId, c.req.query('employee_id')!) : undefined })); }
+  catch (err) { return serverError(c, err); }
+});
+hrRouter.post('/performance', async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('perf');
+    await db.insert(schema.performanceReviews).values({ ...body, id, reviewerId: user.employeeId, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'performance_reviews', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── SALARY SCHEMA (Active structure + components) ── */
+
+/** GET active structure + all its components for one employee */
+hrRouter.get('/salary-structures/:employeeId/active', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const { employeeId } = c.req.param();
+    const structure = await db.query.salaryStructures.findFirst({
+      where: and(eq(schema.salaryStructures.employeeId, employeeId), eq(schema.salaryStructures.active, true)),
+    });
+    if (!structure) return ok(c, null);
+    const components = await db.query.salaryComponents.findMany({
+      where: eq(schema.salaryComponents.structureId, structure.id),
+    });
+    return ok(c, { ...structure, components });
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * POST /salary-structures/:employeeId/setup
+ * Body: { baseSalary, effectiveDate, components: [{ componentName, componentType, amountType, value }] }
+ * Deactivates old structure, creates new one with components.
+ */
+hrRouter.post('/salary-structures/:employeeId/setup', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const { employeeId } = c.req.param();
+    const body = await c.req.json<{ baseSalary: number; effectiveDate: string; components: any[] }>();
+
+    // Deactivate previous active structure
+    await db.update(schema.salaryStructures)
+      .set({ active: false })
+      .where(and(eq(schema.salaryStructures.employeeId, employeeId), eq(schema.salaryStructures.active, true)));
+
+    // Create new structure
+    const structureId = generateId('ss');
+    await db.insert(schema.salaryStructures).values({
+      id: structureId,
+      employeeId,
+      baseSalary: body.baseSalary,
+      effectiveDate: body.effectiveDate,
+      active: true,
+      createdAt: new Date(),
+    });
+
+    // Insert components
+    if (body.components?.length > 0) {
+      for (const comp of body.components) {
+        await db.insert(schema.salaryComponents).values({
+          id: generateId('sc'),
+          structureId,
+          componentName: comp.componentName,
+          componentType: comp.componentType, // Earning | Deduction
+          amountType: comp.amountType,       // Fixed | Percentage
+          value: comp.value,
+          createdAt: new Date(),
+        });
+      }
+    }
+
+    // Sync employee base salary
+    await db.update(schema.employees)
+      .set({ baseSalary: body.baseSalary, updatedAt: new Date() })
+      .where(eq(schema.employees.id, employeeId));
+
+    await logAudit(c.env, user.id, 'CREATE', 'salary_structures', structureId, { employeeId, baseSalary: body.baseSalary });
+    return created(c, { structureId });
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * GET /salary-structures/:employeeId/calculate
+ * Returns: { baseSalary, earnings[], deductions[], grossSalary, totalDeductions, netPay }
+ */
+hrRouter.get('/salary-structures/:employeeId/calculate', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const { employeeId } = c.req.param();
+
+    const employee = await db.query.employees.findFirst({ where: eq(schema.employees.id, employeeId) });
+    if (!employee) return notFound(c);
+
+    const structure = await db.query.salaryStructures.findFirst({
+      where: and(eq(schema.salaryStructures.employeeId, employeeId), eq(schema.salaryStructures.active, true)),
+    });
+
+    const baseSalary = structure?.baseSalary ?? employee.baseSalary ?? 0;
+    const components = structure
+      ? await db.query.salaryComponents.findMany({ where: eq(schema.salaryComponents.structureId, structure.id) })
+      : [];
+
+    const activeLoans = await db.query.loans.findMany({
+      where: and(eq(schema.loans.employeeId, employeeId), eq(schema.loans.status, 'Active')),
+    });
+
+    const earnings: { name: string; amount: number }[] = [];
+    const deductions: { name: string; amount: number }[] = [];
+
+    for (const comp of components) {
+      const amount = comp.amountType === 'Percentage'
+        ? parseFloat(((comp.value / 100) * baseSalary).toFixed(2))
+        : comp.value;
+      if (comp.componentType === 'Earning') earnings.push({ name: comp.componentName, amount });
+      else deductions.push({ name: comp.componentName, amount });
+    }
+
+    for (const loan of activeLoans) {
+      deductions.push({ name: 'Loan Repayment', amount: loan.monthlyInstallment });
+    }
+
+    const grossSalary = parseFloat((baseSalary + earnings.reduce((s, e) => s + e.amount, 0)).toFixed(2));
+    const totalDeductions = parseFloat(deductions.reduce((s, d) => s + d.amount, 0).toFixed(2));
+    const netPay = parseFloat((grossSalary - totalDeductions).toFixed(2));
+
+    return ok(c, {
+      employeeId,
+      employeeName: employee.name,
+      baseSalary,
+      earnings,
+      deductions,
+      grossSalary,
+      totalDeductions,
+      netPay,
+      structureId: structure?.id ?? null,
+    });
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * POST /payroll/generate
+ * Body: { month: 'YYYY-MM' }
+ * Calculates and inserts payroll records for ALL active employees.
+ */
+hrRouter.post('/payroll/generate', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const { month } = await c.req.json<{ month: string }>();
+    if (!month) return serverError(c, new Error('month is required (YYYY-MM)'));
+
+    const activeEmployees = await db.query.employees.findMany({
+      where: eq(schema.employees.employmentStatus, 'active'),
+    });
+
+    const results: { employeeId: string; name: string; netPay: number; status: string }[] = [];
+
+    for (const emp of activeEmployees) {
+      try {
+        const structure = await db.query.salaryStructures.findFirst({
+          where: and(eq(schema.salaryStructures.employeeId, emp.id), eq(schema.salaryStructures.active, true)),
+        });
+        const baseSalary = structure?.baseSalary ?? emp.baseSalary ?? 0;
+        const components = structure
+          ? await db.query.salaryComponents.findMany({ where: eq(schema.salaryComponents.structureId, structure.id) })
+          : [];
+        const activeLoans = await db.query.loans.findMany({
+          where: and(eq(schema.loans.employeeId, emp.id), eq(schema.loans.status, 'Active')),
+        });
+
+        const earnings: { name: string; amount: number }[] = [];
+        const deductions: { name: string; amount: number }[] = [];
+
+        for (const comp of components) {
+          const amount = comp.amountType === 'Percentage'
+            ? parseFloat(((comp.value / 100) * baseSalary).toFixed(2))
+            : comp.value;
+          if (comp.componentType === 'Earning') earnings.push({ name: comp.componentName, amount });
+          else deductions.push({ name: comp.componentName, amount });
+        }
+        for (const loan of activeLoans) {
+          deductions.push({ name: 'Loan Repayment', amount: loan.monthlyInstallment });
+        }
+
+        const grossSalary = parseFloat((baseSalary + earnings.reduce((s, e) => s + e.amount, 0)).toFixed(2));
+        const totalDeductions = parseFloat(deductions.reduce((s, d) => s + d.amount, 0).toFixed(2));
+        const withholdingTax = deductions.find(d => d.name.toLowerCase().includes('tax'))?.amount ?? 0;
+        const netPay = parseFloat((grossSalary - totalDeductions).toFixed(2));
+
+        const payrollId = generateId('pay');
+        await db.insert(schema.payrollRecords).values({
+          id: payrollId,
+          employeeId: emp.id,
+          payrollMonth: month,
+          grossSalary,
+          withholdingTax,
+          otherDeductions: parseFloat((totalDeductions - withholdingTax).toFixed(2)),
+          bonuses: 0,
+          netPay,
+          disbursementStatus: 'pending',
+          allowancesBreakdown: JSON.stringify(earnings),
+          deductionsBreakdown: JSON.stringify(deductions),
+          createdAt: new Date(),
+        });
+
+        await logAudit(c.env, user.id, 'CREATE', 'payroll_records', payrollId, { employeeId: emp.id, month, netPay });
+        results.push({ employeeId: emp.id, name: emp.name, netPay, status: 'generated' });
+      } catch (empErr: any) {
+        results.push({ employeeId: emp.id, name: emp.name, netPay: 0, status: `error: ${empErr.message}` });
+      }
+    }
+
+    return ok(c, { month, processed: results.length, results });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── COMPANY DOCUMENTS / SOPs ── */
+hrRouter.get('/company-documents', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const rows = await db.query.companyDocuments.findMany({
+      orderBy: (docs, { desc }) => [desc(docs.createdAt)],
+    });
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+hrRouter.post('/company-documents', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const body = await c.req.json();
+    const id = generateId('cdoc');
+    await db.insert(schema.companyDocuments).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'company_documents', id, body);
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+hrRouter.delete('/company-documents/:id', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+    await db.delete(schema.companyDocuments).where(eq(schema.companyDocuments.id, id!));
+    await logAudit(c.env, user.id, 'DELETE', 'company_documents', id!);
+    return ok(c, { id, deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
 export default hrRouter;

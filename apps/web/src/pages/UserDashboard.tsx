@@ -12,7 +12,7 @@ import NotificationCenter from '../components/NotificationCenter';
 import EntityForm from '../components/EntityForm';
 import MobileTabMenu from '../components/MobileTabMenu';
 import Login from './Login';
-import { Share2, RefreshCw, Copy, Check, Eye, Edit2 } from 'lucide-react';
+import { Share2, RefreshCw, Copy, Check, Eye, Edit2, LogOut } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 const API = '/api';
@@ -21,6 +21,9 @@ const token = () => localStorage.getItem('ga_token') || '';
 export default function UserDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes'>('overview');
   const [data, setData] = useState<any>(null);
+  const [attendanceToday, setAttendanceToday] = useState<any>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState('0h 0m');
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState({ title: '', content: '' });
@@ -39,6 +42,13 @@ export default function UserDashboard() {
       fetchDashboard();
       fetchNotes();
       fetchCalToken();
+      fetchAttendance();
+      
+      const interval = setInterval(() => {
+        fetchDashboard();
+      }, 10000); // Poll every 10 seconds for real-time updates
+      
+      return () => clearInterval(interval);
     }
   }, [isAuthenticated]);
 
@@ -86,6 +96,60 @@ export default function UserDashboard() {
       console.error(err);
     }
   };
+
+  const fetchAttendance = async () => {
+    try {
+      const res = await fetch(`${API}/dashboard/attendance/today`, {
+        headers: { Authorization: `Bearer ${token()}` }
+      });
+      const d = await res.json();
+      setAttendanceToday(d.data || null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCheckIn = async () => {
+    setAttendanceLoading(true);
+    try {
+      const res = await fetch(`${API}/dashboard/attendance/checkin`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token()}` }
+      });
+      if (res.ok) await fetchAttendance();
+    } catch (err) {}
+    finally { setAttendanceLoading(false); }
+  };
+
+  const handleCheckOut = async () => {
+    setAttendanceLoading(true);
+    try {
+      const res = await fetch(`${API}/dashboard/attendance/checkout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token()}` }
+      });
+      if (res.ok) await fetchAttendance();
+    } catch (err) {}
+    finally { setAttendanceLoading(false); }
+  };
+
+  useEffect(() => {
+    if (attendanceToday?.checkIn && !attendanceToday?.checkOut) {
+      const updateElapsed = () => {
+        const [hours, minutes, seconds] = attendanceToday.checkIn.split(':').map(Number);
+        const checkInDate = new Date();
+        checkInDate.setHours(hours, minutes, seconds, 0);
+        const diffMs = Date.now() - checkInDate.getTime();
+        if (diffMs > 0) {
+          const totalMins = Math.floor(diffMs / 60000);
+          setElapsedTime(`${Math.floor(totalMins / 60)}h ${totalMins % 60}m`);
+        }
+      };
+      updateElapsed();
+      const interval = setInterval(updateElapsed, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [attendanceToday]);
 
   const resetCalToken = async () => {
     if (!confirm('This will invalidate your current calendar URL. Continue?')) return;
@@ -300,7 +364,7 @@ export default function UserDashboard() {
                   }).slice(0, 5).map((task: any) => (
                     <div key={task.id} className="glass-panel p-5 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all border border-white/5 group">
                       <div className="flex items-center gap-4">
-                        <div className={`w-1 h-10 rounded-full ${task.status === 'completed' ? 'bg-emerald-400' : 'bg-primary'}`} />
+                        <div className={`w-1 h-10 rounded-full ${task.status === 'completed' ? 'bg-emerald-400' : task.status === 'blocked' ? 'bg-red-400' : task.status === 'in_progress' ? 'bg-yellow-400' : 'bg-primary'}`} />
                         <div>
                           <h4 className="font-bold text-sm group-hover:text-primary transition-colors">{task.title}</h4>
                           <div className="flex items-center gap-2 mt-1">
@@ -312,7 +376,10 @@ export default function UserDashboard() {
                       </div>
                       <div className="flex items-center gap-3">
                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md border ${
-                           task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-textSecondary border-white/10'
+                           task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                           task.status === 'blocked' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
+                           task.status === 'in_progress' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 
+                           'bg-primary/10 text-primary border-primary/20'
                          }`}>{task.status}</span>
                       </div>
                     </div>
@@ -327,6 +394,81 @@ export default function UserDashboard() {
 
               {/* Sidebar Info */}
               <div className="space-y-6">
+                {/* Attendance Widget */}
+                {data?.employee && (
+                  <div className="glass-panel p-6 rounded-3xl bg-white/5 border border-white/10 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-primary-dark opacity-50" />
+                    <h3 className="font-bold mb-1 flex items-center gap-2">
+                      📍 Today's Attendance
+                    </h3>
+                    <p className="text-xs text-textSecondary font-bold mb-4">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    
+                    <div className="flex flex-col gap-4">
+                      {attendanceToday ? (
+                        <>
+                          <div className="flex items-center gap-3 bg-black/20 p-3 rounded-2xl border border-white/5">
+                            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary border border-primary/30">
+                              <Clock className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Checked In At</p>
+                              <p className="text-sm font-bold text-white font-mono">{attendanceToday.checkIn}</p>
+                            </div>
+                          </div>
+                          
+                          {!attendanceToday.checkOut ? (
+                            <div className="text-center py-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1 animate-pulse">Elapsed Time</p>
+                              <p className="text-2xl font-black text-white font-mono">{elapsedTime}</p>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3 bg-black/20 p-3 rounded-2xl border border-white/5">
+                              <div className="w-10 h-10 rounded-xl bg-yellow-400/20 flex items-center justify-center text-yellow-400 border border-yellow-400/30">
+                                <CheckCircle2 className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Checked Out</p>
+                                <p className="text-sm font-bold text-white font-mono">{attendanceToday.checkOut}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {!attendanceToday.checkOut && (
+                            <button
+                              onClick={handleCheckOut}
+                              disabled={attendanceLoading}
+                              className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/10 flex items-center justify-center gap-2"
+                            >
+                              {attendanceLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <LogOut className="w-4 h-4" />}
+                              Check Out
+                            </button>
+                          )}
+                          {attendanceToday.checkOut && (
+                            <div className="mt-2 text-center p-3 rounded-xl bg-primary/10 border border-primary/20">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Total Hours</p>
+                              <p className="text-lg font-black text-white font-mono">{attendanceToday.totalHours} hrs</p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-center py-4">
+                          <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
+                            <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />
+                          </div>
+                          <p className="text-sm font-bold text-white mb-1">Not Clocked In</p>
+                          <p className="text-xs text-textSecondary mb-4">Start your workday to track time.</p>
+                          <button
+                            onClick={handleCheckIn}
+                            disabled={attendanceLoading}
+                            className="w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-sm transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+                          >
+                            {attendanceLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : 'Check In Now'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="glass-panel p-6 rounded-3xl bg-gradient-to-br from-primary/20 to-transparent overflow-hidden">
                   <h3 className="font-bold mb-4 flex items-center gap-2">
                     <CalendarIcon className="w-4 h-4 text-primary" /> Active Appointments
@@ -426,7 +568,7 @@ export default function UserDashboard() {
         {/* Tasks Tab */}
         {activeTab === 'tasks' && (
           <div className="animate-in fade-in zoom-in-95 duration-500">
-            <TaskBoard employeeId={data?.user?.employeeId} accentColor="primary" />
+            <TaskBoard department="Dashboard" fetchGlobal={true} employeeId={data?.user?.employeeId} accentColor="primary" />
           </div>
         )}
 
@@ -581,7 +723,7 @@ export default function UserDashboard() {
             {/* Note Form Modal (Create/Edit) */}
             {showNoteForm && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-                <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95">
+                <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95">
                   <div className="p-6 border-b border-white/10 flex items-center justify-between">
                     <h3 className="font-bold">{editingNote ? 'Edit Note' : 'Create New Note'}</h3>
                     <button onClick={() => { setShowNoteForm(false); setEditingNote(null); }}><X className="w-5 h-5" /></button>
@@ -617,7 +759,7 @@ export default function UserDashboard() {
 
       {showSyncModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-black tracking-tight">Sync to External Calendar</h3>

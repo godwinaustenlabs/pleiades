@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Target, TrendingUp, Calendar, LogOut,
-  Megaphone, UserPlus, Home, Loader2, Lock
+  Target, TrendingUp, Calendar, LogOut, DollarSign,
+  Megaphone, UserPlus, Home, Loader2, Lock, MessageSquare, FileText
 } from 'lucide-react';
 import Login from './Login';
+import OutreachTracker from '../components/OutreachTracker';
 import GAGrid from '../components/GAGrid';
 import FunnelView from '../components/FunnelView';
 import EntityForm from '../components/EntityForm';
@@ -11,13 +12,14 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
+import DealPipelineView from '../components/DealPipelineView';
 
 const API = '/api';
 const token = () => localStorage.getItem('ga_token') || '';
 
 
 
-type Tab = 'funnels' | 'campaigns' | 'leads' | 'content' | 'sprints' | 'tasks';
+type Tab = 'funnels' | 'campaigns' | 'deals' | 'leads' | 'content' | 'sprints' | 'tasks' | 'outreach';
 
 interface UserPermission {
   appName: string;
@@ -48,6 +50,12 @@ function Acquisition() {
   const [permsLoaded, setPermsLoaded] = useState(false);
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
+
+  const getProfileUrl = (url: string) => {
+    if (!url) return null;
+    if (url.startsWith('http') || url.startsWith('/api')) return url;
+    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
+  };
 
   const fetchPermissions = async () => {
     try {
@@ -110,11 +118,13 @@ function Acquisition() {
   const TABS = useMemo(() => {
     const all = [
       { id: 'funnels', label: 'Marketing Funnels', icon: Target, feature: 'funnels' },
+      { id: 'deals', label: 'Deals Pipeline', icon: DollarSign, feature: 'funnels' },
       { id: 'campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
       { id: 'leads', label: 'Leads & Contacts', icon: UserPlus, feature: 'leads' },
-      { id: 'content', label: 'Content Calendar', icon: Calendar, feature: 'content' },
+      { id: 'content', label: 'Documents', icon: FileText, feature: 'content' },
       { id: 'sprints', label: 'Sprints', icon: TrendingUp, feature: 'sprints' },
       { id: 'tasks', label: 'Tasks', icon: Calendar, feature: 'tasks' },
+      { id: 'outreach', label: 'Outreach Tracker', icon: MessageSquare, feature: 'campaigns' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -221,7 +231,7 @@ function Acquisition() {
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-rose-500/20 overflow-hidden">
               {user.profilePhoto ? (
-                <img src={user.profilePhoto} alt="User" className="w-full h-full object-cover" />
+                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
                 user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
               )}
@@ -274,10 +284,17 @@ function Acquisition() {
             }}
           />
         )}
-        {tab !== 'tasks' && tab !== 'funnels' && (
+        {tab === 'outreach' && <OutreachTracker />}
+        {tab === 'deals' && (
+          <DealPipelineView
+            canEdit={getPerm('funnels').canEdit}
+            canDelete={getPerm('funnels').canDelete}
+          />
+        )}
+        {tab !== 'tasks' && tab !== 'funnels' && tab !== 'deals' && tab !== 'outreach' && (
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Acquisition'}
-            entityName={tab === 'leads' ? 'contact' : tab === 'content' ? 'content' : tab.slice(0, -1)}
+            entityName={tab === 'leads' ? 'contact' : tab === 'content' ? 'document' : tab.slice(0, -1)}
             columns={
               tab === 'campaigns' ? [
                 { key: 'campaignName', label: 'Campaign', type: 'avatar' as const },
@@ -299,12 +316,11 @@ function Acquisition() {
                 { key: 'contactOwner', label: 'Owner' },
                 { key: 'leadScore', label: 'Lead Score' },
               ] : tab === 'content' ? [
-                { key: 'contentTitle', label: 'Content', type: 'avatar' as const },
-                { key: 'channel', label: 'Channel', type: 'badge' as const },
+                { key: 'contentTitle', label: 'Document Name', type: 'text' as const },
+                { key: 'owner', label: 'File', type: 'file' as const },
+                { key: 'channel', label: 'Category', type: 'badge' as const },
                 { key: 'status', label: 'Status', type: 'status' as const },
-                { key: 'publishDate', label: 'Publish Date', type: 'date' as const },
-                { key: 'views', label: 'Views' },
-                { key: 'engagement', label: 'Engagement' },
+                { key: 'publishDate', label: 'Upload Date', type: 'date' as const },
               ] : tab === 'sprints' ? [
                 { key: 'sprintName', label: 'Sprint', type: 'avatar' as const },
                 { key: 'status', label: 'Status', type: 'status' as const },
@@ -322,7 +338,7 @@ function Acquisition() {
             onImport={tab === 'leads' ? handleImportCSV : undefined}
             onDelete={async (r) => {
               if (!confirm(`Irreversible deletion of growth record. Confirm?`)) return;
-              await fetch(`${API}/acquisition/${tab}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+              await fetch(`${API}/acquisition/${tabToRoute(tab)}/${r.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
               fetchData();
             }}
             canAdd={p.canEdit}
@@ -384,31 +400,28 @@ function Acquisition() {
                 key: 'pipelineStage', label: 'Pipeline Stage', type: 'select' as const, options: [
                   { value: 'new', label: 'New' }, { value: 'contacted', label: 'Contacted' },
                   { value: 'qualified', label: 'Qualified' }, { value: 'proposal', label: 'Proposal Sent' },
-                  { value: 'negotiation', label: 'Negotiation' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' },
+                  { value: 'negotiation', label: 'Negotiation' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' }, { value: 'referred', label: 'Referred' },
                 ]
               },
               { key: 'contactOwner', label: 'Contact Owner', type: 'text' as const },
               { key: 'leadScore', label: 'Lead Score (0–100)', type: 'number' as const },
             ] : tab === 'content' ? [
-              { key: 'contentTitle', label: 'Content Title', type: 'text' as const, required: true },
+              { key: 'contentTitle', label: 'Document Name', type: 'text' as const, required: true },
+              { key: 'owner', label: 'Upload Document', type: 'file' as const },
               {
-                key: 'channel', label: 'Channel', type: 'select' as const, options: [
-                  { value: 'instagram', label: 'Instagram' }, { value: 'linkedin', label: 'LinkedIn' },
-                  { value: 'twitter', label: 'Twitter/X' }, { value: 'blog', label: 'Blog' },
-                  { value: 'email', label: 'Email Newsletter' }, { value: 'youtube', label: 'YouTube' },
+                key: 'channel', label: 'Category', type: 'select' as const, options: [
+                  { value: 'guide', label: 'Guide' }, { value: 'template', label: 'Template' },
+                  { value: 'report', label: 'Report' }, { value: 'policy', label: 'Policy' },
+                  { value: 'other', label: 'Other' },
                 ]
               },
-              { key: 'owner', label: 'Content Owner', type: 'text' as const },
-              { key: 'publishDate', label: 'Publish Date', type: 'date' as const },
+              { key: 'publishDate', label: 'Upload Date', type: 'date' as const },
               {
                 key: 'status', label: 'Status', type: 'select' as const, options: [
                   { value: 'draft', label: 'Draft' }, { value: 'review', label: 'In Review' },
-                  { value: 'scheduled', label: 'Scheduled' }, { value: 'published', label: 'Published' }, { value: 'archived', label: 'Archived' },
+                  { value: 'published', label: 'Published' }, { value: 'archived', label: 'Archived' },
                 ]
               },
-              { key: 'engagement', label: 'Engagement Count', type: 'number' as const },
-              { key: 'views', label: 'Total Views', type: 'number' as const },
-              { key: 'clickThroughRate', label: 'Click-Through Rate (%)', type: 'number' as const },
               { key: 'campaignId', label: 'Linked Campaign', type: 'select' as const, options: campaigns.map(c => ({ value: c.id, label: c.campaignName })), action: { label: '+ New Campaign', onClick: () => setShowNestedForm('campaign') } },
             ] : tab === 'sprints' ? [
               { key: 'sprintName', label: 'Sprint Name', type: 'text' as const, required: true },

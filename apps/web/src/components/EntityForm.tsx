@@ -93,9 +93,10 @@ interface EntityFormProps {
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
   loading?: boolean;
+  onChange?: (data: any, changedKey: string) => any;
 }
 
-export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading }: EntityFormProps) {
+export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading, onChange }: EntityFormProps) {
   const [formData, setFormData] = useState(() => {
     const data = { ...initialData };
     fields.forEach(f => {
@@ -108,6 +109,16 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
+
+  const handleFieldChange = (key: string, val: any) => {
+    const updated = { ...formData, [key]: val };
+    if (onChange) {
+      const modified = onChange(updated, key);
+      setFormData(modified || updated);
+    } else {
+      setFormData(updated);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +213,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                   <select
                     required={field.required}
                     value={formData[field.key] || ''}
-                    onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                    onChange={e => handleFieldChange(field.key, e.target.value)}
                     className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors appearance-none"
                   >
                     <option value="">Select option...</option>
@@ -220,7 +231,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     <textarea
                       required={field.required}
                       value={formData[field.key] || ''}
-                      onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                      onChange={e => handleFieldChange(field.key, e.target.value)}
                       rows={3}
                       className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
                     />
@@ -277,7 +288,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     type={field.type}
                     required={field.required}
                     value={formData[field.key] || ''}
-                    onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                    onChange={e => handleFieldChange(field.key, e.target.value)}
                     className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
                   />
                 )}

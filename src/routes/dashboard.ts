@@ -125,6 +125,83 @@ dashboardRouter.get('/me', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+/* ── ATTENDANCE SELF-SERVICE ── */
+dashboardRouter.get('/attendance/today', async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user.employeeId) return ok(c, null); // No employee record
+    const today = new Date().toISOString().split('T')[0];
+    const record = await getDb(c.env).query.attendance.findFirst({
+      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+    });
+    return ok(c, record || null);
+  } catch (err) { return serverError(c, err); }
+});
+
+dashboardRouter.post('/attendance/checkin', async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user.employeeId) return badRequest(c, 'User has no employee profile');
+    
+    const db = getDb(c.env);
+    const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toLocaleTimeString('en-US', { hour12: false }); // "14:30:00"
+    
+    // Ensure no double check-in
+    const existing = await db.query.attendance.findFirst({
+      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+    });
+    
+    if (existing) return badRequest(c, 'Already checked in today');
+    
+    const id = generateId('att');
+    await db.insert(schema.attendance).values({
+      id,
+      employeeId: user.employeeId,
+      date: today,
+      checkIn: now,
+      status: 'Present',
+      createdAt: new Date(),
+    });
+    return created(c, { id, checkIn: now });
+  } catch (err) { return serverError(c, err); }
+});
+
+dashboardRouter.post('/attendance/checkout', async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user.employeeId) return badRequest(c, 'User has no employee profile');
+    
+    const db = getDb(c.env);
+    const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+    
+    const existing = await db.query.attendance.findFirst({
+      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+    });
+    
+    if (!existing || !existing.checkIn) return badRequest(c, 'Not checked in today');
+    if (existing.checkOut) return badRequest(c, 'Already checked out today');
+    
+    // Calculate total hours
+    let totalHours = null;
+    try {
+      const start = new Date(`1970-01-01T${existing.checkIn}`);
+      const end = new Date(`1970-01-01T${now}`);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60); // In hours
+      }
+    } catch {}
+
+    await db.update(schema.attendance).set({
+      checkOut: now,
+      totalHours: totalHours !== null ? Number(totalHours.toFixed(2)) : undefined,
+    }).where(eq(schema.attendance.id, existing.id));
+    
+    return ok(c, { checkOut: now, totalHours });
+  } catch (err) { return serverError(c, err); }
+});
+
 /* ── NOTES ── */
 dashboardRouter.get('/notes', async (c) => {
   try {

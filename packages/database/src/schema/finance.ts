@@ -1,8 +1,16 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 import { clients, committees } from './core';
 
+export const ledgers = sqliteTable('ledgers', {
+  id: text('ledger_id').primaryKey(),
+  ledgerName: text('ledger_name').notNull(),
+  description: text('description'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
 export const accounts = sqliteTable('accounts', {
   id: text('account_id').primaryKey(),
+  ledgerId: text('ledger_id').references(() => ledgers.id),
   accountName: text('account_name').notNull(),
   accountType: text('account_type'),
   bankName: text('bank_name'),
@@ -11,15 +19,6 @@ export const accounts = sqliteTable('accounts', {
   currentBalance: real('current_balance'),
   currency: text('currency'),
   status: text('status'), // active | inactive | closed
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
-
-export const channels = sqliteTable('channels', {
-  id: text('channel_id').primaryKey(),
-  channelName: text('channel_name').notNull(),
-  channelType: text('channel_type'),
-  activeStatus: integer('active_status', { mode: 'boolean' }),
-  lastUsedDate: text('last_used_date'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
@@ -67,7 +66,6 @@ export const transactions = sqliteTable('transactions', {
   committeeId: text('committee_id').references(() => committees.id),
   clientId: text('client_id').references(() => clients.id),
   accountId: text('account_id').references(() => accounts.id),
-  channelId: text('channel_id').references(() => channels.id),
   invoiceId: text('invoice_id').references(() => invoices.id),
   fundRequestId: text('fund_request_id').references(() => fundRequests.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
@@ -89,5 +87,17 @@ export const plReports = sqliteTable('pl_reports', {
   netProfit: real('net_profit'),
   plNotes: text('pl_notes'),
   pdfAttachment: text('pdf_attachment'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+export const generalJournals = sqliteTable('general_journals', {
+  id: text('journal_id').primaryKey(),
+  entryDate: text('entry_date'),
+  description: text('description'),
+  debitAccountId: text('debit_account_id').references(() => accounts.id),
+  creditAccountId: text('credit_account_id').references(() => accounts.id),
+  amount: real('amount'),
+  lines: text('lines'),
+  ledgerId: text('ledger_id').references(() => ledgers.id),
+  invoiceId: text('invoice_id').references(() => invoices.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });

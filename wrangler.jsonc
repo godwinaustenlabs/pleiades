@@ -12,23 +12,10 @@
 	},
 	"vars": {
 		"VERBOSE": "true",
-		// "LLM_MODEL": "llama-3.3-70b-versatile",
 		"LLM_MODEL": "gemini-2.5-flash",
-		"CLIENT_ID": "user-001",
 		"AGENT_ID": "nova-mcp-agent",
 		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
-		"CF_GATEWAY_NAME": "testing-gateway",
-		"CF_AIG_TOKEN": "O2bUj1gkZwFjlrW4HnXz_d1tMxWbbT8UMBJFfHqA",
-		"OPENAI_API_KEY": "REPLACE_ME_OPENAI_KEY",
-		"GROQ_API_KEY": "REPLACE_ME_GROQ_KEY",
-		"GEMINI_API_KEY": "REPLACE_ME_GEMINI_KEY",
-		"API_KEY_SECRET": "ganova_api_key_secret_2026",
-		"SLACK_CLIENT_SECRET": "fddd398cb4a868c56749dd5be6f396f5",
-		"SLACK_CLIENT_ID": "4833348314737.11182995222051",
-		"SLACK_SIGNING_SECRET": "cf46c5dab2e807ef77126bdb7714a78f",
-		"SLACK_BOT_OAUTH_TOKEN": "xoxb-4833348314737-11173953481207-wJ06Q8rsKJNxZ1F7n2aUGfBe",
-		"SLACK_VERIFICATION_TOKEN": "uUX1sJb0a76KKL2EvegUSaNW",
-		"SYSTEM_PROMPT": "You are a helpful AI assistant with access to professional tools via MCP. Use them to help the user."
+		"CF_GATEWAY_NAME": "testing-gateway"
 	},
 	"compatibility_flags": [
 		"nodejs_compat"

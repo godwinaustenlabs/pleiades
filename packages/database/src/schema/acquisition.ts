@@ -87,3 +87,42 @@ export const acqTasks = sqliteTable('acq_tasks', {
   campaignId: text('campaign_id').references(() => campaigns.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
+
+export const outreachLogs = sqliteTable('outreach_logs', {
+  id: text('log_id').primaryKey(),
+  date: text('date').notNull(),
+  dmsSent: integer('dms_sent').default(0),
+  emailsSent: integer('emails_sent').default(0),
+  repliesReceived: integer('replies_received').default(0),
+  forwards: integer('forwards').default(0),
+  meetingsBooked: integer('meetings_booked').default(0),
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const dealPipelines = sqliteTable('deal_pipelines', {
+  id: text('pipeline_id').primaryKey(),
+  pipelineName: text('pipeline_name').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const dealStages = sqliteTable('deal_stages', {
+  id: text('stage_id').primaryKey(),
+  pipelineId: text('pipeline_id').references(() => dealPipelines.id).notNull(),
+  stageName: text('stage_name').notNull(),
+  orderIndex: integer('order_index').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const deals = sqliteTable('deals', {
+  id: text('deal_id').primaryKey(),
+  dealName: text('deal_name').notNull(),
+  amount: real('amount').default(0),
+  pipelineId: text('pipeline_id').references(() => dealPipelines.id).notNull(),
+  stageId: text('stage_id').references(() => dealStages.id).notNull(),
+  contactId: text('contact_id').references(() => contactsLeads.id),
+  closeDate: text('close_date'),
+  owner: text('owner'),
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});

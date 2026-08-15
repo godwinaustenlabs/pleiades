@@ -169,7 +169,7 @@ function Home() {
       <div className="z-10 w-full max-w-7xl flex justify-between items-center mb-12 md:mb-20">
         <div className="flex items-center gap-2 md:gap-3">
           <Logo className="w-8 h-8 md:w-10 md:h-10" />
-          <span className="text-xl md:text-2xl font-black tracking-tighter">Plieades<span className="text-primary">System</span></span>
+          <span className="text-xl md:text-2xl font-black tracking-tighter">Pleiades<span className="text-primary">System</span></span>
         </div>
 
         {user.id ? (
@@ -180,10 +180,10 @@ function Home() {
             >
               <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-primary/20 overflow-hidden">
                 {user.profilePhoto ? (
-                  <img 
-                    src={getProfileUrl(user.profilePhoto)!} 
-                    alt="User" 
-                    className="w-full h-full object-cover" 
+                  <img
+                    src={getProfileUrl(user.profilePhoto)!}
+                    alt="User"
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   user.name?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || '?'
@@ -219,7 +219,7 @@ function Home() {
           Orchestrate Your <br className="hidden md:block" /> Institutional Flow.
         </h1>
         <p className="text-base md:text-xl text-textSecondary max-w-2xl mx-auto leading-relaxed font-medium px-4">
-          Plieades System provides a high-security, granular ecosystem for autonomous and human-driven operations across Godwin Austen Labs.
+          Pleiades System provides a high-security, granular ecosystem for autonomous and human-driven operations across Godwin Austen Labs.
         </p>
       </div>
 
@@ -280,11 +280,6 @@ function Home() {
       {/* Footer */}
       <div className="z-10 mt-32 py-16 border-t border-white/5 w-full max-w-6xl flex flex-col md:flex-row justify-between items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-textSecondary">
         <div>&copy; {new Date().getFullYear()} Godwin Austen Labs // Operational Infrastructure</div>
-        <div className="flex gap-10">
-          <a href="#" className="hover:text-primary transition-colors">Security Audit</a>
-          <a href="#" className="hover:text-primary transition-colors">System Status</a>
-          <a href="#" className="hover:text-primary transition-colors">Contact HQ</a>
-        </div>
       </div>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}

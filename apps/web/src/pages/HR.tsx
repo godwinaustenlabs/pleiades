@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Shield, Activity, LogOut,
-  Key, Settings, BarChart3, Plus, Loader2, Save, X, Home, Lock, CheckCircle2, Copy, Check
+  Key, Settings, BarChart3, Plus, Loader2, Save, X, Home, Lock, CheckCircle2, Copy, Check, FileText
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid, { type Column } from '../components/GAGrid';
@@ -13,12 +13,18 @@ import ProfileModal from '../components/ProfileModal';
 import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
 import MobileTabMenu from '../components/MobileTabMenu';
+import HRDashboard from '../components/HRDashboard';
+import HRReports from '../components/HRReports';
+import PayrollProcessingView from '../components/PayrollProcessingView';
+import EmployeeProfileTabs from '../components/EmployeeProfileTabs';
+import PaySlip from '../components/PaySlip';
+import CompanyDocumentsTab from '../components/CompanyDocumentsTab';
 
 
 const API = '/api';
 const token = () => localStorage.getItem('ga_token') || '';
 
-type Tab = 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets';
+type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets' | 'reports' | 'sops';
 
 const DEPARTMENT_OPTIONS = [
   { value: '', label: 'None (e.g. CEO)' },
@@ -40,10 +46,11 @@ interface UserPermission {
 
 function HR() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
-  const [tab, setTab] = useState<Tab>('directory');
+  const [tab, setTab] = useState<Tab>('dashboard' as any);
   const [showProfile, setShowProfile] = useState(false);
   const [showEntityForm, setShowEntityForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [viewingProfile, setViewingProfile] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [committees, setCommittees] = useState<any[]>([]);
@@ -51,6 +58,7 @@ function HR() {
 
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   const [showPayrollForm, setShowPayrollForm] = useState(false);
+  const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -167,11 +175,14 @@ function HR() {
   // Tab filtering
   const TABS = useMemo(() => {
     const all = [
+      { id: 'dashboard', label: 'Dashboard', icon: Activity, feature: 'employees' },
       { id: 'directory', label: 'Directory', icon: Users, feature: 'employees' },
       { id: 'appointments', label: 'Appointments', icon: Shield, feature: 'appointments' },
       { id: 'committees', label: 'Committees', icon: Users, feature: 'employees' }, // shared with employees for HR
       { id: 'payroll', label: 'Payroll', icon: BarChart3, feature: 'payroll' },
       { id: 'tasks', label: 'Tasks', icon: Activity, feature: 'tasks' },
+      { id: 'reports', label: 'Reports', icon: FileText, feature: 'employees' },
+      { id: 'sops', label: 'SOPs', icon: FileText, feature: 'employees' },
       { id: 'resets', label: 'Resets', icon: Key, badge: pendingCount, feature: 'resets' },
     ] as const;
 
@@ -259,7 +270,39 @@ function HR() {
     { key: 'payrollMonth', label: 'Month' },
     { key: 'grossSalary', label: 'Gross Salary', type: 'currency' },
     { key: 'netPay', label: 'Net Pay', type: 'currency' },
-    { key: 'disbursementStatus', label: 'Status', type: 'status' },
+    {
+      key: 'disbursementStatus',
+      label: 'Status',
+      render: (v: string, record: any) => (
+        <select
+          value={v}
+          onChange={async (e) => {
+            const newStatus = e.target.value;
+            // Optimistic update
+            setPayrollRecords(prev => prev.map(r => r.id === record.id ? { ...r, disbursementStatus: newStatus } : r));
+            try {
+              const res = await fetch(`${API}/hr/payroll/${record.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+                body: JSON.stringify({ disbursementStatus: newStatus }),
+              });
+              if (!res.ok) throw new Error();
+            } catch {
+              // Revert
+              setPayrollRecords(prev => prev.map(r => r.id === record.id ? { ...r, disbursementStatus: v } : r));
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className={`bg-surface/50 border border-white/10 rounded-lg px-2.5 py-1 text-xs focus:outline-none font-bold ${
+            v === 'paid' ? 'text-green-400' : v === 'processed' ? 'text-blue-400' : 'text-yellow-400'
+          }`}
+        >
+          <option value="pending" className="bg-background text-yellow-400 font-bold">Pending</option>
+          <option value="processed" className="bg-background text-blue-400 font-bold">Processed</option>
+          <option value="paid" className="bg-background text-green-400 font-bold">Paid</option>
+        </select>
+      )
+    },
     { key: 'paymentDate', label: 'Payment Date', type: 'date' },
     { key: 'financeReference', label: 'Tx Ref' }
   ];
@@ -408,6 +451,17 @@ function HR() {
           onTabChange={(id) => setTab(id as Tab)}
           accentColor="primary"
         />
+        
+        {tab === 'dashboard' && (
+          <HRDashboard 
+            employees={employees} 
+            attendance={[]} 
+            leaves={[]} 
+            payroll={payrollRecords} 
+            assets={[]} 
+          />
+        )}
+        
         {tab === 'directory' && (
           <GAGrid
             title="Employee Directory"
@@ -415,6 +469,7 @@ function HR() {
             columns={employeeColumns}
             data={employees}
             loading={loading}
+            rowActions={[{ label: 'View Master Profile', icon: Users, onClick: (record) => setViewingProfile(record) }]}
             onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
             onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}
             onDelete={handleEmployeeDelete}
@@ -435,19 +490,37 @@ function HR() {
         )}
 
         {tab === 'payroll' && (
-          <GAGrid
-            title="Payroll Management"
-            entityName="record"
-            columns={payrollColumns}
-            data={payrollRecords}
-            loading={loading}
-            canAdd={getPerm('payroll').canEdit}
-            canEdit={getPerm('payroll').canEdit}
-            canDelete={getPerm('payroll').canDelete}
-            onAdd={() => { setEditingRecord(null); setShowPayrollForm(true); }}
-            onEdit={(record) => { setEditingRecord(record); setShowPayrollForm(true); }}
-            onDelete={handlePayrollDelete}
-          />
+          <div className="space-y-12">
+            <PayrollProcessingView employees={employees} onPayrollGenerated={fetchPayroll} />
+            <div className="pt-8 border-t border-white/10">
+              <GAGrid
+                title="Payroll History"
+                entityName="record"
+                columns={payrollColumns}
+                data={payrollRecords}
+                loading={loading}
+                canAdd={false}
+                canEdit={false}
+                canDelete={getPerm('payroll').canDelete}
+                rowActions={[
+                  {
+                    label: 'View Pay Slip',
+                    icon: FileText,
+                    onClick: (record) => setViewingPaySlip(record),
+                  }
+                ]}
+                onDelete={handlePayrollDelete}
+              />
+            </div>
+          </div>
+        )}
+        
+        {tab === 'reports' && (
+          <HRReports employees={employees} />
+        )}
+
+        {tab === 'sops' && (
+          <CompanyDocumentsTab />
         )}
 
         {tab === 'appointments' && (
@@ -490,12 +563,21 @@ function HR() {
       </main>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      {viewingProfile && <EmployeeProfileTabs employee={viewingProfile} onClose={() => setViewingProfile(null)} />}
+      {viewingPaySlip && (
+        <PaySlip
+          record={viewingPaySlip}
+          employee={employees.find(e => e.id === viewingPaySlip.employeeId) || { id: viewingPaySlip.employeeId, name: viewingPaySlip.employeeName || 'Employee' }}
+          onClose={() => setViewingPaySlip(null)}
+        />
+      )}
       <NotificationCenter currentApp="hr" />
 
       {showEntityForm && (
         <EmployeeForm
           initialData={editingRecord}
           appointments={appointments.filter(a => a.employeeId === editingRecord?.id)}
+          employees={employees}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
           onSubmit={handleEmployeeSubmit}
           canEditPermissions={getPerm('appointments').canEdit}
@@ -551,6 +633,16 @@ function HR() {
           initialData={editingRecord}
           onClose={() => { setShowPayrollForm(false); setEditingRecord(null); }}
           onSubmit={handlePayrollSubmit}
+          onChange={(data) => {
+            const gross = parseFloat(data.grossSalary) || 0;
+            const tax = parseFloat(data.withholdingTax) || 0;
+            const other = parseFloat(data.otherDeductions) || 0;
+            const bonuses = parseFloat(data.bonuses) || 0;
+            return {
+              ...data,
+              netPay: parseFloat((gross - tax - other + bonuses).toFixed(2))
+            };
+          }}
         />
       )}
     </div>
@@ -563,6 +655,7 @@ export default HR;
 interface EmployeeFormProps {
   initialData: any;
   appointments: any[];
+  employees: any[];
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
   onAddAppointment: () => void;
@@ -570,8 +663,50 @@ interface EmployeeFormProps {
   canEditPermissions?: boolean;
 }
 
-function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppointment, onEditAppointment, canEditPermissions }: EmployeeFormProps) {
-  const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, efficiencyScore: 0, sectorId: '' });
+function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, onAddAppointment, onEditAppointment, canEditPermissions }: EmployeeFormProps) {
+  const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, efficiencyScore: 0, sectorId: '', cnic: '', dob: '', gender: 'Male', address: '', emergencyContact: '', contactInfo: '', designation: '', reportingManagerId: '', employmentType: 'Full-time', confirmationDate: '', contractStartDate: '', contractEndDate: '', assignedOffice: '', bankDetails: '', taxInformation: '' });
+  const [assets, setAssets] = useState<any[]>([]);
+  const [unassignedAssets, setUnassignedAssets] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (initialData?.id) {
+      fetch(`${API}/hr/assets?assigned_to=${initialData.id}`, { headers: { Authorization: `Bearer ${token()}` } })
+        .then(r => r.json()).then(d => setAssets(d.data || []));
+      fetch(`${API}/hr/assets`, { headers: { Authorization: `Bearer ${token()}` } })
+        .then(r => r.json()).then(d => setUnassignedAssets((d.data || []).filter((a: any) => !a.assignedTo)));
+    }
+  }, [initialData?.id]);
+
+  const handleAssignAsset = async (assetId: string) => {
+    try {
+      await fetch(`${API}/hr/assets/${assetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ assignedTo: initialData.id, status: 'Assigned', issueDate: new Date().toISOString().split('T')[0] })
+      });
+      const assigned = unassignedAssets.find(a => a.id === assetId);
+      if (assigned) {
+        setAssets([...assets, { ...assigned, assignedTo: initialData.id, status: 'Assigned' }]);
+        setUnassignedAssets(unassignedAssets.filter(a => a.id !== assetId));
+      }
+    } catch {}
+  };
+
+  const handleUnassignAsset = async (assetId: string) => {
+    try {
+      await fetch(`${API}/hr/assets/${assetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ assignedTo: null, status: 'Available' })
+      });
+      const unassigned = assets.find(a => a.id === assetId);
+      if (unassigned) {
+        setUnassignedAssets([...unassignedAssets, { ...unassigned, assignedTo: null, status: 'Available' }]);
+        setAssets(assets.filter(a => a.id !== assetId));
+      }
+    } catch {}
+  };
+
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -701,6 +836,35 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
                   <input type="tel" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+1 (555) 000-0000" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">CNIC / ID</label>
+                  <input type="text" value={formData.cnic || ''} onChange={e => setFormData({ ...formData, cnic: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Date of Birth</label>
+                  <input type="date" value={formData.dob || ''} onChange={e => setFormData({ ...formData, dob: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Emergency Contact</label>
+                  <input type="text" value={formData.emergencyContact || ''} onChange={e => setFormData({ ...formData, emergencyContact: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Gender</label>
+                  <select value={formData.gender || ''} onChange={e => setFormData({ ...formData, gender: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5 mt-4">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Full Address</label>
+                <textarea rows={2} value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 resize-none" />
+              </div>
+
             </div>
           </div>
 
@@ -747,6 +911,97 @@ function EmployeeForm({ initialData, appointments, onClose, onSubmit, onAddAppoi
                 </div>
               )}
             </div>
+
+
+            <div className="space-y-4 pt-4 border-t border-white/5">
+              <h3 className="text-sm font-black text-primary uppercase tracking-widest">Employment Details</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Designation</label>
+                  <input type="text" value={formData.designation || ''} onChange={e => setFormData({ ...formData, designation: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Employment Type</label>
+                  <select value={formData.employmentType || ''} onChange={e => setFormData({ ...formData, employmentType: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
+                    <option value="Full-time">Full-time</option>
+                    <option value="Part-time">Part-time</option>
+                    <option value="Contract">Contract</option>
+                    <option value="Intern">Intern</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Reporting Manager</label>
+                  <select value={formData.reportingManagerId || ''} onChange={e => setFormData({ ...formData, reportingManagerId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
+                    <option value="">None</option>
+                    {employees?.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Contract Start</label>
+                  <input type="date" value={formData.contractStartDate || ''} onChange={e => setFormData({ ...formData, contractStartDate: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Contract End</label>
+                  <input type="date" value={formData.contractEndDate || ''} onChange={e => setFormData({ ...formData, contractEndDate: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Assigned Office</label>
+                  <input type="text" value={formData.assignedOffice || ''} onChange={e => setFormData({ ...formData, assignedOffice: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-white/5">
+              <h3 className="text-sm font-black text-primary uppercase tracking-widest">Financial & Compliance</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Bank Details (JSON string)</label>
+                  <textarea rows={2} value={formData.bankDetails || ''} onChange={e => setFormData({ ...formData, bankDetails: e.target.value })} placeholder='{"bank": "...", "account": "..."}' className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 resize-none font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Tax Information (NTN/STRN)</label>
+                  <textarea rows={2} value={formData.taxInformation || ''} onChange={e => setFormData({ ...formData, taxInformation: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 resize-none font-mono" />
+                </div>
+              </div>
+            </div>
+
+            {initialData?.id && (
+              <div className="space-y-4 pt-4 border-t border-white/5">
+                <h3 className="text-sm font-black text-primary uppercase tracking-widest">Asset Assignment</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1 mb-2">Assigned Assets</label>
+                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      {assets.length === 0 ? <p className="text-xs text-textSecondary italic">No assets assigned.</p> : assets.map(a => (
+                        <div key={a.id} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                          <div>
+                            <p className="text-xs font-bold">{a.assetName}</p>
+                            <p className="text-[10px] text-textSecondary">{a.assetType}</p>
+                          </div>
+                          <button type="button" onClick={() => handleUnassignAsset(a.id)} className="text-[10px] text-red-400 font-bold px-2 py-1 bg-red-400/10 rounded hover:bg-red-400/20">Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1 mb-2">Available Assets</label>
+                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      {unassignedAssets.length === 0 ? <p className="text-xs text-textSecondary italic">No available assets.</p> : unassignedAssets.map(a => (
+                        <div key={a.id} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10">
+                          <div>
+                            <p className="text-xs font-bold">{a.assetName}</p>
+                            <p className="text-[10px] text-textSecondary">{a.assetType}</p>
+                          </div>
+                          <button type="button" onClick={() => handleAssignAsset(a.id)} className="text-[10px] text-primary font-bold px-2 py-1 bg-primary/10 rounded hover:bg-primary/20">Assign</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-4 gap-4 pt-4 border-t border-white/5">
               <div className="space-y-1.5">

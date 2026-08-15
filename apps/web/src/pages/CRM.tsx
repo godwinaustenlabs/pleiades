@@ -3,7 +3,8 @@ import {
   Building2, Ticket, CheckCircle2,
   Plus, Search, Filter, MoreHorizontal,
   ChevronRight, Calendar, FileText, LayoutDashboard,
-  Shield, ExternalLink, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon
+  Shield, ExternalLink, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import AssetPreviewModal from '../components/AssetPreviewModal';
 import TaskBoard from '../components/TaskBoard';
@@ -38,6 +39,7 @@ export default function CRM() {
   const [newNote, setNewNote] = useState('');
   const [noteLoading, setNoteLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [permsLoaded, setPermsLoaded] = useState(false);
@@ -307,8 +309,25 @@ export default function CRM() {
         />
       )}
 
+      {/* Sidebar Toggle Button (desktop, shown when collapsed) */}
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-50 flex-col items-center gap-1 py-4 px-1.5 bg-slate-900 border border-white/10 border-l-0 rounded-r-xl text-textSecondary hover:text-white hover:bg-white/5 transition-all shadow-xl"
+          title="Show committees sidebar"
+        >
+          <PanelLeftOpen className="w-4 h-4" />
+          <span className="text-[8px] font-black uppercase tracking-widest [writing-mode:vertical-rl] rotate-180">Committees</span>
+        </button>
+      )}
+
       {/* Sidebar - Committee List */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-80 border-r border-white/10 bg-slate-900 flex flex-col transition-transform duration-300 transform lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 border-r border-white/10 bg-slate-900 flex flex-col transition-all duration-300
+        lg:relative lg:inset-auto
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${sidebarCollapsed ? 'lg:w-0 lg:overflow-hidden lg:border-r-0' : 'lg:w-72'}
+      `}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center shadow-lg shadow-rose-500/20">
@@ -324,9 +343,18 @@ export default function CRM() {
             >
               <X className="w-5 h-5" />
             </button>
-            <button onClick={() => window.location.href = '/'} className="hidden lg:block ml-auto p-2 text-textSecondary hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all">
-              <Home className="w-5 h-5" />
-            </button>
+            <div className="hidden lg:flex items-center gap-1 ml-auto">
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                className="p-2 text-textSecondary hover:text-white hover:bg-white/5 rounded-xl transition-all"
+                title="Hide sidebar"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+              <button onClick={() => window.location.href = '/'} className="p-2 text-textSecondary hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all">
+                <Home className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textSecondary" />
@@ -389,6 +417,7 @@ export default function CRM() {
         <main className="flex-1 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-rose-500/10 via-transparent to-transparent">
           <header className="p-4 md:p-8 pb-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
+              {/* Mobile menu toggle */}
               <button 
                 onClick={() => setIsSidebarOpen(true)}
                 className="lg:hidden p-2 bg-white/5 rounded-xl border border-white/10 text-textSecondary"
@@ -597,7 +626,7 @@ export default function CRM() {
 
             {activeTab === 'tasks' && (
               <div className="animate-in fade-in zoom-in-95 duration-500">
-                <TaskBoard committeeId={selectedCommittee.id} accentColor="rose-500" canEdit={getPerm('tasks').canEdit} />
+                <TaskBoard department="CRM" committeeId={selectedCommittee.id} accentColor="rose-500" canEdit={getPerm('tasks').canEdit} />
               </div>
             )}
 
@@ -731,7 +760,7 @@ export default function CRM() {
       {/* Create Ticket Modal */}
       {showNewTicket && selectedCommittee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={() => setShowNewTicket(false)}>
-          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
                 <h2 className="text-xl font-black uppercase tracking-tight">New Support Ticket</h2>

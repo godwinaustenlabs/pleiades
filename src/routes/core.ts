@@ -44,8 +44,8 @@ coreRouter.post('/employees', async (c) => {
     const now = new Date();
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
-    const cleanBody = { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId };
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes } = body;
+    const cleanBody = { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes };
 
     await db.insert(schema.employees).values({ ...cleanBody, id, createdAt: now, updatedAt: now });
     await logAudit(c.env, user.id, 'CREATE', 'employees', id, cleanBody);
@@ -70,9 +70,9 @@ coreRouter.patch('/employees/:id', async (c) => {
     const id = c.req.param('id');
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId } = body;
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes } = body;
     const cleanBody: any = {};
-    const fields = ['name', 'slackId', 'department', 'role', 'email', 'phone', 'employmentStatus', 'hireDate', 'baseSalary', 'efficiencyScore', 'profilePhoto', 'sectorId'];
+    const fields = ['name', 'slackId', 'department', 'role', 'email', 'phone', 'employmentStatus', 'hireDate', 'baseSalary', 'efficiencyScore', 'profilePhoto', 'sectorId', 'cnic', 'dob', 'gender', 'address', 'contactInfo', 'emergencyContact', 'designation', 'reportingManagerId', 'employmentType', 'confirmationDate', 'contractStartDate', 'contractEndDate', 'bankDetails', 'taxInformation', 'assignedOffice', 'notes'];
     fields.forEach(f => { if (body[f] !== undefined) cleanBody[f] = body[f]; });
 
     await db.update(schema.employees).set({ ...cleanBody, updatedAt: new Date() }).where(eq(schema.employees.id, id));

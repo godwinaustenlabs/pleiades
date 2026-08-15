@@ -27,7 +27,13 @@ permissionsRouter.get('/user/:userId', async (c) => {
       where: eq(schema.userAppPermissions.userId, userId),
     });
 
-    return ok(c, perms);
+    const inheritedPerms = perms.map(p => ({
+      ...p,
+      canEdit: p.canEdit === true || p.canDelete === true,
+      canView: p.canView === true || p.canEdit === true || p.canDelete === true,
+    }));
+
+    return ok(c, inheritedPerms);
   } catch (err) {
     return serverError(c, err);
   }

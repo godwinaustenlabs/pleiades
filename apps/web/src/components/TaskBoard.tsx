@@ -25,9 +25,10 @@ interface TaskBoardProps {
   employeeId?: string;
   accentColor?: string;
   canEdit?: boolean;
+  fetchGlobal?: boolean;
 }
 
-export default function TaskBoard({ department, committeeId, employeeId, canEdit = true }: TaskBoardProps) {
+export default function TaskBoard({ department, committeeId, employeeId, canEdit = true, fetchGlobal = false }: TaskBoardProps) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -39,7 +40,7 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
 
   const fetchTasks = useCallback(() => {
     const params = new URLSearchParams();
-    if (department) params.set('dept', department);
+    if (department && !fetchGlobal) params.set('dept', department);
     if (committeeId) params.set('committeeId', committeeId);
     if (employeeId) params.set('userId', employeeId); // Backend still uses 'userId' query param
     setLoading(true);
@@ -169,111 +170,133 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
         )}
       </div>
 
-      <div className="flex md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4 -mx-4 px-4 md:mx-0 md:px-0">
-        {grouped.map(col => (
-          <div key={col.key}
-            onDragOver={(e) => handleDragOver(e, col.key)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, col.key)}
-            className={`rounded-2xl border p-4 min-h-[300px] transition-all duration-200 w-[85vw] shrink-0 snap-center md:w-auto md:flex-1 ${dragOverCol === col.key
-              ? 'border-primary/50 bg-primary/5 shadow-lg shadow-primary/10 scale-[1.01]'
-              : col.bg
-              }`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full"
-                  style={{ background: col.key === 'todo' ? '#94a3b8' : col.key === 'in_progress' ? '#f59e0b' : col.key === 'completed' ? '#10b981' : '#ef4444' }} />
-                <span className={`text-[11px] font-black uppercase tracking-widest ${col.color}`}>{col.label}</span>
-              </div>
-              <span className="text-[10px] font-black text-white/30 bg-white/5 px-2 py-0.5 rounded-full">{col.tasks.length}</span>
-            </div>
+      {/* Kanban board — horizontal scroll on narrow screens */}
+      <div className="relative">
+        {/* Right-edge fade hint for scroll */}
+        <div className="pointer-events-none absolute right-0 top-0 bottom-4 w-10 bg-gradient-to-l from-black/60 to-transparent z-10 lg:hidden" />
 
-            <div className="space-y-2.5">
-              {col.tasks.map(task => (
-                <div key={task.id} draggable={canEdit}
-                  onDragStart={(e) => handleDragStart(e, task.id)}
-                  onDragEnd={handleDragEnd}
-                  className={`group glass-panel rounded-xl p-3.5 ${canEdit ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} transition-all duration-200 hover:border-white/20 hover:shadow-lg ${draggedId === task.id ? 'opacity-50 scale-95' : ''}`}>
-                  <div className="flex items-start gap-2">
-                    {canEdit && <GripVertical className="w-3.5 h-3.5 mt-0.5 text-white/20 group-hover:text-white/40 flex-shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        {task.priority && (
-                          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITIES[task.priority]?.dot || 'bg-white/30'}`} />
-                        )}
-                        <h4 className="text-sm font-bold truncate leading-none">{task.title}</h4>
-                      </div>
-                      {task.description && (
-                        <p className="text-[11px] text-textSecondary line-clamp-2 mb-3 leading-relaxed">{task.description}</p>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap mt-2">
-                        {task.priority && (
-                          <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${PRIORITIES[task.priority]?.color}`}>
-                            {PRIORITIES[task.priority]?.label}
-                          </span>
-                        )}
-                        {task.assignments?.length > 0 && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5" title={task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}>
-                            <Users className="w-2.5 h-2.5 flex-shrink-0" />
-                            <span className="truncate max-w-[120px]">
-                              {task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}
-                            </span>
-                          </span>
-                        )}
-                        {task.committeeId && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <Building2 className="w-2.5 h-2.5" />
-                            {committees.find(cm => cm.id === task.committeeId)?.committeeName || 'Committee'}
-                          </span>
-                        )}
-                        {(task.startDate || task.dueDate) && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <CalendarDays className="w-2.5 h-2.5" />
-                            {task.startDate ? new Date(task.startDate).toLocaleDateString() : '—'} 
-                            <span className="mx-1">→</span> 
-                            {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
-                          </span>
-                        )}
-                        {task.taskType && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <Tags className="w-2.5 h-2.5" />
-                            {task.taskType}
-                          </span>
-                        )}
-                        {task.estimatedHours > 0 && (
-                          <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                            <Clock className="w-2.5 h-2.5" />
-                            {task.estimatedHours}h
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {canEdit && (
-                        <button onClick={() => setEditingTask(task)}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all text-white/20">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {canEdit && (
-                        <button onClick={() => handleDelete(task.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all text-white/20">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+        <div
+          className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 md:mx-0 md:px-0"
+          style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+        >
+          {/* Scrollbar styling injected inline for cross-browser support */}
+          <style>{`
+            .kanban-scroll::-webkit-scrollbar { height: 4px; }
+            .kanban-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 99px; }
+            .kanban-scroll::-webkit-scrollbar-thumb { background: rgba(244,63,94,0.4); border-radius: 99px; }
+            .kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(244,63,94,0.7); }
+          `}</style>
+          <div
+            className="kanban-scroll flex gap-4 overflow-x-auto w-full pb-3"
+            style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', scrollbarColor: 'rgba(244,63,94,0.4) rgba(255,255,255,0.03)' }}
+          >
+            {grouped.map(col => (
+              <div key={col.key}
+                onDragOver={(e) => handleDragOver(e, col.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, col.key)}
+                style={{ scrollSnapAlign: 'start', minWidth: 'min(80vw, 280px)', flex: '1 0 min(80vw, 280px)' }}
+                className={`rounded-2xl border p-4 min-h-[300px] transition-all duration-200 md:flex-1 md:min-w-0 ${dragOverCol === col.key
+                  ? 'border-primary/50 bg-primary/5 shadow-lg shadow-primary/10 scale-[1.01]'
+                  : col.bg
+                  }`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full"
+                      style={{ background: col.key === 'todo' ? '#94a3b8' : col.key === 'in_progress' ? '#f59e0b' : col.key === 'completed' ? '#10b981' : '#ef4444' }} />
+                    <span className={`text-[11px] font-black uppercase tracking-widest ${col.color}`}>{col.label}</span>
                   </div>
+                  <span className="text-[10px] font-black text-white/30 bg-white/5 px-2 py-0.5 rounded-full">{col.tasks.length}</span>
                 </div>
-              ))}
 
-              {col.tasks.length === 0 && (
-                <div className="text-center py-10 text-[10px] font-black uppercase tracking-[0.2em] text-white/10 border border-dashed border-white/10 rounded-xl">
-                  {canEdit ? 'Drop tasks here' : 'Empty Column'}
+                <div className="space-y-2.5">
+                  {col.tasks.map(task => (
+                    <div key={task.id} draggable={canEdit}
+                      onDragStart={(e) => handleDragStart(e, task.id)}
+                      onDragEnd={handleDragEnd}
+                      className={`group glass-panel rounded-xl p-3.5 ${canEdit ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'} transition-all duration-200 hover:border-white/20 hover:shadow-lg ${draggedId === task.id ? 'opacity-50 scale-95' : ''}`}>
+                      <div className="flex items-start gap-2">
+                        {canEdit && <GripVertical className="w-3.5 h-3.5 mt-0.5 text-white/20 group-hover:text-white/40 flex-shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            {task.priority && (
+                              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITIES[task.priority]?.dot || 'bg-white/30'}`} />
+                            )}
+                            <h4 className="text-sm font-bold truncate leading-none">{task.title}</h4>
+                          </div>
+                          {task.description && (
+                            <p className="text-[11px] text-textSecondary line-clamp-2 mb-3 leading-relaxed">{task.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap mt-2">
+                            {task.priority && (
+                              <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${PRIORITIES[task.priority]?.color}`}>
+                                {PRIORITIES[task.priority]?.label}
+                              </span>
+                            )}
+                            {task.assignments?.length > 0 && (
+                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5" title={task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}>
+                                <Users className="w-2.5 h-2.5 flex-shrink-0" />
+                                <span className="truncate max-w-[120px]">
+                                  {task.assignments.map((a: any) => employees.find(e => e.id === a.employeeId)?.name).filter(Boolean).join(', ')}
+                                </span>
+                              </span>
+                            )}
+                            {task.committeeId && (
+                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                <Building2 className="w-2.5 h-2.5" />
+                                {committees.find(cm => cm.id === task.committeeId)?.committeeName || 'Committee'}
+                              </span>
+                            )}
+                            {(task.startDate || task.dueDate) && (
+                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                <CalendarDays className="w-2.5 h-2.5" />
+                                {task.startDate ? new Date(task.startDate).toLocaleDateString() : '—'} 
+                                <span className="mx-1">→</span> 
+                                {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
+                              </span>
+                            )}
+                            {task.taskType && (
+                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                <Tags className="w-2.5 h-2.5" />
+                                {task.taskType}
+                              </span>
+                            )}
+                            {task.estimatedHours > 0 && (
+                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                <Clock className="w-2.5 h-2.5" />
+                                {task.estimatedHours}h
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {canEdit && (
+                            <button onClick={() => setEditingTask(task)}
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all text-white/20">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button onClick={() => handleDelete(task.id)}
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all text-white/20">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {col.tasks.length === 0 && (
+                    <div className="text-center py-10 text-[10px] font-black uppercase tracking-[0.2em] text-white/10 border border-dashed border-white/10 rounded-xl">
+                      {canEdit ? 'Drop tasks here' : 'Empty Column'}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
 
       {/* Create Task Modal */}
@@ -402,7 +425,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md md:p-4 animate-in fade-in" onClick={onClose}>
-      <div className="bg-surface md:border border-white/10 md:rounded-[2.5rem] w-full h-full md:h-auto md:max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface md:border border-white/10 md:rounded-[2.5rem] w-full h-full md:h-auto md:max-h-[90vh] max-h-[100dvh] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 md:p-8 border-b border-white/5 bg-white/5 flex-shrink-0">
           <div>
