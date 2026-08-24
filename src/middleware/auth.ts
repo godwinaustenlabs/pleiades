@@ -7,12 +7,18 @@ import { schema } from '@ganova/database';
 import { Env } from '../index';
 
 export type UserPayload = {
+  /**
+   * The users_logins id whose grants apply. For an agent this is the user the
+   * API key acts as, not the key's own id — an agent has no permissions of its
+   * own, it borrows a person's, so that there is one place access is defined.
+   */
   id: string;
-  roleId: string;
-  roleName: string;
   employeeId?: string | null;
   isSuperadmin: boolean;
   type: 'human' | 'agent';
+  /** Present only for agents: the api_keys row, for audit and diagnostics. */
+  agentKeyId?: string;
+  agentName?: string;
 };
 
 async function sha256hex(input: string): Promise<string> {
@@ -45,20 +51,18 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
     // could ever authenticate.
     const keyRecord = await db.query.apiKeys.findFirst({
       where: eq(schema.apiKeys.keyHash, await sha256hex(apiKey)),
-      with: {
-        role: true,
-      },
+      with: { user: true },
     });
 
-    if (keyRecord && keyRecord.isActive) {
-      // Valid Agent
+    if (keyRecord && keyRecord.isActive && keyRecord.user?.isActive !== false) {
       c.set('user', {
-        id: keyRecord.id,
-        roleId: keyRecord.roleId,
-        // @ts-ignore
-        roleName: keyRecord.role?.name || 'Agent',
-        isSuperadmin: false, // Agents are never superadmins
+        // The agent acts as this user and resolves that user's grants.
+        id: keyRecord.userId,
+        employeeId: keyRecord.user?.employeeId ?? null,
+        isSuperadmin: false, // Agents are never superadmins, whoever they act as
         type: 'agent',
+        agentKeyId: keyRecord.id,
+        agentName: keyRecord.ownerName,
       });
       return await next();
     }
@@ -89,7 +93,6 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
     const db = getDb(c.env);
     const login = await db.query.usersLogins.findFirst({
       where: eq(schema.usersLogins.id, actorId),
-      with: { role: true },
     });
 
     if (!login || login.isActive === false) {
@@ -98,9 +101,6 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
 
     c.set('user', {
       id: login.id,
-      roleId: login.roleId,
-      // @ts-ignore — role is present via `with`
-      roleName: login.role?.name || 'Employee',
       employeeId: login.employeeId,
       isSuperadmin: !!login.isSuperadmin,
       type: 'human',
@@ -138,10 +138,11 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
       return c.json({ error: 'Invalid or expired token' }, 401);
     }
 
+    // Only the id is taken from the token. Grants are read from the database on
+    // every request (see rbac.ts), so a token minted before someone's access
+    // was narrowed cannot carry the old access with it.
     c.set('user', {
       id: payload.id as string,
-      roleId: payload.roleId as string,
-      roleName: payload.roleName as string,
       employeeId: payload.employeeId as string | undefined,
       isSuperadmin: !!payload.isSuperadmin,
       type: 'human',

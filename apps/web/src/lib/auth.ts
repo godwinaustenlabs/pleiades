@@ -19,8 +19,8 @@ export interface CurrentUser {
 	email?: string;
 	username?: string;
 	name?: string;
-	roleId?: string;
-	roleName?: string;
+	/** Job title, for display only. It grants nothing — see usePermissions. */
+	title?: string;
 	employeeId?: string | null;
 	isSuperadmin?: boolean;
 }
@@ -49,8 +49,8 @@ export interface Grant {
 export type PermissionLevel = 'view' | 'edit' | 'delete';
 
 /**
- * Effective grants for the signed-in user. The server resolves these from the
- * user's role; the client never computes access itself.
+ * Effective grants for the signed-in user: the features granted to them
+ * individually. The client never computes access itself.
  */
 export async function fetchGrants(): Promise<Grant[]> {
 	const res = await fetch(`${API}/permissions/me`, { headers: authHeaders() });

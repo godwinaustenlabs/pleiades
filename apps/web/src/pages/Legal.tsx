@@ -200,7 +200,7 @@ function Legal() {
             </div>
             <div className="text-left hidden sm:block">
               <div className="text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Legal'}</div>
-              <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.roleName || 'Counsel'}</div>
+              <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.title || 'Counsel'}</div>
             </div>
           </button>
           <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />

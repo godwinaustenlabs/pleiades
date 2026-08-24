@@ -451,3 +451,111 @@ describe('asset download authorization', () => {
 		expect(res.status).not.toBe(403);
 	});
 });
+
+describe('per-user granular permissions', () => {
+	// Roles were removed in 0025. Authorization is exactly the set of rows
+	// carrying a user's id, so two people can differ by a single feature —
+	// which a role, being shared, could never express.
+	async function grantsFor(userId: string) {
+		const res = await env.DB.prepare(
+			'SELECT app_name, feature, can_view, can_edit, can_delete FROM user_app_permissions WHERE user_id = ?'
+		).bind(userId).all();
+		return res.results as any[];
+	}
+
+	it('has no roles table left to grant anything', async () => {
+		const row = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name IN ('roles','role_app_permissions')"
+		).first();
+		expect(row).toBeNull();
+	});
+
+	it('grants one user a feature without touching anyone else', async () => {
+		// u_none holds nothing at all.
+		expect((await authedGet('none', '/api/tech/projects')).status).toBe(403);
+
+		await env.DB.prepare(
+			`INSERT INTO user_app_permissions
+			 (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+			 VALUES ('uap_probe_none_tech','u_none','tech','projects',1,0,0,0,0)`
+		).run();
+
+		expect((await authedGet('none', '/api/tech/projects')).status).not.toBe(403);
+		// Nobody else moved: u_crm still cannot see tech.
+		expect((await authedGet('crm', '/api/tech/projects')).status).toBe(403);
+
+		await env.DB.prepare("DELETE FROM user_app_permissions WHERE id='uap_probe_none_tech'").run();
+		expect((await authedGet('none', '/api/tech/projects')).status).toBe(403);
+	});
+
+	it('separates view from edit for the same user and feature', async () => {
+		await env.DB.prepare(
+			`INSERT INTO user_app_permissions
+			 (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+			 VALUES ('uap_probe_view_only','u_none','legal','templates',1,0,0,0,0)`
+		).run();
+
+		expect((await authedGet('none', '/api/legal/templates')).status).not.toBe(403);
+
+		const write = await SELF.fetch('https://test.local/api/legal/templates', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${await tokenFor('none')}`,
+			},
+			body: JSON.stringify({ title: 'x' }),
+		});
+		expect(write.status).toBe(403);
+
+		await env.DB.prepare("DELETE FROM user_app_permissions WHERE id='uap_probe_view_only'").run();
+	});
+
+	it('reads grants from the database, not from the token', async () => {
+		// The token is minted once, then the grant is removed. A token carrying a
+		// permission claim would keep working until it expired; this must not.
+		const token = await tokenFor('tech');
+		const path = 'https://test.local/api/tech/projects';
+		const auth = { Authorization: `Bearer ${token}` };
+
+		expect((await SELF.fetch(path, { headers: auth })).status).not.toBe(403);
+
+		const saved = await grantsFor('u_tech');
+		await env.DB.prepare("DELETE FROM user_app_permissions WHERE user_id='u_tech'").run();
+		expect((await SELF.fetch(path, { headers: auth })).status).toBe(403);
+
+		const now = Date.now();
+		for (const g of saved) {
+			await env.DB.prepare(
+				`INSERT INTO user_app_permissions
+				 (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+				 VALUES (?,?,?,?,?,?,?,?,?)`
+			).bind(`uap_restore_${g.app_name}_${g.feature}`, 'u_tech', g.app_name, g.feature,
+				g.can_view, g.can_edit, g.can_delete, now, now).run();
+		}
+		expect((await SELF.fetch(path, { headers: auth })).status).not.toBe(403);
+	});
+
+	it('rejects a grant naming a feature APP_FEATURES does not declare', async () => {
+		const res = await SELF.fetch('https://test.local/api/admin/users/u_none/permissions', {
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${await tokenFor('ceo')}`,
+			},
+			body: JSON.stringify({ permissions: [{ appName: 'legal', feature: 'not_a_feature', canView: true }] }),
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it('will not let a non-admin rewrite anyone\'s permissions', async () => {
+		const res = await SELF.fetch('https://test.local/api/admin/users/u_none/permissions', {
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${await tokenFor('crm')}`,
+			},
+			body: JSON.stringify({ permissions: [{ appName: 'finance', feature: 'accounts', canView: true }] }),
+		});
+		expect(res.status).toBe(403);
+	});
+});

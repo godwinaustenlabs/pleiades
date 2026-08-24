@@ -26,45 +26,6 @@ async function sha256hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ── ROLES ─────────────────────────────────────────────────────────────────────
-
-adminRouter.get('/roles', requireFeatureAccess('admin', 'roles', 'view'), async (c) => {
-  try { return ok(c, await getDb(c.env).query.roles.findMany()); }
-  catch (err) { return serverError(c, err); }
-});
-
-adminRouter.post('/roles', requireFeatureAccess('admin', 'roles', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user')!!;
-    const { name } = await c.req.json<{ name: string }>();
-    if (!name) return badRequest(c, 'name is required');
-    const id = generateId('role');
-    await db.insert(schema.roles).values({ id, name, createdAt: new Date() });
-    await logAudit(c.env, user.id, 'CREATE', 'roles', id, { name });
-    return created(c, { id, name });
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.patch('/roles/:id', requireFeatureAccess('admin', 'roles', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user')!!;
-    const id = c.req.param('id')!;
-    if (!id) return badRequest(c, 'id is required');
-    const body = await c.req.json();
-    await db.update(schema.roles).set(body).where(eq(schema.roles.id, id));
-    await logAudit(c.env, user.id, 'UPDATE', 'roles', id, body); return ok(c, { id });
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.delete('/roles/:id', requireFeatureAccess('admin', 'roles', 'delete'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user')!!; const id = c.req.param('id')!;
-    if (!id) return badRequest(c, 'id is required');
-    await db.delete(schema.roles).where(eq(schema.roles.id, id));
-    await logAudit(c.env, user.id, 'DELETE', 'roles', id); return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
-});
-
 // ── PERMISSIONS ────────────────────────────────────────────────────────────────
 
 adminRouter.get('/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
@@ -93,59 +54,71 @@ adminRouter.delete('/permissions/:id', requireFeatureAccess('admin', 'permission
   } catch (err) { return serverError(c, err); }
 });
 
-// ── ROLE GRANTS ────────────────────────────────────────────────────────────────
-// Replaces the old /role-permissions and /role-hierarchy routes, which queried
-// `role_permissions` and `role_hierarchy` — tables that were never deployed, so
-// every one of those routes returned a 500. Role grants now live in
-// role_app_permissions and are managed here.
+// ── USER GRANTS ───────────────────────────────────────────────────────────────
+// Permissions are per user. There is no role indirection and no group to widen
+// by accident: editing one person's access affects exactly that person.
 
-adminRouter.get('/roles/:roleId/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
+adminRouter.get('/users/:id/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
   try {
-    const rows = await getDb(c.env).query.roleAppPermissions.findMany({
-      where: eq(schema.roleAppPermissions.roleId, c.req.param('roleId')!),
+    const rows = await getDb(c.env).query.userAppPermissions.findMany({
+      where: eq(schema.userAppPermissions.userId, c.req.param('id')!),
     });
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
 
 /**
- * PUT /admin/roles/:roleId/permissions
- * Replaces a role's entire grant set. Body: { permissions: [{ appName, feature,
- * canView, canEdit, canDelete }] }. Every user holding the role is affected.
+ * PUT /admin/users/:id/permissions
+ *
+ * Replaces one user's entire grant set. Body: { permissions: [{ appName,
+ * feature, canView, canEdit, canDelete }] }. Delete-then-insert rather than a
+ * merge, so unticking a box actually removes the grant.
  */
-adminRouter.put('/roles/:roleId/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
+adminRouter.put('/users/:id/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
-    const user = c.get('user');
-    const roleId = c.req.param('roleId')!;
+    const actor = c.get('user');
+    const userId = c.req.param('id')!;
     const { permissions } = await c.req.json<{ permissions: any[] }>();
     if (!Array.isArray(permissions)) return badRequest(c, 'permissions array required');
 
+    const target = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, userId),
+      columns: { id: true, isSuperadmin: true },
+    });
+    if (!target) return notFound(c, 'User not found');
+
+    // APP_FEATURES is the source of truth for what exists. A grant naming
+    // something outside it can never be satisfied by getPerm(), so it would sit
+    // in the table looking like access that silently does nothing.
     const unknown = permissions.filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature));
     if (unknown.length > 0) {
       return badRequest(c, `Unknown app/feature: ${unknown.map((p) => `${p.appName}/${p.feature}`).join(', ')}`);
     }
 
-    await db.delete(schema.roleAppPermissions).where(eq(schema.roleAppPermissions.roleId, roleId));
+    await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, userId));
 
     const now = new Date();
-    const toInsert = permissions.map((p) => ({
-      id: generateId('rap'),
-      roleId,
-      appName: p.appName,
-      feature: p.feature,
-      canView: p.canView ?? false,
-      canEdit: p.canEdit ?? false,
-      canDelete: p.canDelete ?? false,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    // A grant that carries no level at all is just a row that does nothing.
+    const toInsert = permissions
+      .filter((p) => p.canView || p.canEdit || p.canDelete)
+      .map((p) => ({
+        id: generateId('uap'),
+        userId,
+        appName: p.appName,
+        feature: p.feature,
+        canView: p.canView ?? false,
+        canEdit: p.canEdit ?? false,
+        canDelete: p.canDelete ?? false,
+        createdAt: now,
+        updatedAt: now,
+      }));
     for (const batch of chunk(toInsert, 5)) {
-      if (batch.length > 0) await db.insert(schema.roleAppPermissions).values(batch as any);
+      if (batch.length > 0) await db.insert(schema.userAppPermissions).values(batch as any);
     }
 
-    await logAudit(c.env, user.id, 'UPDATE', 'role_app_permissions', roleId, { count: toInsert.length });
-    return ok(c, { roleId, count: toInsert.length });
+    await logAudit(c.env, actor.id, 'UPDATE', 'user_app_permissions', userId, { count: toInsert.length });
+    return ok(c, { userId, count: toInsert.length, isSuperadmin: !!target.isSuperadmin });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -154,7 +127,7 @@ adminRouter.put('/roles/:roleId/permissions', requireFeatureAccess('admin', 'per
 adminRouter.get('/users', requireFeatureAccess('admin', 'users', 'view'), async (c) => {
   try {
     const rows = await getDb(c.env).query.usersLogins.findMany({
-      with: { role: true, ownership: true },
+      with: { ownership: true, permissions: true },
       columns: { passwordHash: false },
     });
     return ok(c, rows);
@@ -165,7 +138,7 @@ adminRouter.get('/users/:id', requireFeatureAccess('admin', 'users', 'view'), as
   try {
     const row = await getDb(c.env).query.usersLogins.findFirst({
       where: eq(schema.usersLogins.id, c.req.param('id')!),
-      with: { role: true, ownership: true },
+      with: { ownership: true, permissions: true },
       columns: { passwordHash: false },
     });
     if (!row) return notFound(c);
@@ -200,11 +173,20 @@ adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edi
     const db = getDb(c.env);
     const actor = c.get('user')!!;
     const body = await c.req.json<{
-      email: string; password: string; roleId: string; username?: string; employeeId?: string;
+      email: string; password: string; username?: string; employeeId?: string;
+      permissions?: { appName: string; feature: string; canView?: boolean; canEdit?: boolean; canDelete?: boolean }[];
     }>();
 
-    if (!body.email || !body.password || !body.roleId) {
-      return badRequest(c, 'email, password, and roleId are required');
+    if (!body.email || !body.password) {
+      return badRequest(c, 'email and password are required');
+    }
+
+    // A new account starts with no access at all unless permissions are given
+    // here. Nothing is implied by job title or by anything else on the request.
+    const requested = Array.isArray(body.permissions) ? body.permissions : [];
+    const unknown = requested.filter((g) => !APP_FEATURES[g.appName]?.includes(g.feature));
+    if (unknown.length > 0) {
+      return badRequest(c, `Unknown app/feature: ${unknown.map((g) => `${g.appName}/${g.feature}`).join(', ')}`);
     }
     if (body.password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
 
@@ -235,7 +217,6 @@ adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edi
       id,
       email: body.email.toLowerCase().trim(),
       passwordHash,
-      roleId: body.roleId,
       employeeId: body.employeeId ?? null,
       isActive: true,
       createdAt: now,
@@ -250,11 +231,28 @@ adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edi
       assignedByUserId: actor.id,
     });
 
+    const grants = requested
+      .filter((g) => g.canView || g.canEdit || g.canDelete)
+      .map((g) => ({
+        id: generateId('uap'),
+        userId: id,
+        appName: g.appName,
+        feature: g.feature,
+        canView: g.canView ?? false,
+        canEdit: g.canEdit ?? false,
+        canDelete: g.canDelete ?? false,
+        createdAt: now,
+        updatedAt: now,
+      }));
+    for (const batch of chunk(grants, 5)) {
+      if (batch.length > 0) await db.insert(schema.userAppPermissions).values(batch as any);
+    }
+
     await logAudit(c.env, actor.id, 'CREATE', 'users_logins', id, {
-      email: body.email, roleId: body.roleId, provisioned_by: actor.id,
+      email: body.email, grants: grants.length, provisioned_by: actor.id,
     });
 
-    return created(c, { id, email: body.email, roleId: body.roleId, ownerUserId: actor.id });
+    return created(c, { id, email: body.email, grants: grants.length, ownerUserId: actor.id });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -268,7 +266,7 @@ adminRouter.get('/users/my-team', requireFeatureAccess('admin', 'users', 'view')
 
     if (isUserAdmin) {
       const rows = await db.query.usersLogins.findMany({
-        with: { role: true, ownership: true },
+        with: { ownership: true, permissions: true },
         columns: { passwordHash: false },
       });
       return ok(c, rows);
@@ -284,7 +282,7 @@ adminRouter.get('/users/my-team', requireFeatureAccess('admin', 'users', 'view')
       userIds.map((uid) =>
         db.query.usersLogins.findFirst({
           where: eq(schema.usersLogins.id, uid),
-          with: { role: true },
+          with: { permissions: true },
           columns: { passwordHash: false },
         })
       )
@@ -345,7 +343,7 @@ adminRouter.get('/pending-resets', requireFeatureAccess('admin', 'resets', 'view
 
     let pendingResets = await db.query.passwordResetTokens.findMany({
       where: eq(schema.passwordResetTokens.status, 'pending'),
-      with: { user: { columns: { passwordHash: false }, with: { role: true } } },
+      with: { user: { columns: { passwordHash: false } } },
       orderBy: [desc(schema.passwordResetTokens.requestedAt)],
     });
 
@@ -451,7 +449,7 @@ adminRouter.post('/pending-resets/:tokenId/reject', requireFeatureAccess('admin'
 
 adminRouter.get('/api-keys', requireFeatureAccess('admin', 'api_keys', 'view'), async (c) => {
   try {
-    const rows = await getDb(c.env).query.apiKeys.findMany({ with: { role: true } });
+    const rows = await getDb(c.env).query.apiKeys.findMany({ with: { user: { columns: { passwordHash: false } } } });
     return ok(c, rows.map(({ keyHash: _, ...r }) => r));
   } catch (err) { return serverError(c, err); }
 });
@@ -459,13 +457,21 @@ adminRouter.get('/api-keys', requireFeatureAccess('admin', 'api_keys', 'view'), 
 adminRouter.post('/api-keys', requireFeatureAccess('admin', 'api_keys', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!;
-    const { ownerName, roleId } = await c.req.json<{ ownerName: string; roleId: string }>();
-    if (!ownerName || !roleId) return badRequest(c, 'ownerName and roleId required');
+    // An agent has no permissions of its own: it names the user it acts as and
+    // inherits exactly that person's grants, so revoking their access revokes
+    // the agent's too.
+    const { ownerName, userId } = await c.req.json<{ ownerName: string; userId: string }>();
+    if (!ownerName || !userId) return badRequest(c, 'ownerName and userId required');
+    const actsAs = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, userId),
+      columns: { id: true },
+    });
+    if (!actsAs) return badRequest(c, 'userId does not name a known user');
     const rawKey = generateId('sk');
     const keyHash = await sha256hex(rawKey);
     const id = generateId('ak');
-    await db.insert(schema.apiKeys).values({ id, keyHash, ownerName, roleId, isActive: true, createdAt: new Date() });
-    await logAudit(c.env, user.id, 'CREATE', 'api_keys', id, { ownerName, roleId });
+    await db.insert(schema.apiKeys).values({ id, keyHash, ownerName, userId, isActive: true, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'api_keys', id, { ownerName, userId });
     return created(c, { id, ownerName, rawKey });
   } catch (err) { return serverError(c, err); }
 });

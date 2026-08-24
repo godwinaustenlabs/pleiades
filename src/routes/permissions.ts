@@ -61,9 +61,9 @@ permissionsRouter.get('/user/:userId', async (c) => {
  * any user's permissions — including their own — to every app. Nothing in the
  * web app called it.
  *
- * Under the roles-only model, permissions belong to roles: manage them with
- * `PUT /api/admin/roles/:roleId/permissions`, and change what a user can do by
- * changing their role via `PATCH /api/admin/users/:id`.
+ * Permissions are per user again, but editing them is an admin capability, not
+ * an HR one: use `PUT /api/admin/users/:id/permissions`, gated on
+ * admin/permissions edit.
  */
 
 export default permissionsRouter;

@@ -51,7 +51,7 @@ authRouter.post('/login', async (c) => {
         eq(schema.usersLogins.email, email.toLowerCase().trim()),
         eq(schema.usersLogins.username, email.toLowerCase().trim())
       ),
-      with: { role: true },
+      with: { employee: true },
     });
 
     if (!user) return c.json({ success: false, error: 'Invalid credentials' }, 401);
@@ -99,9 +99,9 @@ authRouter.post('/login', async (c) => {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
       id: user.id,
-      roleId: user.roleId,
-      // @ts-ignore
-      roleName: user.role?.name || 'Employee',
+      // No permission claim of any kind rides in the token. Grants are read
+      // from user_app_permissions on every request (see rbac.ts), so narrowing
+      // someone's access takes effect immediately rather than at token expiry.
       employeeId: user.employeeId ?? null,
       isSuperadmin: user.isSuperadmin || false,
       type: 'human',
@@ -123,9 +123,9 @@ authRouter.post('/login', async (c) => {
         email: user.email,
         username: user.username,
         name: user.name,
-        roleId: user.roleId,
-        // @ts-ignore
-        roleName: user.role?.name,
+        // Job title for display only — it grants nothing.
+        // @ts-ignore — employee is present via `with`
+        title: user.employee?.role || user.employee?.department || 'Staff',
         employeeId: user.employeeId,
         isSuperadmin: user.isSuperadmin || false,
       },
@@ -145,7 +145,7 @@ authRouter.get('/whoami', authMiddleware, async (c) => {
   
   const userData = await db.query.usersLogins.findFirst({
     where: eq(schema.usersLogins.id, user.id),
-    with: { role: true }
+    with: { employee: true }
   });
 
   if (!userData) return c.json({ success: false, error: 'User not found' }, 404);
@@ -154,7 +154,8 @@ authRouter.get('/whoami', authMiddleware, async (c) => {
     ...user,
     username: userData.username,
     name: userData.name,
-    roleId: userData.roleId,
+    // @ts-ignore — employee is present via `with`
+    title: userData.employee?.role || userData.employee?.department || 'Staff',
   });
 });
 

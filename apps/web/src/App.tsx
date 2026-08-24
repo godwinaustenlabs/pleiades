@@ -11,6 +11,7 @@ import Acquisition from './pages/Acquisition';
 import UserDashboard from './pages/UserDashboard';
 import CRM from './pages/CRM';
 import ClientPortal from './pages/ClientPortal';
+import Admin from './pages/Admin';
 
 function App() {
   useEffect(() => {
@@ -69,6 +70,7 @@ function App() {
       <Route path="/dashboard" element={<UserDashboard />} />
       <Route path="/crm" element={<CRM />} />
       <Route path="/portal" element={<ClientPortal />} />
+      <Route path="/admin" element={<Admin />} />
     </Routes>
   );
 }

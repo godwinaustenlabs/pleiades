@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Shield, Check } from 'lucide-react';
-import { token as authToken } from '../lib/auth';
+import { token as authToken, type Grant } from '../lib/auth';
+import PermissionMatrix from './PermissionMatrix';
 import { errorMessage } from '../lib/errors';
 
 interface AppointmentProvisionFormProps {
@@ -9,14 +10,6 @@ interface AppointmentProvisionFormProps {
   employees: any[];
   committees: any[];
   initialData?: any;
-}
-
-interface Permission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
 }
 
 export default function AppointmentProvisionForm({ onClose, onSubmit, employees, committees, initialData }: AppointmentProvisionFormProps) {
@@ -32,26 +25,18 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
     employeeId: initialData?.employeeId || '',
     committeeId: initialData?.committeeId || '',
     roleOrTitle: initialData?.roleOrTitle || '',
-    roleId: initialData?.roleId || '',
     termType: initialData?.termType || 'permanent',
     appointmentDate: initialData?.appointmentDate || new Date().toISOString().split('T')[0],
   });
 
-  // Access is granted by role, so this form picks a role and previews what it
-  // confers rather than editing per-feature permissions for one user.
-  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
-  const [rolePreview, setRolePreview] = useState<Permission[]>([]);
+  // Access is per person: this form grants features directly, and a new account
+  // reaches nothing until something is ticked here.
+  const [permissions, setPermissions] = useState<Grant[]>([]);
 
   useEffect(() => {
     const token = authToken();
-    
-    // 1. Roles available to assign
-    fetch('/api/admin/roles', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { if (d.data) setRoles(d.data); })
-      .catch(() => {});
 
-    // 2. Fetch current account if editing
+    // Fetch current account if editing
     if (initialData?.accountId) {
       fetch(`/api/admin/users/${initialData.accountId}`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
@@ -62,21 +47,23 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
               email: d.data.email || '',
               username: d.data.username || '',
               name: d.data.name || '',
-              roleId: d.data.roleId || prev.roleId,
             }));
           }
         });
+
+      // Existing grants for this account, so editing does not silently wipe them.
+      fetch(`/api/admin/users/${initialData.accountId}/permissions`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => setPermissions(((d.data as any[]) || []).map(g => ({
+          appName: g.appName ?? g.app_name,
+          feature: g.feature,
+          canView: !!(g.canView ?? g.can_view),
+          canEdit: !!(g.canEdit ?? g.can_edit),
+          canDelete: !!(g.canDelete ?? g.can_delete),
+        }))))
+        .catch(() => {});
     }
   }, [initialData]);
-
-  // Show what the selected role actually grants, so the choice is legible.
-  useEffect(() => {
-    if (!formData.roleId) { setRolePreview([]); return; }
-    fetch(`/api/admin/roles/${formData.roleId}/permissions`, { headers: { Authorization: `Bearer ${authToken()}` } })
-      .then(r => r.json())
-      .then(d => setRolePreview(d.data || []))
-      .catch(() => setRolePreview([]));
-  }, [formData.roleId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +71,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
     setError('');
     
     // Clean empty strings to null to prevent foreign key constraint errors
-    const cleanedData = { ...formData } as Record<string, any>;
+    const cleanedData = { ...formData, permissions } as Record<string, any>;
     Object.keys(cleanedData).forEach(key => {
       if (cleanedData[key] === "") {
         cleanedData[key] = null;
@@ -173,50 +160,19 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
 
               <div className="space-y-4 flex flex-col h-full overflow-hidden">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-bold text-textSecondary uppercase tracking-widest">Role</h3>
+                  <h3 className="text-xs font-bold text-textSecondary uppercase tracking-widest">Access</h3>
                 </div>
 
-                <select
-                  value={formData.roleId}
-                  onChange={e => setFormData(prev => ({ ...prev, roleId: e.target.value }))}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-textPrimary focus:outline-none focus:border-primary/40 cursor-pointer"
-                >
-                  <option value="">No role — account has no access</option>
-                  {roles.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-
                 <div className="flex-1 bg-black/30 border border-white/10 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
-                  <div className="overflow-y-auto custom-scrollbar flex-1 divide-y divide-white/5">
-                    {rolePreview.length === 0 && (
-                      <div className="p-6 text-xs text-textSecondary italic">
-                        {formData.roleId ? 'This role grants no access.' : 'Select a role to see what it grants.'}
-                      </div>
-                    )}
-                    {rolePreview.map(p => {
-                      const level = p.canDelete ? 'Manager' : p.canEdit ? 'Editor' : 'Viewer';
-                      return (
-                        <div key={`${p.appName}/${p.feature}`} className="flex items-center justify-between p-3 pl-5">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-1.5 h-1.5 rounded-full ${
-                              p.canDelete ? 'bg-primary' : p.canEdit ? 'bg-amber-500' : 'bg-blue-500'
-                            }`} />
-                            <span className="text-xs font-medium text-textSecondary">
-                              <span className="uppercase font-black text-textPrimary">{p.appName}</span> / {p.feature}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-textSecondary">{level}</span>
-                        </div>
-                      );
-                    })}
+                  <div className="overflow-y-auto custom-scrollbar flex-1 p-3">
+                    <PermissionMatrix value={permissions} onChange={setPermissions} />
                   </div>
                 </div>
 
                 <div className="p-3 bg-primary/5 rounded-xl border border-primary/10">
                   <p className="text-[10px] text-primary/80 leading-relaxed italic">
-                    Permissions belong to the role, not the person. Editing a role changes access for
-                    everyone who holds it — manage roles under Admin.
+                    Permissions belong to this person alone — changing them affects nobody else. Leave
+                    everything unticked and the account is created with no access at all.
                   </p>
                 </div>
               </div>

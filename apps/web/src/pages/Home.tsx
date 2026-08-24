@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, LayoutDashboard, Lock, Loader2 } from 'lucide-react';
+import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, LayoutDashboard, Lock, Loader2, UserCog } from 'lucide-react';
 import Logo from '../components/Logo';
 import { Link } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
@@ -7,6 +7,15 @@ import { usePermissions } from '../lib/usePermissions';
 
 
 const ALL_APPS = [
+  {
+    id: 'admin',
+    name: 'Access',
+    description: 'Grant each person the features they need, one by one.',
+    icon: UserCog,
+    color: 'hover:border-primary/50 hover:bg-primary/5',
+    iconColor: 'text-primary bg-primary/20',
+    url: '/admin',
+  },
   {
     id: 'hr',
     name: 'Human Resources',
@@ -166,7 +175,7 @@ function Home() {
               </div>
               <div className="text-left hidden sm:block">
                 <div className="text-[10px] md:text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Member'}</div>
-                <div className="text-[9px] md:text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.roleName || 'Staff'}</div>
+                <div className="text-[9px] md:text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.title || 'Staff'}</div>
               </div>
               <Settings className="w-3 h-3 md:w-3.5 md:h-3.5 text-textSecondary group-hover:rotate-90 transition-transform duration-500" />
             </button>

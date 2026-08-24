@@ -1,22 +1,21 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /**
- * Authorization model: users_logins.role_id → roles → role_app_permissions.
+ * Authorization model: users_logins.id → user_app_permissions.
  *
- * Removed in the roles-only consolidation:
- *   role_permissions / role_hierarchy  — declared here but never deployed, so
- *     every query against them failed in production.
+ * Grants are per user. There is no role table, no role_id and no role fallback:
+ * what a person can do is exactly the set of rows carrying their user id, plus
+ * the committee implication defined in src/middleware/rbac.ts. Roles were tried
+ * (migration 0020) and removed again in 0025 — a role could only ever be
+ * widened for everyone holding it, which is the opposite of what granting
+ * access to one person requires.
+ *
+ * Also gone, and not to be reintroduced:
+ *   roles / role_app_permissions       — the roles experiment, dropped in 0025.
+ *   role_permissions / role_hierarchy  — declared here once but never deployed,
+ *     so every query against them failed in production.
  *   user_app_access                    — deprecated, zero rows.
- *   user_app_permissions               — superseded by role_app_permissions;
- *     migration 0020 copies its data onto roles.
- * The tables themselves are dropped in a follow-up migration, not 0020, so the
- * roles cutover stays reversible.
  */
-export const roles = sqliteTable('roles', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull().unique(), // e.g., 'CEO', 'HR_Manager', 'Finance_Manager', 'Employee'
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
 
 export const permissions = sqliteTable('permissions', {
   id: text('id').primaryKey(),
@@ -32,8 +31,7 @@ export const usersLogins = sqliteTable('users_logins', {
   phone: text('phone'),
   username: text('username').unique(),          // for global profile management
   name: text('name'),                           // display name
-  passwordHash: text('password_hash').notNull(), // SHA-256 hex
-  roleId: text('role_id').notNull().references(() => roles.id),
+  passwordHash: text('password_hash').notNull(), // pbkdf2$<iterations>$<salt>$<key>
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   isSuperadmin: integer('is_superadmin', { mode: 'boolean' }).default(false), // ONLY set via direct DB access, never via API
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
@@ -49,7 +47,8 @@ export const apiKeys = sqliteTable('api_keys', {
   id: text('id').primaryKey(),
   keyHash: text('key_hash').notNull().unique(),
   ownerName: text('owner_name').notNull(), // e.g., 'Tech_Agent'
-  roleId: text('role_id').notNull().references(() => roles.id),
+  // The user this agent acts as; it inherits exactly that user's grants.
+  userId: text('user_id').notNull().references(() => usersLogins.id),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
@@ -107,16 +106,17 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
 
 
 /**
- * role_app_permissions
+ * user_app_permissions
  * The single source of authorization truth. Each row grants one feature of one
- * app to a role; users inherit their grants via users_logins.role_id.
+ * app to one user. Resolution is: user id → user_app_permissions. There is no
+ * inheritance and no fallback chain — see src/middleware/rbac.ts.
  *
- * Resolution is: role_id → role_app_permissions. There is no per-user override
- * and no fallback chain — see src/middleware/rbac.ts.
+ * (user_id, app_name, feature) is unique, so saving a user's permissions is a
+ * delete-then-insert of their whole set rather than a per-row merge.
  */
-export const roleAppPermissions = sqliteTable('role_app_permissions', {
+export const userAppPermissions = sqliteTable('user_app_permissions', {
   id: text('id').primaryKey(),
-  roleId: text('role_id').notNull().references(() => roles.id),
+  userId: text('user_id').notNull().references(() => usersLogins.id),
   appName: text('app_name').notNull(),
   feature: text('feature').notNull(),
   canView: integer('can_view', { mode: 'boolean' }).default(false),

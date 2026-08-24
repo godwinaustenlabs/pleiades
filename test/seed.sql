@@ -1,117 +1,124 @@
--- Role-based fixture. Grants mirror migration 0020, which copies each role's
--- rows verbatim from its representative production user.
-DELETE FROM role_app_permissions; DELETE FROM users_logins; DELETE FROM roles;
-INSERT INTO roles (id,name,created_at) VALUES ('role_ceo','CEO',0);
-INSERT INTO roles (id,name,created_at) VALUES ('role_tech_lead','Tech Lead',0);
-INSERT INTO roles (id,name,created_at) VALUES ('role_marketing_lead','Marketing Lead',0);
-INSERT INTO roles (id,name,created_at) VALUES ('role_crm_member','CRM Member',0);
-INSERT INTO roles (id,name,created_at) VALUES ('role_none','No Access',0);
--- Holds nothing but the `tasks` feature of four modules. Before those routers
--- were gated per feature, requireAppAccess let this role read and write every
--- agreement, project, campaign and lab in them.
-INSERT INTO roles (id,name,created_at) VALUES ('role_tasks_only','Tasks Only',0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_employees','role_ceo','hr','employees',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_appointments','role_ceo','hr','appointments',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_payroll','role_ceo','hr','payroll',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_resets','role_ceo','hr','resets',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_tasks','role_ceo','hr','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_finance_transactions','role_ceo','finance','transactions',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_finance_invoices','role_ceo','finance','invoices',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_finance_fund_requests','role_ceo','finance','fund_requests',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_finance_accounts','role_ceo','finance','accounts',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_finance_tasks','role_ceo','finance','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_legal_agreements','role_ceo','legal','agreements',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_legal_templates','role_ceo','legal','templates',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_legal_compliance','role_ceo','legal','compliance',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_legal_ip','role_ceo','legal','ip',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_legal_tasks','role_ceo','legal','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_tech_projects','role_ceo','tech','projects',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_tech_issues','role_ceo','tech','issues',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_tech_deployments','role_ceo','tech','deployments',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_tech_tasks','role_ceo','tech','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_acquisition_campaigns','role_ceo','acquisition','campaigns',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_acquisition_contacts','role_ceo','acquisition','contacts',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_acquisition_content','role_ceo','acquisition','content',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_acquisition_sprints','role_ceo','acquisition','sprints',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_acquisition_tasks','role_ceo','acquisition','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_ops_labs','role_ceo','ops','labs',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_ops_committees','role_ceo','ops','committees',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_ops_clients','role_ceo','ops','clients',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_ops_docs','role_ceo','ops','docs',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_ops_tasks','role_ceo','ops','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_crm_tickets','role_ceo','crm','tickets',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_crm_documents','role_ceo','crm','documents',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_crm_planner','role_ceo','crm','planner',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_crm_tasks','role_ceo','crm','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_dashboard_overview','role_ceo','dashboard','overview',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_dashboard_notes','role_ceo','dashboard','notes',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_dashboard_tasks','role_ceo','dashboard','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_core_employees','role_ceo','core','employees',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_core_labs','role_ceo','core','labs',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_core_clients','role_ceo','core','clients',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_core_committees','role_ceo','core','committees',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_core_docs','role_ceo','core','docs',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_roles','role_ceo','admin','roles',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_permissions','role_ceo','admin','permissions',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_users','role_ceo','admin','users',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_api_keys','role_ceo','admin','api_keys',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_audit_logs','role_ceo','admin','audit_logs',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_admin_resets','role_ceo','admin','resets',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_dashboard_overview','role_tech_lead','dashboard','overview',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_dashboard_notes','role_tech_lead','dashboard','notes',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_dashboard_tasks','role_tech_lead','dashboard','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_tech_projects','role_tech_lead','tech','projects',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_tech_issues','role_tech_lead','tech','issues',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_tech_deployments','role_tech_lead','tech','deployments',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_tech_tasks','role_tech_lead','tech','tasks',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_crm_tickets','role_tech_lead','crm','tickets',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_crm_documents','role_tech_lead','crm','documents',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_crm_planner','role_tech_lead','crm','planner',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_crm_tasks','role_tech_lead','crm','tasks',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_core_employees','role_tech_lead','core','employees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_core_labs','role_tech_lead','core','labs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_core_clients','role_tech_lead','core','clients',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_core_committees','role_tech_lead','core','committees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tech_lead_core_docs','role_tech_lead','core','docs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_dashboard_overview','role_marketing_lead','dashboard','overview',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_dashboard_notes','role_marketing_lead','dashboard','notes',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_dashboard_tasks','role_marketing_lead','dashboard','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_acquisition_campaigns','role_marketing_lead','acquisition','campaigns',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_acquisition_contacts','role_marketing_lead','acquisition','contacts',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_acquisition_content','role_marketing_lead','acquisition','content',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_acquisition_sprints','role_marketing_lead','acquisition','sprints',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_acquisition_tasks','role_marketing_lead','acquisition','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_crm_tickets','role_marketing_lead','crm','tickets',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_crm_documents','role_marketing_lead','crm','documents',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_crm_planner','role_marketing_lead','crm','planner',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_crm_tasks','role_marketing_lead','crm','tasks',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_core_employees','role_marketing_lead','core','employees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_core_labs','role_marketing_lead','core','labs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_core_clients','role_marketing_lead','core','clients',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_core_committees','role_marketing_lead','core','committees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_marketing_lead_core_docs','role_marketing_lead','core','docs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_crm_tickets','role_crm_member','crm','tickets',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_crm_documents','role_crm_member','crm','documents',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_crm_planner','role_crm_member','crm','planner',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_crm_tasks','role_crm_member','crm','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_dashboard_overview','role_crm_member','dashboard','overview',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_dashboard_notes','role_crm_member','dashboard','notes',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_dashboard_tasks','role_crm_member','dashboard','tasks',1,1,1,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_employees','role_crm_member','core','employees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_labs','role_crm_member','core','labs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_clients','role_crm_member','core','clients',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_committees','role_crm_member','core','committees',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_docs','role_crm_member','core','docs',1,0,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_legal_tasks','role_tasks_only','legal','tasks',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_tech_tasks','role_tasks_only','tech','tasks',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_acquisition_tasks','role_tasks_only','acquisition','tasks',1,1,0,0,0);
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_ops_tasks','role_tasks_only','ops','tasks',1,1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_ceo','u_ceo@test.local','u_ceo','u_ceo','x','role_ceo',1,1,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tech','u_tech@test.local','u_tech','u_tech','x','role_tech_lead',1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_mkt','u_mkt@test.local','u_mkt','u_mkt','x','role_marketing_lead',1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_crm','u_crm@test.local','u_crm','u_crm','x','role_crm_member',1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x','role_none',1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x','role_tasks_only',1,0,0,0);
+-- Per-user permission fixture. One row per (user, app, feature) — the same
+-- shape production carries since migration 0025 removed roles.
+--
+-- Order matters: user_app_permissions.user_id is a foreign key into
+-- users_logins, so the accounts are inserted before their grants.
+
+
+-- Truncate in dependency order: grants reference users_logins.
+DELETE FROM user_app_permissions;
+DELETE FROM users_logins;
+
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_ceo','u_ceo@test.local','u_ceo','u_ceo','x',1,1,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tech','u_tech@test.local','u_tech','u_tech','x',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_mkt','u_mkt@test.local','u_mkt','u_mkt','x',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_crm','u_crm@test.local','u_crm','u_crm','x',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x',1,0,0,0);
+
+-- u_tasks holds nothing but the `tasks` feature of four modules. Before those
+-- routers were gated per feature, app-level access let that grant alone read and
+-- write every agreement, project, campaign and lab in them.
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_hr_employees','u_ceo','hr','employees',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_hr_appointments','u_ceo','hr','appointments',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_hr_payroll','u_ceo','hr','payroll',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_hr_resets','u_ceo','hr','resets',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_hr_tasks','u_ceo','hr','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_transactions','u_ceo','finance','transactions',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_invoices','u_ceo','finance','invoices',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_fund_requests','u_ceo','finance','fund_requests',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_accounts','u_ceo','finance','accounts',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_tasks','u_ceo','finance','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_legal_agreements','u_ceo','legal','agreements',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_legal_templates','u_ceo','legal','templates',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_legal_compliance','u_ceo','legal','compliance',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_legal_ip','u_ceo','legal','ip',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_legal_tasks','u_ceo','legal','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_tech_projects','u_ceo','tech','projects',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_tech_issues','u_ceo','tech','issues',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_tech_deployments','u_ceo','tech','deployments',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_tech_tasks','u_ceo','tech','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_acquisition_campaigns','u_ceo','acquisition','campaigns',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_acquisition_contacts','u_ceo','acquisition','contacts',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_acquisition_content','u_ceo','acquisition','content',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_acquisition_sprints','u_ceo','acquisition','sprints',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_acquisition_tasks','u_ceo','acquisition','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_ops_labs','u_ceo','ops','labs',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_ops_committees','u_ceo','ops','committees',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_ops_clients','u_ceo','ops','clients',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_ops_docs','u_ceo','ops','docs',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_ops_tasks','u_ceo','ops','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_crm_tickets','u_ceo','crm','tickets',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_crm_documents','u_ceo','crm','documents',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_crm_planner','u_ceo','crm','planner',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_crm_tasks','u_ceo','crm','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_dashboard_overview','u_ceo','dashboard','overview',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_dashboard_notes','u_ceo','dashboard','notes',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_dashboard_tasks','u_ceo','dashboard','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_core_employees','u_ceo','core','employees',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_core_labs','u_ceo','core','labs',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_core_clients','u_ceo','core','clients',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_core_committees','u_ceo','core','committees',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_core_docs','u_ceo','core','docs',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_admin_permissions','u_ceo','admin','permissions',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_admin_users','u_ceo','admin','users',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_admin_api_keys','u_ceo','admin','api_keys',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_admin_audit_logs','u_ceo','admin','audit_logs',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_admin_resets','u_ceo','admin','resets',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_dashboard_overview','u_tech','dashboard','overview',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_dashboard_notes','u_tech','dashboard','notes',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_dashboard_tasks','u_tech','dashboard','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_tech_projects','u_tech','tech','projects',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_tech_issues','u_tech','tech','issues',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_tech_deployments','u_tech','tech','deployments',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_tech_tasks','u_tech','tech','tasks',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_crm_tickets','u_tech','crm','tickets',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_crm_documents','u_tech','crm','documents',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_crm_planner','u_tech','crm','planner',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_crm_tasks','u_tech','crm','tasks',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_core_employees','u_tech','core','employees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_core_labs','u_tech','core','labs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_core_clients','u_tech','core','clients',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_core_committees','u_tech','core','committees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_core_docs','u_tech','core','docs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_dashboard_overview','u_mkt','dashboard','overview',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_dashboard_notes','u_mkt','dashboard','notes',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_dashboard_tasks','u_mkt','dashboard','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_campaigns','u_mkt','acquisition','campaigns',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_contacts','u_mkt','acquisition','contacts',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_content','u_mkt','acquisition','content',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_sprints','u_mkt','acquisition','sprints',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_tasks','u_mkt','acquisition','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_crm_tickets','u_mkt','crm','tickets',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_crm_documents','u_mkt','crm','documents',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_crm_planner','u_mkt','crm','planner',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_crm_tasks','u_mkt','crm','tasks',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_core_employees','u_mkt','core','employees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_core_labs','u_mkt','core','labs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_core_clients','u_mkt','core','clients',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_core_committees','u_mkt','core','committees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_core_docs','u_mkt','core','docs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_crm_tickets','u_crm','crm','tickets',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_crm_documents','u_crm','crm','documents',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_crm_planner','u_crm','crm','planner',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_crm_tasks','u_crm','crm','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_dashboard_overview','u_crm','dashboard','overview',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_dashboard_notes','u_crm','dashboard','notes',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_dashboard_tasks','u_crm','dashboard','tasks',1,1,1,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_core_employees','u_crm','core','employees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_core_labs','u_crm','core','labs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_core_clients','u_crm','core','clients',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_core_committees','u_crm','core','committees',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_crm_core_docs','u_crm','core','docs',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tasks_legal_tasks','u_tasks','legal','tasks',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tasks_tech_tasks','u_tasks','tech','tasks',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tasks_acquisition_tasks','u_tasks','acquisition','tasks',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tasks_ops_tasks','u_tasks','ops','tasks',1,1,0,0,0);
+-- finance/docs grant, mirroring migration 0022 (copies the role's finance level).
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_ceo_finance_docs','u_ceo','finance','docs',1,1,1,0,0);
+
+-- Per-user permission fixture. One row per (user, app, feature) — the same
+-- shape production carries since migration 0025 removed roles.
 -- Tasks used to prove that an unscoped GET /api/tasks no longer returns
 -- every task in the company to any authenticated caller.
 INSERT INTO universal_tasks (task_id,title,status,department,board_position,created_at,updated_at)
@@ -120,10 +127,6 @@ INSERT INTO universal_tasks (task_id,title,status,department,board_position,crea
 	VALUES ('task_hr','HR task','todo','HR',0,0,0);
 INSERT INTO universal_tasks (task_id,title,status,department,board_position,created_at,updated_at)
 	VALUES ('task_crm','CRM task','todo','CRM',0,0,0);
--- finance/docs grant, mirroring migration 0022 (copies the role's finance level).
-INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
-	VALUES ('rap_role_ceo_finance_docs','role_ceo','finance','docs',1,1,1,0,0);
-
 -- One document per department, to prove the finance endpoint is scoped and does
 -- not leak HR's documents (they share the company_documents table).
 INSERT INTO company_documents (id,title,document_type,url,department,created_at)

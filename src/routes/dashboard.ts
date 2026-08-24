@@ -103,9 +103,7 @@ dashboardRouter.get('/me', async (c) => {
 
     return ok(c, {
       user: { 
-        id: user.id, 
-        roleId: user.roleId, 
-        roleName: user.roleName, 
+        id: user.id,  
         employeeId: user.employeeId,
         avatarUrl: employeeRecord?.profilePhoto || null
       },

@@ -3,7 +3,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess, requireFeatureAccess, listGrants } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess, listGrants, APP_FEATURES } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
@@ -15,22 +15,54 @@ hrRouter.use('*', authMiddleware);
 hrRouter.use('*', requireAppAccess('hr'));
 
 /**
- * Validates a requested role id against the roles table.
+ * Writes a provisioned account's permissions.
  *
- * Falls back to DEFAULT_ROLE_ID, which carries no grants — a newly provisioned
- * account can therefore reach nothing until it is explicitly given a role. An
- * unknown role id is rejected rather than silently downgraded, so a typo in a
- * provisioning call fails loudly instead of creating an account nobody notices
- * has the wrong access.
+ * A new account starts with nothing: omit `permissions` and it can reach no
+ * module at all until someone grants it something. That is deliberate — the
+ * failure mode of the old default was an account quietly carrying whatever the
+ * default role happened to hold.
+ *
+ * A grant naming an app/feature outside APP_FEATURES is rejected rather than
+ * stored, because getPerm() could never satisfy it: the row would look like
+ * access while doing nothing.
  */
-const DEFAULT_ROLE_ID = 'role_emp';
+type GrantInput = {
+  appName: string;
+  feature: string;
+  canView?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+};
 
-async function resolveRoleId(c: any, requestedRoleId?: string): Promise<string> {
-  if (!requestedRoleId) return DEFAULT_ROLE_ID;
+async function applyPermissions(c: any, userId: string, permissions?: GrantInput[]): Promise<number> {
+  if (!Array.isArray(permissions) || permissions.length === 0) return 0;
+
+  const unknown = permissions.filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown app/feature: ${unknown.map((p) => `${p.appName}/${p.feature}`).join(', ')}`);
+  }
+
   const db = getDb(c.env);
-  const role = await db.query.roles.findFirst({ where: eq(schema.roles.id, requestedRoleId) });
-  if (!role) throw new Error(`Unknown roleId: ${requestedRoleId}`);
-  return role.id;
+  await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, userId));
+
+  const now = new Date();
+  const rows = permissions
+    .filter((p) => p.canView || p.canEdit || p.canDelete)
+    .map((p) => ({
+      id: generateId('uap'),
+      userId,
+      appName: p.appName,
+      feature: p.feature,
+      canView: p.canView ?? false,
+      canEdit: p.canEdit ?? false,
+      canDelete: p.canDelete ?? false,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  for (const batch of chunk(rows, 5)) {
+    if (batch.length > 0) await db.insert(schema.userAppPermissions).values(batch as any);
+  }
+  return rows.length;
 }
 
 async function sha256hex(input: string): Promise<string> {
@@ -166,9 +198,8 @@ hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointment
       // NOTE: superadmin is deliberately NOT settable here. This previously read
       // `body.roleOrTitle === 'CEO'` — a free-text field on the request — and
       // granted superadmin from it, contradicting the schema's own rule that
-      // is_superadmin is only ever set by direct database access. Elevate a user
-      // by assigning them a role instead.
-      if (body.roleId) updateData.roleId = await resolveRoleId(c, body.roleId);
+      // is_superadmin is only ever set by direct database access. Widen a
+      // user's access by granting them features instead.
 
       try {
         await db.update(schema.usersLogins).set(updateData).where(eq(schema.usersLogins.id, accountId));
@@ -197,7 +228,6 @@ hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointment
           username,
           name: body.name || username,
           passwordHash,
-          roleId: await resolveRoleId(c, body.roleId),
           employeeId: body.employeeId || null,
           isActive: true,
           // Never derived from request input — see the note on the update path above.
@@ -253,11 +283,11 @@ hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointment
       if (actor?.id) await logAudit(c.env, actor.id, 'CREATE', 'appointments', appointmentId, { employeeId: body.employeeId, accountId });
     }
 
-    // 3. Access is governed by the account's role (assigned above via
-    // resolveRoleId). This step used to write per-user rows into
-    // user_app_permissions, and auto-granted every permission in the system when
-    // body.roleOrTitle happened to be the string 'CEO'. Nothing reads that table
-    // now, so those writes would only produce dead data.
+    // 3. Access: exactly the grants the caller asked for, and nothing implied.
+    // This once auto-granted every permission in the system whenever
+    // body.roleOrTitle happened to be the string 'CEO' — a free-text field on
+    // the request deciding superadmin-equivalent access.
+    if (accountId) await applyPermissions(c, accountId, body.permissions);
 
     // 4. Auto-grant CRM member access if committee is assigned
     if (body.committeeId && body.employeeId) {

@@ -4,7 +4,7 @@
  */
 import { relations } from 'drizzle-orm';
 import {
-  roles, usersLogins, apiKeys, roleAppPermissions,
+  usersLogins, apiKeys, userAppPermissions,
   userOwnership, passwordResetTokens, calendarFeeds
 } from './auth';
 import {
@@ -34,19 +34,14 @@ import {
 } from './crm';
 
 /* ── AUTH ── */
-export const rolesRelations = relations(roles, ({ many }) => ({
-  usersLogins: many(usersLogins),
-  apiKeys: many(apiKeys),
-  appPermissions: many(roleAppPermissions),
-}));
-
-export const roleAppPermissionsRelations = relations(roleAppPermissions, ({ one }) => ({
-  role: one(roles, { fields: [roleAppPermissions.roleId], references: [roles.id] }),
+export const userAppPermissionsRelations = relations(userAppPermissions, ({ one }) => ({
+  user: one(usersLogins, { fields: [userAppPermissions.userId], references: [usersLogins.id] }),
 }));
 
 export const usersLoginsRelations = relations(usersLogins, ({ one, many }) => ({
-  role: one(roles, { fields: [usersLogins.roleId], references: [roles.id] }),
   employee: one(employees, { fields: [usersLogins.employeeId], references: [employees.id] }),
+  // What this user can do. There is no role indirection.
+  permissions: many(userAppPermissions),
   // Ownership: the manager record that owns this user
   ownership: one(userOwnership, { fields: [usersLogins.id], references: [userOwnership.userId] }),
   // Reset tokens issued for this user
@@ -58,7 +53,8 @@ export const usersLoginsRelations = relations(usersLogins, ({ one, many }) => ({
 }));
 
 export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
-  role: one(roles, { fields: [apiKeys.roleId], references: [roles.id] }),
+  // The user this agent key acts as; it inherits that user's grants.
+  user: one(usersLogins, { fields: [apiKeys.userId], references: [usersLogins.id] }),
 }));
 
 /* ── OWNERSHIP, RESET TOKENS ── */

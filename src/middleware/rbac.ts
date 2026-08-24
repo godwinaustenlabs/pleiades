@@ -42,11 +42,27 @@ export const APP_FEATURES: Record<string, string[]> = {
   crm: ['tickets', 'documents', 'planner', 'tasks'],
   dashboard: ['overview', 'notes', 'tasks'],
   core: ['employees', 'labs', 'clients', 'committees', 'docs'],
-  admin: ['roles', 'permissions', 'users', 'api_keys', 'audit_logs', 'resets'],
+  // `roles` was an admin feature until 0025 removed roles from the model.
+  admin: ['permissions', 'users', 'api_keys', 'audit_logs', 'resets'],
 };
 
 /** The role whose grants a committee member inherits for CRM. */
-const COMMITTEE_IMPLIED_ROLE = 'role_crm_member';
+/**
+ * Committee membership implies these CRM grants.
+ *
+ * This used to be expressed as "whatever the CRM Member role holds". With roles
+ * gone the rule is stated directly, which is also more honest: it was never
+ * really about a role, it is that sitting on a committee is what entitles you
+ * to the committee's CRM workspace. Delete is deliberately not implied — a
+ * member can work the queue, not erase it.
+ */
+const COMMITTEE_IMPLIED_GRANTS: Grant[] = APP_FEATURES.crm.map((feature) => ({
+  appName: 'crm',
+  feature,
+  canView: true,
+  canEdit: true,
+  canDelete: false,
+}));
 
 type Grant = {
   appName: string;
@@ -86,7 +102,7 @@ function toGrant(row: {
  * read. Resolution is:
  *
  *   1. Superadmin  → short-circuited by the callers below, never reaches here.
- *   2. role_id     → role_app_permissions (the single source of truth).
+ *   2. user id     → user_app_permissions (the single source of truth).
  *   3. Committee membership → inherits the CRM Member role's `crm` grants.
  *
  * Rule 3 preserves the long-standing behaviour that being on a committee is
@@ -100,42 +116,31 @@ async function resolveGrants(c: RbacContext): Promise<Grant[]> {
   const user = c.get('user');
   const db = getDb(c.env);
 
-  // Resolve the role from the database rather than trusting the JWT's roleId
-  // claim. Tokens live for 8 hours, so trusting the claim would let a revoked or
-  // downgraded role keep its old access until the token expired. Agents are
-  // exempt: their role comes from the api_keys row, which authMiddleware already
-  // reads fresh on every request.
-  let roleId = user.roleId;
-  if (user.type !== 'agent') {
-    const account = await db.query.usersLogins.findFirst({
-      where: eq(schema.usersLogins.id, user.id),
-      columns: { roleId: true, isActive: true },
-    });
-    if (!account || account.isActive === false) {
-      grantCache.set(c, []);
-      return [];
-    }
-    roleId = account.roleId;
+  // Read grants from the database rather than trusting anything in the JWT.
+  // Tokens live for 8 hours, so a claim would let revoked access keep working
+  // until expiry. An agent key names the user it acts as, and authMiddleware
+  // already resolves that fresh on every request, so both paths end up here
+  // with a user id and nothing else.
+  const account = await db.query.usersLogins.findFirst({
+    where: eq(schema.usersLogins.id, user.id),
+    columns: { id: true, isActive: true },
+  });
+  if (!account || account.isActive === false) {
+    grantCache.set(c, []);
+    return [];
   }
 
-  const roleRows = await db.query.roleAppPermissions.findMany({
-    where: eq(schema.roleAppPermissions.roleId, roleId),
+  const rows = await db.query.userAppPermissions.findMany({
+    where: eq(schema.userAppPermissions.userId, account.id),
   });
-  const grants = roleRows.map(toGrant);
+  const grants = rows.map(toGrant);
 
-  // Committee membership implies the CRM Member role's crm grants.
+  // Committee membership implies the CRM grants above.
   if (user.employeeId && !grants.some((g) => g.appName === 'crm')) {
     const membership = await db.query.committeeMembers.findFirst({
       where: eq(schema.committeeMembers.employeeId, user.employeeId),
     });
-    if (membership) {
-      const crmRows = await db.query.roleAppPermissions.findMany({
-        where: eq(schema.roleAppPermissions.roleId, COMMITTEE_IMPLIED_ROLE),
-      });
-      for (const row of crmRows) {
-        if (row.appName === 'crm') grants.push(toGrant(row));
-      }
-    }
+    if (membership) grants.push(...COMMITTEE_IMPLIED_GRANTS);
   }
 
   grantCache.set(c, grants);
@@ -261,8 +266,8 @@ export async function listGrants(c: RbacContext, userId?: string): Promise<Grant
   if (!target) return [];
   if (target.isSuperadmin) return allGrants();
 
-  const rows = await db.query.roleAppPermissions.findMany({
-    where: eq(schema.roleAppPermissions.roleId, target.roleId),
+  const rows = await db.query.userAppPermissions.findMany({
+    where: eq(schema.userAppPermissions.userId, target.id),
   });
   return withInheritance(rows.map(toGrant));
 }
