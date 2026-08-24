@@ -80,11 +80,16 @@ Anything not matching `/api/*` falls through to the `ASSETS` binding and is serv
 
 ### Authorization (`src/middleware/rbac.ts`)
 
-**Roles only.** There is exactly one resolution path and no fallback chain:
+**Per user.** There is exactly one resolution path and no fallback chain:
 
 ```
-users_logins.role_id → role_app_permissions → (appName, feature, canView/canEdit/canDelete)
+users_logins.id → user_app_permissions → (appName, feature, canView/canEdit/canDelete)
 ```
+
+Roles were tried (migration 0020) and removed again (0025). A role could only
+ever be widened for everyone holding it, which is the opposite of what granting
+one person access requires. Do not reintroduce `roles`, `role_app_permissions`
+or `users_logins.role_id`.
 
 - `requireAppAccess(module)` — gate a whole router (needs view on any feature of it).
 - `requireFeatureAccess(app, feature, 'view'|'edit'|'delete')` / `checkFeaturePermission(...)` — per-feature. `delete` implies `edit` implies `view`.
@@ -93,8 +98,9 @@ users_logins.role_id → role_app_permissions → (appName, feature, canView/can
 
 Two things worth knowing:
 
-- The role is re-read from the database on each request rather than trusted from the JWT's `roleId` claim — tokens live 8 hours, so trusting the claim would let a revoked role keep working until expiry. Grants are cached per request in a `WeakMap` keyed on the Hono context, so this costs one query per request, not per check.
-- **Committee membership implies the CRM Member role's `crm` grants.** This is a real rule, defined once in `resolveGrants`, not an incidental fallback.
+- The JWT carries only an id — no permission claim of any kind. Grants are read from the database on every request, so narrowing someone's access takes effect immediately rather than at token expiry (tokens live 8 hours). Grants are cached per request in a `WeakMap` keyed on the Hono context, so this costs one query per request, not per check.
+- **Committee membership implies the `crm` grants in `COMMITTEE_IMPLIED_GRANTS`.** A real rule, defined once in `rbac.ts`, not an incidental fallback.
+- An agent's `api_keys` row names the user it acts as and inherits that person's grants. Agents have no permissions of their own.
 
 `APP_FEATURES` in `rbac.ts` is the **single source of truth** for which features exist per app, consumed by both the backend and the permissions UI. Adding a feature means editing that map.
 
@@ -109,14 +115,24 @@ changes).
 Every module router is gated per feature except `dashboard`, which is app-gated
 on purpose: all of its handlers already filter on the calling user's own id.
 
-Permissions belong to roles, so there is no per-user grant editing. Manage access with
-`PUT /api/admin/roles/:roleId/permissions` (changes everyone holding the role) and
-`PATCH /api/admin/users/:id` (changes which role a user holds).
+Manage access with `PUT /api/admin/users/:id/permissions` (gated on
+admin/permissions edit), or through the Access page at `/admin`
+(`apps/web/src/pages/Admin.tsx` + `components/PermissionMatrix.tsx`). Editing
+one person's grants affects that person only.
 
-Removed in the roles-only consolidation — do not reintroduce: `user_app_permissions`
-(superseded), `user_app_access` (deprecated, empty), and `role_permissions` /
-`role_hierarchy` (declared in the schema but never deployed, so every query against them
-failed in production).
+Removed — do not reintroduce: `roles` / `role_app_permissions` (the roles
+experiment, dropped in 0025), `user_app_access` (deprecated, empty), and
+`role_permissions` / `role_hierarchy` (declared in the schema but never
+deployed, so every query against them failed in production).
+
+**Migrations that rebuild a table referenced by a foreign key** must
+`PRAGMA defer_foreign_keys = true` at the start and `= false` before the end.
+D1 enforces foreign keys, and dropping a parent increments the deferred
+constraint counter once per orphaned child row without the rename decrementing
+it — so COMMIT fails while `PRAGMA foreign_key_check` reports nothing wrong.
+See `0025_per_user_permissions.sql`. Verify such a migration against a scratch
+SQLite database with `PRAGMA foreign_keys = ON` **inside a transaction**;
+sqlite3's default is off, which gives a false pass.
 
 ### Route conventions
 
