@@ -124,7 +124,6 @@ hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointment
     const db = getDb(c.env);
     const actor = c.get('user');
     const body = await c.req.json();
-    console.log('[DEBUG] Provisioning appointment, body:', JSON.stringify(body, null, 2));
     
     // 1. Find or Create Account
     let userRecord;

@@ -195,3 +195,8 @@ scratch/db-dumps/
 
 # graphify knowledge-graph output — regenerable from the corpus.
 graphify-out/
+
+# Superseded copies of migrations already applied to office-db (verified against
+# d1_migrations and the production DDL). The live set is
+# packages/database/migrations/; a second tracked copy invites applying the wrong one.
+migrations_backup/

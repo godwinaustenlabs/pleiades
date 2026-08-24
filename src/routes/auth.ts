@@ -45,7 +45,6 @@ authRouter.post('/login', async (c) => {
     if (!email || !password) return badRequest(c, 'email and password are required');
 
     const db = getDb(c.env);
-    console.log('[DEBUG] Searching for user:', email.toLowerCase().trim());
 
     const user = await db.query.usersLogins.findFirst({
       where: or(
@@ -54,12 +53,6 @@ authRouter.post('/login', async (c) => {
       ),
       with: { role: true },
     });
-    console.log('[DEBUG] User search result:', user ? 'Found' : 'Not Found');
-    if (user) {
-      console.log('[DEBUG] User ID:', user.id);
-      console.log('[DEBUG] Role ID:', user.roleId);
-      console.log('[DEBUG] Role Object:', user.role);
-    }
 
     if (!user) return c.json({ success: false, error: 'Invalid credentials' }, 401);
     if (!user.isActive) return c.json({ success: false, error: 'Account is deactivated' }, 401);
@@ -116,14 +109,12 @@ authRouter.post('/login', async (c) => {
       exp: now + 60 * 60 * 8, // 8 hours
     };
 
-    console.log('[DEBUG] Generating JWT token');
     if (!c.env.JWT_SECRET) {
       console.error('[ERROR] JWT_SECRET is missing from environment');
       throw new Error('Server configuration error: JWT_SECRET missing');
     }
     const token = await sign(payload, c.env.JWT_SECRET, 'HS256');
 
-    console.log('[DEBUG] Login successful');
     return ok(c, {
       token,
       expiresIn: 60 * 60 * 8,

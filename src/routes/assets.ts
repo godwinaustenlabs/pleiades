@@ -5,11 +5,6 @@ import { Env } from '../index';
 
 const assetsRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 
-assetsRouter.use('*', async (c, next) => {
-  console.log(`[Debug] Request entering assetsRouter: ${c.req.url}`);
-  await next();
-});
-
 // No global auth here; handled per-route for public access to specific assets
 // assetsRouter.use('*', authMiddleware);
 
@@ -98,15 +93,12 @@ assetsRouter.get('/*', async (c, next) => {
   return next();
 }, async (c) => {
   const path = c.req.path;
-  console.log(`[Debug] Incoming path in assetsRouter: ${path}`);
   
   if (!path.includes('/download/')) {
-    console.log(`[Debug] Path does not include /download/, path: ${path}`);
     return notFound(c);
   }
 
   const key = path.substring(path.indexOf('/download/') + '/download/'.length);
-  console.log(`[Debug] Attempting to fetch key: "${key}"`);
   
   try {
     const r2 = c.env.CRM_BUCKET;
@@ -125,7 +117,6 @@ assetsRouter.get('/*', async (c, next) => {
     const object = await r2.get(key);
     
     if (!object) {
-      console.log(`[Debug] Object not found for key: "${key}"`);
       return notFound(c);
     }
     

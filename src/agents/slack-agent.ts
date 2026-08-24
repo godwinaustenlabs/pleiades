@@ -24,9 +24,7 @@ async function postToSlack(botToken: string, channel: string, text: string, thre
 
 // Helper: Reply to a slash command via its response_url
 async function replyToSlashCommand(responseUrl: string, text: string) {
-  console.log('[replyToSlashCommand] Sending to:', responseUrl);
   const payload = { response_type: 'ephemeral', text };
-  console.log('[replyToSlashCommand] Payload:', JSON.stringify(payload));
   const res = await fetch(responseUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
