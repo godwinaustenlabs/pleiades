@@ -231,6 +231,29 @@ describe('password hashing', () => {
 		expect(b).toMatch(/^pbkdf2\$/);
 		expect(a).not.toBe(b);
 	});
+
+	// Workers' WebCrypto rejects any PBKDF2 iteration count above 100,000. The
+	// hash format carries its own count, so an over-cap value is not a slow
+	// hash — deriveBits throws and every login becomes a 500. This shipped once
+	// (210,000) and the suite did not catch it because the assertions above only
+	// check the `pbkdf2$` prefix, never the number.
+	it('writes an iteration count the Workers runtime will accept', async () => {
+		await env.DB.prepare('UPDATE users_logins SET password_hash = ? WHERE id = ?')
+			.bind(await legacySha256('ceiling-pw'), USERS.crm.id).run();
+		expect((await login('u_crm@test.local', 'ceiling-pw')).status).toBe(200);
+
+		const iterations = Number((await storedHashFor(USERS.crm.id)).split('$')[1]);
+		expect(iterations).toBeGreaterThan(0);
+		expect(iterations).toBeLessThanOrEqual(100_000);
+	});
+
+	it('fails an over-cap stored hash closed, rather than throwing a 500', async () => {
+		await env.DB.prepare('UPDATE users_logins SET password_hash = ? WHERE id = ?')
+			.bind('pbkdf2$210000$' + 'ab'.repeat(16) + '$' + 'cd'.repeat(32), USERS.none.id).run();
+
+		const res = await login('u_none@test.local', 'anything');
+		expect(res.status).toBe(401);
+	});
 });
 
 describe('notification forgery', () => {

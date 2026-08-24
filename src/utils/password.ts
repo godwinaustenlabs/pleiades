@@ -12,8 +12,16 @@
  * the plaintext is available to rehash.
  */
 
-/** OWASP's recommended floor for PBKDF2-HMAC-SHA256. */
-const PBKDF2_ITERATIONS = 210_000;
+/**
+ * Workers' WebCrypto refuses any PBKDF2 iteration count above 100,000
+ * ("Pbkdf2 failed: iteration counts above 100000 are not supported"), so this
+ * is a platform ceiling, not a tuning choice — a higher value does not hash
+ * more slowly, it throws at runtime and turns every login into a 500. The
+ * stored format carries its own iteration count, so if the platform ever
+ * raises the cap this can be raised and old hashes still verify.
+ */
+const PBKDF2_MAX_ITERATIONS = 100_000;
+const PBKDF2_ITERATIONS = PBKDF2_MAX_ITERATIONS;
 const SALT_BYTES = 16;
 const KEY_BITS = 256;
 
@@ -86,6 +94,12 @@ export async function verifyPassword(
 
   const iterations = Number(parts[1]);
   if (!Number.isFinite(iterations) || iterations <= 0) return { valid: false, needsUpgrade: false };
+
+  // A stored hash above the platform ceiling cannot be recomputed here:
+  // deriveBits throws rather than returning a mismatch, which would surface as
+  // a 500 on the login route instead of a failed credential. Treat it as
+  // unverifiable — the operator has to reset that user's password.
+  if (iterations > PBKDF2_MAX_ITERATIONS) return { valid: false, needsUpgrade: false };
 
   const derived = await pbkdf2(password, fromHex(parts[2]), iterations);
   const valid = timingSafeEqualHex(derived, parts[3]);
