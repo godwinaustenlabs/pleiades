@@ -40,10 +40,20 @@ Run D1 commands **from the repo root** — the D1 binding lives only in the root
 ```bash
 npx wrangler d1 migrations apply office-db --local     # or --remote
 npx wrangler d1 execute office-db --local --command="..."
-cd packages/database && npm run generate                # drizzle-kit generate:sqlite
 ```
 
-Note: `packages/database`'s own `migrate` script names a stale database (`ganova-db`); the real database is `office-db`. Prefer the root-level command above.
+Note: `packages/database`'s own `migrate` script now refuses to run and points at
+the root-level command above — it used to name a database (`ganova-db`) that does
+not exist.
+
+Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
+workflow. Its snapshot baseline stopped at `0019` and still describes the
+pre-roles-only schema (`role_permissions`, `role_hierarchy`, `user_app_*`), so a
+`generate` today prompts to rename tables that were already replaced and would
+emit a file numbered `0020`, colliding with the hand-written `0020_role_based_access.sql`.
+Reconciling that baseline is a deliberate decision, not a routine step. What
+authoritatively records migration state is `office-db`'s own `d1_migrations`
+table, not `meta/_journal.json`.
 
 ## Architecture
 
@@ -63,7 +73,7 @@ Anything not matching `/api/*` falls through to the `ASSETS` binding and is serv
 `authMiddleware` resolves an identity from three sources, in order, and sets `c.get('user')` as a `UserPayload`:
 
 1. `x-api-key` header → agent identity from the `api_keys` table (`type: 'agent'`, never superadmin).
-2. `x-slack-id` header → active employee looked up by `employees.slackId`, then their `users_logins` row. If the header is present but unmatched, the request is rejected — it does not fall through.
+2. `x-agent-actor` + `x-agent-secret` headers → the `users_logins` row named by the actor id, but only when the secret matches the `AGENT_INTERNAL_SECRET` Worker binding. Present-but-invalid always denies and never falls through to another source. This replaced `x-slack-id`, which named a Slack user and was trusted outright — see SECURITY.md #1. Slack identity is resolved server-side only *after* the request signature is verified (`src/agents/lib/slack.ts`), and the resolved user id is what gets passed here.
 3. `Authorization: Bearer <jwt>` → falls back to the `auth_token` cookie, then a `?token=` query param (the query-param path exists so `<img>`/download URLs can authenticate).
 
 `/api/portal` is a **separate auth world**: it has its own `clientAuth` using JWTs with `type: 'client'` and does not use `authMiddleware`.
@@ -87,6 +97,17 @@ Two things worth knowing:
 - **Committee membership implies the CRM Member role's `crm` grants.** This is a real rule, defined once in `resolveGrants`, not an incidental fallback.
 
 `APP_FEATURES` in `rbac.ts` is the **single source of truth** for which features exist per app, consumed by both the backend and the permissions UI. Adding a feature means editing that map.
+
+A route gated on a feature that is *not* declared there is unreachable for
+everyone except a superadmin, because `getPerm()` can never return true for it.
+This has bitten twice — finance's `ledgers`/`journals`/`trial_balance` and
+acquisition's `funnels` — so when you gate a new route, declare its feature in
+the same change and add a migration granting it (see `0023` and `0024` for the
+`INSERT ... SELECT` pattern that copies an existing grant, so no role's access
+changes).
+
+Every module router is gated per feature except `dashboard`, which is app-gated
+on purpose: all of its handlers already filter on the calling user's own id.
 
 Permissions belong to roles, so there is no per-user grant editing. Manage access with
 `PUT /api/admin/roles/:roleId/permissions` (changes everyone holding the role) and
