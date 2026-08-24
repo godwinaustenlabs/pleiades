@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware, UserPayload } from '../middleware/auth';
+import { checkFeaturePermission } from '../middleware/rbac';
 import { ok, badRequest, notFound, serverError } from '../utils/response';
 import { Env } from '../index';
 
@@ -82,12 +83,56 @@ assetsRouter.put('/upload/*', authMiddleware, async (c) => {
  * GET /api/assets/download/*
  * Download/view a file from R2
  */
+/**
+ * Which grant a caller needs to read an object, by key prefix.
+ *
+ * Authentication alone was the only check here, so any signed-in user could
+ * fetch any key they could name — every employee document, finance document,
+ * CRM document and task attachment in the bucket, regardless of role. The
+ * upload allowlist already constrains where objects can be written, so the
+ * same prefixes are the natural unit to authorize reads against.
+ *
+ * A prefix that does not encode its department (company documents are one
+ * shared store, task attachments span every module) accepts the matching
+ * feature in ANY app the caller holds — matching how those routes are gated
+ * per department elsewhere rather than inventing a stricter rule here.
+ */
+const READ_RULES: { prefix: string; grants: [string, string][] }[] = [
+  { prefix: 'employee-docs/', grants: [['hr', 'employees']] },
+  { prefix: 'finance-docs/', grants: [['finance', 'docs']] },
+  { prefix: 'crm-docs/', grants: [['crm', 'documents']] },
+  {
+    prefix: 'company-docs/',
+    grants: [['hr', 'employees'], ['finance', 'docs'], ['ops', 'docs'], ['core', 'docs']],
+  },
+  {
+    prefix: 'task-attachments/',
+    grants: [
+      ['hr', 'tasks'], ['finance', 'tasks'], ['legal', 'tasks'], ['tech', 'tasks'],
+      ['acquisition', 'tasks'], ['ops', 'tasks'], ['crm', 'tasks'], ['dashboard', 'tasks'],
+    ],
+  },
+];
+
+/** Publicly readable: these are rendered in <img> tags with no credentials. */
+const PUBLIC_PREFIXES = ['avatars/', 'profiles/'];
+
+const isPublicKey = (key: string) => PUBLIC_PREFIXES.some((p) => key.startsWith(p));
+
+async function mayReadKey(c: Parameters<typeof checkFeaturePermission>[0], key: string): Promise<boolean> {
+  const rule = READ_RULES.find((r) => key.startsWith(r.prefix));
+  // An unrecognised prefix cannot be reasoned about, so it is not served.
+  if (!rule) return false;
+  for (const [app, feature] of rule.grants) {
+    if (await checkFeaturePermission(c, app, feature, 'view')) return true;
+  }
+  return false;
+}
+
 assetsRouter.get('/*', async (c, next) => {
   const path = c.req.path;
   const key = path.includes('/download/') ? path.substring(path.indexOf('/download/') + '/download/'.length) : '';
-  const isPublicPrefix = key.startsWith('avatars/') || key.startsWith('profiles/');
-
-  if (!isPublicPrefix) {
+  if (!isPublicKey(key)) {
     return authMiddleware(c, next);
   }
   return next();
@@ -107,11 +152,13 @@ assetsRouter.get('/*', async (c, next) => {
       return badRequest(c, 'R2 bucket not configured');
     }
     
-    // Check auth if not public
-    const isPublicPrefix = key.startsWith('avatars/') || key.startsWith('profiles/');
-    if (!isPublicPrefix) {
+    if (!isPublicKey(key)) {
       const user = c.get('user');
       if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+      // Authenticated is not authorized: check the grant the prefix requires.
+      if (!(await mayReadKey(c, key))) {
+        return c.json({ success: false, error: 'Forbidden' }, 403);
+      }
     }
 
     const object = await r2.get(key);
@@ -139,8 +186,12 @@ assetsRouter.get('/*', async (c, next) => {
       headers.set('Content-Disposition', 'attachment');
     }
 
-    if (isPublicPrefix) {
+    // Only public objects may be cached by shared caches; an authorized
+    // response must not be stored where the next caller could be served it.
+    if (isPublicKey(key)) {
       headers.set('Cache-Control', 'public, max-age=31536000');
+    } else {
+      headers.set('Cache-Control', 'private, no-store');
     }
 
     // Handle conditional requests

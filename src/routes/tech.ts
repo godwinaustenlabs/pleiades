@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
@@ -13,7 +13,7 @@ techRouter.use('*', authMiddleware);
 techRouter.use('*', requireAppAccess('tech'));
 
 /* ── PROJECTS ── */
-techRouter.get('/projects', async (c) => {
+techRouter.get('/projects', requireFeatureAccess('tech', 'projects', 'view'), async (c) => {
   try {
     const { status } = c.req.query();
     const rows = await getDb(c.env).query.projects.findMany({
@@ -22,7 +22,7 @@ techRouter.get('/projects', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/projects', async (c) => {
+techRouter.post('/projects', requireFeatureAccess('tech', 'projects', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('proj');
@@ -31,13 +31,13 @@ techRouter.post('/projects', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/projects/:id', async (c) => {
+techRouter.get('/projects/:id', requireFeatureAccess('tech', 'projects', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.projects.findFirst({ where: eq(schema.projects.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/projects/:id', async (c) => {
+techRouter.patch('/projects/:id', requireFeatureAccess('tech', 'projects', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -46,7 +46,7 @@ techRouter.patch('/projects/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'projects', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/projects/:id', async (c) => {
+techRouter.delete('/projects/:id', requireFeatureAccess('tech', 'projects', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.projects).where(eq(schema.projects.id, id));
@@ -55,7 +55,7 @@ techRouter.delete('/projects/:id', async (c) => {
 });
 
 /* ── EPICS ── */
-techRouter.get('/epics', async (c) => {
+techRouter.get('/epics', requireFeatureAccess('tech', 'epics', 'view'), async (c) => {
   try {
     const { project_id, status } = c.req.query();
     const rows = await getDb(c.env).query.epics.findMany({
@@ -67,7 +67,7 @@ techRouter.get('/epics', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/epics', async (c) => {
+techRouter.post('/epics', requireFeatureAccess('tech', 'epics', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('epic');
@@ -76,13 +76,13 @@ techRouter.post('/epics', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/epics/:id', async (c) => {
+techRouter.get('/epics/:id', requireFeatureAccess('tech', 'epics', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.epics.findFirst({ where: eq(schema.epics.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/epics/:id', async (c) => {
+techRouter.patch('/epics/:id', requireFeatureAccess('tech', 'epics', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -91,7 +91,7 @@ techRouter.patch('/epics/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'epics', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/epics/:id', async (c) => {
+techRouter.delete('/epics/:id', requireFeatureAccess('tech', 'epics', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.epics).where(eq(schema.epics.id, id));
@@ -100,7 +100,7 @@ techRouter.delete('/epics/:id', async (c) => {
 });
 
 /* ── STORIES ── */
-techRouter.get('/stories', async (c) => {
+techRouter.get('/stories', requireFeatureAccess('tech', 'stories', 'view'), async (c) => {
   try {
     const { epic_id, status } = c.req.query();
     const rows = await getDb(c.env).query.stories.findMany({
@@ -112,7 +112,7 @@ techRouter.get('/stories', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/stories', async (c) => {
+techRouter.post('/stories', requireFeatureAccess('tech', 'stories', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('story');
@@ -121,13 +121,13 @@ techRouter.post('/stories', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/stories/:id', async (c) => {
+techRouter.get('/stories/:id', requireFeatureAccess('tech', 'stories', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.stories.findFirst({ where: eq(schema.stories.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/stories/:id', async (c) => {
+techRouter.patch('/stories/:id', requireFeatureAccess('tech', 'stories', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -136,7 +136,7 @@ techRouter.patch('/stories/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'stories', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/stories/:id', async (c) => {
+techRouter.delete('/stories/:id', requireFeatureAccess('tech', 'stories', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.stories).where(eq(schema.stories.id, id));
@@ -145,7 +145,7 @@ techRouter.delete('/stories/:id', async (c) => {
 });
 
 /* ── TASKS ── */
-techRouter.get('/tasks', async (c) => {
+techRouter.get('/tasks', requireFeatureAccess('tech', 'tasks', 'view'), async (c) => {
   try {
     const { assignee, status, story_id, completed } = c.req.query();
     const rows = await getDb(c.env).query.tasks.findMany({
@@ -159,7 +159,7 @@ techRouter.get('/tasks', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/tasks', async (c) => {
+techRouter.post('/tasks', requireFeatureAccess('tech', 'tasks', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('task');
@@ -168,13 +168,13 @@ techRouter.post('/tasks', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/tasks/:id', async (c) => {
+techRouter.get('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.tasks.findFirst({ where: eq(schema.tasks.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/tasks/:id', async (c) => {
+techRouter.patch('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -183,7 +183,7 @@ techRouter.patch('/tasks/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'tasks', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/tasks/:id', async (c) => {
+techRouter.delete('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.tasks).where(eq(schema.tasks.id, id));
@@ -192,7 +192,7 @@ techRouter.delete('/tasks/:id', async (c) => {
 });
 
 /* ── RELEASES ── */
-techRouter.get('/releases', async (c) => {
+techRouter.get('/releases', requireFeatureAccess('tech', 'releases', 'view'), async (c) => {
   try {
     const { project_id, status } = c.req.query();
     const rows = await getDb(c.env).query.releases.findMany({
@@ -204,7 +204,7 @@ techRouter.get('/releases', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/releases', async (c) => {
+techRouter.post('/releases', requireFeatureAccess('tech', 'releases', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('rel');
@@ -213,13 +213,13 @@ techRouter.post('/releases', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/releases/:id', async (c) => {
+techRouter.get('/releases/:id', requireFeatureAccess('tech', 'releases', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.releases.findFirst({ where: eq(schema.releases.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/releases/:id', async (c) => {
+techRouter.patch('/releases/:id', requireFeatureAccess('tech', 'releases', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -228,7 +228,7 @@ techRouter.patch('/releases/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'releases', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/releases/:id', async (c) => {
+techRouter.delete('/releases/:id', requireFeatureAccess('tech', 'releases', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.releases).where(eq(schema.releases.id, id));
@@ -237,11 +237,11 @@ techRouter.delete('/releases/:id', async (c) => {
 });
 
 /* ── ENVIRONMENTS ── */
-techRouter.get('/environments', async (c) => {
+techRouter.get('/environments', requireFeatureAccess('tech', 'environments', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.environments.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-techRouter.post('/environments', async (c) => {
+techRouter.post('/environments', requireFeatureAccess('tech', 'environments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('env');
@@ -250,13 +250,13 @@ techRouter.post('/environments', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/environments/:id', async (c) => {
+techRouter.get('/environments/:id', requireFeatureAccess('tech', 'environments', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.environments.findFirst({ where: eq(schema.environments.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/environments/:id', async (c) => {
+techRouter.patch('/environments/:id', requireFeatureAccess('tech', 'environments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -265,7 +265,7 @@ techRouter.patch('/environments/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'environments', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/environments/:id', async (c) => {
+techRouter.delete('/environments/:id', requireFeatureAccess('tech', 'environments', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.environments).where(eq(schema.environments.id, id));
@@ -274,7 +274,7 @@ techRouter.delete('/environments/:id', async (c) => {
 });
 
 /* ── DEPLOYMENTS ── */
-techRouter.get('/deployments', async (c) => {
+techRouter.get('/deployments', requireFeatureAccess('tech', 'deployments', 'view'), async (c) => {
   try {
     const { project_id, env_id } = c.req.query();
     const rows = await getDb(c.env).query.deployments.findMany({
@@ -286,7 +286,7 @@ techRouter.get('/deployments', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/deployments', async (c) => {
+techRouter.post('/deployments', requireFeatureAccess('tech', 'deployments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('dep');
@@ -295,13 +295,13 @@ techRouter.post('/deployments', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/deployments/:id', async (c) => {
+techRouter.get('/deployments/:id', requireFeatureAccess('tech', 'deployments', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.deployments.findFirst({ where: eq(schema.deployments.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/deployments/:id', async (c) => {
+techRouter.patch('/deployments/:id', requireFeatureAccess('tech', 'deployments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -310,7 +310,7 @@ techRouter.patch('/deployments/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'deployments', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/deployments/:id', async (c) => {
+techRouter.delete('/deployments/:id', requireFeatureAccess('tech', 'deployments', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.deployments).where(eq(schema.deployments.id, id));
@@ -319,7 +319,7 @@ techRouter.delete('/deployments/:id', async (c) => {
 });
 
 /* ── ISSUES ── */
-techRouter.get('/issues', async (c) => {
+techRouter.get('/issues', requireFeatureAccess('tech', 'issues', 'view'), async (c) => {
   try {
     const { project_id, severity, status } = c.req.query();
     const rows = await getDb(c.env).query.issues.findMany({
@@ -332,7 +332,7 @@ techRouter.get('/issues', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.post('/issues', async (c) => {
+techRouter.post('/issues', requireFeatureAccess('tech', 'issues', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('issue');
@@ -341,13 +341,13 @@ techRouter.post('/issues', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.get('/issues/:id', async (c) => {
+techRouter.get('/issues/:id', requireFeatureAccess('tech', 'issues', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.issues.findFirst({ where: eq(schema.issues.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-techRouter.patch('/issues/:id', async (c) => {
+techRouter.patch('/issues/:id', requireFeatureAccess('tech', 'issues', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -356,7 +356,7 @@ techRouter.patch('/issues/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'issues', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-techRouter.delete('/issues/:id', async (c) => {
+techRouter.delete('/issues/:id', requireFeatureAccess('tech', 'issues', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.issues).where(eq(schema.issues.id, id));

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env, SELF } from 'cloudflare:test';
 import { sign } from 'hono/jwt';
-import { resetDatabase, tokenFor, USERS } from './helpers';
+import { resetDatabase, tokenFor, authedGet, USERS } from './helpers';
 
 /**
  * Regression pins for fixed authentication vulnerabilities.
@@ -361,5 +361,93 @@ describe('asset upload hardening', () => {
 			method: 'PUT', body: 'x',
 		});
 		expect(res.status).toBe(401);
+	});
+});
+
+describe('per-feature gating outside finance and HR', () => {
+	// Was: legal, tech, acquisition and ops were gated only by
+	// requireAppAccess, so `<app>/tasks` — the narrowest grant any of them can
+	// carry — opened every record in the module. Same hole as the finance/HR
+	// one the audit closed; these are the remaining modules.
+	const DATA_ROUTES = [
+		'/api/legal/agreements',
+		'/api/legal/compliance',
+		'/api/legal/ip',
+		'/api/tech/projects',
+		'/api/tech/deployments',
+		'/api/acquisition/campaigns',
+		'/api/acquisition/contacts',
+		'/api/ops/labs',
+	];
+
+	it.each(DATA_ROUTES)('denies a tasks-only role: %s', async (path) => {
+		const res = await authedGet('tasksOnly', path);
+		expect(res.status).toBe(403);
+	});
+
+	it('still lets that role reach what it was actually granted', async () => {
+		const res = await authedGet('tasksOnly', '/api/tasks?department=Legal');
+		expect(res.status).not.toBe(403);
+	});
+
+	it('leaves a role holding the feature itself unaffected', async () => {
+		const res = await authedGet('tech', '/api/tech/projects');
+		expect(res.status).not.toBe(403);
+	});
+
+	it('declares every feature its routes gate on', async () => {
+		// A route gated on an undeclared feature is unreachable for everyone but
+		// a superadmin, because getPerm() cannot return true for it. That is how
+		// finance's ledgers tab and acquisition's funnels view went dark.
+		const { APP_FEATURES } = await import('../src/middleware/rbac');
+		for (const app of ['legal', 'tech', 'acquisition', 'ops']) {
+			expect(APP_FEATURES[app]).toBeDefined();
+		}
+		expect(APP_FEATURES.acquisition).toContain('funnels');
+		expect(APP_FEATURES.legal).toContain('sops');
+		expect(APP_FEATURES.tech).toContain('releases');
+		expect(APP_FEATURES.ops).toContain('reports');
+	});
+});
+
+describe('asset download authorization', () => {
+	// Was: the route checked authentication only, so any signed-in user could
+	// read any key they could name — every employee, finance and CRM document
+	// and every task attachment in the bucket, whatever their role.
+	async function get(user: Parameters<typeof authedGet>[0], key: string) {
+		return authedGet(user, `/api/assets/download/${key}`);
+	}
+
+	it('refuses an employee document to a role without hr/employees', async () => {
+		const res = await get('crm', 'employee-docs/contract.pdf');
+		expect(res.status).toBe(403);
+	});
+
+	it('refuses a finance document to a role without finance/docs', async () => {
+		const res = await get('crm', 'finance-docs/ledger.xlsx');
+		expect(res.status).toBe(403);
+	});
+
+	it('does not 403 a caller who holds the matching grant', async () => {
+		// 404 is the expected outcome for a key with no object behind it; the
+		// point is that authorization passed rather than short-circuiting.
+		const res = await get('ceo', 'employee-docs/contract.pdf');
+		expect(res.status).not.toBe(403);
+	});
+
+	it('refuses a prefix no rule covers, rather than serving it', async () => {
+		const res = await get('ceo', 'unknown-prefix/secret.pdf');
+		expect(res.status).toBe(403);
+	});
+
+	it('still requires authentication for a non-public prefix', async () => {
+		const res = await SELF.fetch('https://test.local/api/assets/download/crm-docs/x.pdf');
+		expect(res.status).toBe(401);
+	});
+
+	it('leaves the public avatar prefix readable without credentials', async () => {
+		const res = await SELF.fetch('https://test.local/api/assets/download/avatars/nobody.png');
+		expect(res.status).not.toBe(401);
+		expect(res.status).not.toBe(403);
 	});
 });

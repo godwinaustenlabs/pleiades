@@ -24,10 +24,21 @@ export const APP_FEATURES: Record<string, string[]> = {
     'ledgers', 'journals', 'trial_balance',
     'docs', 'tasks',
   ],
-  legal: ['agreements', 'templates', 'compliance', 'ip', 'tasks'],
-  tech: ['projects', 'issues', 'deployments', 'tasks'],
-  acquisition: ['campaigns', 'contacts', 'content', 'sprints', 'tasks'],
-  ops: ['labs', 'committees', 'clients', 'docs', 'tasks'],
+  // legal, tech, acquisition and ops were gated only by requireAppAccess, so a
+  // role holding just `<app>/tasks` could read and write everything else in the
+  // module — the same hole that was closed for finance and HR. Gating them per
+  // feature meant declaring the features their routes actually serve; the ones
+  // added here were undeclared, which (exactly as with finance's `ledgers`)
+  // made getPerm() return false and hid those tabs from everyone but a
+  // superadmin. Migration 0024 grants each new feature to whoever already holds
+  // the app, so no role gains or loses access.
+  legal: ['agreements', 'templates', 'compliance', 'ip', 'tasks', 'parties', 'requests', 'sops'],
+  tech: ['projects', 'issues', 'deployments', 'tasks', 'epics', 'stories', 'releases', 'environments'],
+  acquisition: [
+    'campaigns', 'contacts', 'content', 'sprints', 'tasks',
+    'funnels', 'outreach', 'activity', 'deals',
+  ],
+  ops: ['labs', 'committees', 'clients', 'docs', 'tasks', 'reports'],
   crm: ['tickets', 'documents', 'planner', 'tasks'],
   dashboard: ['overview', 'notes', 'tasks'],
   core: ['employees', 'labs', 'clients', 'committees', 'docs'],

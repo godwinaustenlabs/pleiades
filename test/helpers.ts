@@ -34,6 +34,7 @@ export const USERS = {
 	mkt: { id: 'u_mkt', roleId: 'role_marketing_lead', isSuperadmin: false },
 	crm: { id: 'u_crm', roleId: 'role_crm_member', isSuperadmin: false },
 	none: { id: 'u_none', roleId: 'role_none', isSuperadmin: false },
+	tasksOnly: { id: 'u_tasks', roleId: 'role_tasks_only', isSuperadmin: false },
 } as const;
 
 export type FixtureUser = keyof typeof USERS;

@@ -26,6 +26,9 @@ const EXPECTED: Record<FixtureUser, string[]> = {
 	mkt: ['acquisition', 'crm'],
 	crm: ['crm'],
 	none: [],
+	// Holds only <app>/tasks. The module data routes are gated on their own
+	// features now, so none of these paths are reachable for it.
+	tasksOnly: [],
 };
 
 async function isAuthorized(user: FixtureUser, path: string): Promise<boolean> {

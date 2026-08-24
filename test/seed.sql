@@ -6,6 +6,10 @@ INSERT INTO roles (id,name,created_at) VALUES ('role_tech_lead','Tech Lead',0);
 INSERT INTO roles (id,name,created_at) VALUES ('role_marketing_lead','Marketing Lead',0);
 INSERT INTO roles (id,name,created_at) VALUES ('role_crm_member','CRM Member',0);
 INSERT INTO roles (id,name,created_at) VALUES ('role_none','No Access',0);
+-- Holds nothing but the `tasks` feature of four modules. Before those routers
+-- were gated per feature, requireAppAccess let this role read and write every
+-- agreement, project, campaign and lab in them.
+INSERT INTO roles (id,name,created_at) VALUES ('role_tasks_only','Tasks Only',0);
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_employees','role_ceo','hr','employees',1,1,1,0,0);
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_appointments','role_ceo','hr','appointments',1,1,1,0,0);
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_ceo_hr_payroll','role_ceo','hr','payroll',1,1,1,0,0);
@@ -98,11 +102,16 @@ INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_clients','role_crm_member','core','clients',1,0,0,0,0);
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_committees','role_crm_member','core','committees',1,0,0,0,0);
 INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_crm_member_core_docs','role_crm_member','core','docs',1,0,0,0,0);
+INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_legal_tasks','role_tasks_only','legal','tasks',1,1,0,0,0);
+INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_tech_tasks','role_tasks_only','tech','tasks',1,1,0,0,0);
+INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_acquisition_tasks','role_tasks_only','acquisition','tasks',1,1,0,0,0);
+INSERT INTO role_app_permissions (id,role_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('rap_role_tasks_only_ops_tasks','role_tasks_only','ops','tasks',1,1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_ceo','u_ceo@test.local','u_ceo','u_ceo','x','role_ceo',1,1,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tech','u_tech@test.local','u_tech','u_tech','x','role_tech_lead',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_mkt','u_mkt@test.local','u_mkt','u_mkt','x','role_marketing_lead',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_crm','u_crm@test.local','u_crm','u_crm','x','role_crm_member',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x','role_none',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,role_id,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x','role_tasks_only',1,0,0,0);
 -- Tasks used to prove that an unscoped GET /api/tasks no longer returns
 -- every task in the company to any authenticated caller.
 INSERT INTO universal_tasks (task_id,title,status,department,board_position,created_at,updated_at)

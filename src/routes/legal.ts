@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
@@ -13,11 +13,11 @@ legalRouter.use('*', authMiddleware);
 legalRouter.use('*', requireAppAccess('legal'));
 
 /* ── LEGAL TEMPLATES ── */
-legalRouter.get('/templates', async (c) => {
+legalRouter.get('/templates', requireFeatureAccess('legal', 'templates', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.legalTemplates.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/templates', async (c) => {
+legalRouter.post('/templates', requireFeatureAccess('legal', 'templates', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('tmpl');
@@ -26,13 +26,13 @@ legalRouter.post('/templates', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/templates/:id', async (c) => {
+legalRouter.get('/templates/:id', requireFeatureAccess('legal', 'templates', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.legalTemplates.findFirst({ where: eq(schema.legalTemplates.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/templates/:id', async (c) => {
+legalRouter.patch('/templates/:id', requireFeatureAccess('legal', 'templates', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -40,7 +40,7 @@ legalRouter.patch('/templates/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'legal_templates', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/templates/:id', async (c) => {
+legalRouter.delete('/templates/:id', requireFeatureAccess('legal', 'templates', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.legalTemplates).where(eq(schema.legalTemplates.id, id));
@@ -49,11 +49,11 @@ legalRouter.delete('/templates/:id', async (c) => {
 });
 
 /* ── PARTIES & STAKEHOLDERS ── */
-legalRouter.get('/parties', async (c) => {
+legalRouter.get('/parties', requireFeatureAccess('legal', 'parties', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.partiesStakeholders.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/parties', async (c) => {
+legalRouter.post('/parties', requireFeatureAccess('legal', 'parties', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('party');
@@ -62,13 +62,13 @@ legalRouter.post('/parties', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/parties/:id', async (c) => {
+legalRouter.get('/parties/:id', requireFeatureAccess('legal', 'parties', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.partiesStakeholders.findFirst({ where: eq(schema.partiesStakeholders.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/parties/:id', async (c) => {
+legalRouter.patch('/parties/:id', requireFeatureAccess('legal', 'parties', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -77,7 +77,7 @@ legalRouter.patch('/parties/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'parties_stakeholders', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/parties/:id', async (c) => {
+legalRouter.delete('/parties/:id', requireFeatureAccess('legal', 'parties', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.partiesStakeholders).where(eq(schema.partiesStakeholders.id, id));
@@ -86,7 +86,7 @@ legalRouter.delete('/parties/:id', async (c) => {
 });
 
 /* ── ACTIVE AGREEMENTS ── */
-legalRouter.get('/agreements', async (c) => {
+legalRouter.get('/agreements', requireFeatureAccess('legal', 'agreements', 'view'), async (c) => {
   try {
     const { status } = c.req.query();
     const rows = await getDb(c.env).query.activeAgreements.findMany({
@@ -95,7 +95,7 @@ legalRouter.get('/agreements', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/agreements', async (c) => {
+legalRouter.post('/agreements', requireFeatureAccess('legal', 'agreements', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const { agreementName, contractType, effectiveDate, expiryDate, autoRenewal, paymentTerms, status, signedDoc, committeeId, templateId, clientId } = await c.req.json();
@@ -109,13 +109,13 @@ legalRouter.post('/agreements', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/agreements/:id', async (c) => {
+legalRouter.get('/agreements/:id', requireFeatureAccess('legal', 'agreements', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.activeAgreements.findFirst({ where: eq(schema.activeAgreements.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/agreements/:id', async (c) => {
+legalRouter.patch('/agreements/:id', requireFeatureAccess('legal', 'agreements', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -124,7 +124,7 @@ legalRouter.patch('/agreements/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'active_agreements', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/agreements/:id', async (c) => {
+legalRouter.delete('/agreements/:id', requireFeatureAccess('legal', 'agreements', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.activeAgreements).where(eq(schema.activeAgreements.id, id));
@@ -133,7 +133,7 @@ legalRouter.delete('/agreements/:id', async (c) => {
 });
 
 /* ── AGREEMENT PARTIES ── */
-legalRouter.post('/agreements/:id/parties', async (c) => {
+legalRouter.post('/agreements/:id/parties', requireFeatureAccess('legal', 'agreements', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const agreementId = c.req.param('id');
@@ -143,7 +143,7 @@ legalRouter.post('/agreements/:id/parties', async (c) => {
     return created(c, { agreementId, partyId: body.partyId });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/agreements/:id/parties', async (c) => {
+legalRouter.get('/agreements/:id/parties', requireFeatureAccess('legal', 'agreements', 'view'), async (c) => {
   try {
     const rows = await getDb(c.env).query.agreementParties.findMany({
       where: eq(schema.agreementParties.agreementId, c.req.param('id')),
@@ -153,7 +153,7 @@ legalRouter.get('/agreements/:id/parties', async (c) => {
 });
 
 /* ── COMPLIANCE OBLIGATIONS ── */
-legalRouter.get('/compliance', async (c) => {
+legalRouter.get('/compliance', requireFeatureAccess('legal', 'compliance', 'view'), async (c) => {
   try {
     const { status } = c.req.query();
     const rows = await getDb(c.env).query.complianceObligations.findMany({
@@ -162,7 +162,7 @@ legalRouter.get('/compliance', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/compliance', async (c) => {
+legalRouter.post('/compliance', requireFeatureAccess('legal', 'compliance', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('obl');
@@ -171,13 +171,13 @@ legalRouter.post('/compliance', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/compliance/:id', async (c) => {
+legalRouter.get('/compliance/:id', requireFeatureAccess('legal', 'compliance', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.complianceObligations.findFirst({ where: eq(schema.complianceObligations.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/compliance/:id', async (c) => {
+legalRouter.patch('/compliance/:id', requireFeatureAccess('legal', 'compliance', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -186,7 +186,7 @@ legalRouter.patch('/compliance/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'compliance_obligations', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/compliance/:id', async (c) => {
+legalRouter.delete('/compliance/:id', requireFeatureAccess('legal', 'compliance', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.complianceObligations).where(eq(schema.complianceObligations.id, id));
@@ -195,7 +195,7 @@ legalRouter.delete('/compliance/:id', async (c) => {
 });
 
 /* ── LEGAL REQUESTS ── */
-legalRouter.get('/requests', async (c) => {
+legalRouter.get('/requests', requireFeatureAccess('legal', 'requests', 'view'), async (c) => {
   try {
     const { status, priority } = c.req.query();
     const rows = await getDb(c.env).query.legalRequests.findMany({
@@ -207,7 +207,7 @@ legalRouter.get('/requests', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/requests', async (c) => {
+legalRouter.post('/requests', requireFeatureAccess('legal', 'requests', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('lreq');
@@ -216,13 +216,13 @@ legalRouter.post('/requests', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/requests/:id', async (c) => {
+legalRouter.get('/requests/:id', requireFeatureAccess('legal', 'requests', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.legalRequests.findFirst({ where: eq(schema.legalRequests.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/requests/:id', async (c) => {
+legalRouter.patch('/requests/:id', requireFeatureAccess('legal', 'requests', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -231,7 +231,7 @@ legalRouter.patch('/requests/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'legal_requests', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/requests/:id', async (c) => {
+legalRouter.delete('/requests/:id', requireFeatureAccess('legal', 'requests', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.legalRequests).where(eq(schema.legalRequests.id, id));
@@ -240,11 +240,11 @@ legalRouter.delete('/requests/:id', async (c) => {
 });
 
 /* ── INTELLECTUAL PROPERTY ── */
-legalRouter.get('/ip', async (c) => {
+legalRouter.get('/ip', requireFeatureAccess('legal', 'ip', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.intellectualProperty.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/ip', async (c) => {
+legalRouter.post('/ip', requireFeatureAccess('legal', 'ip', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('ip');
@@ -253,13 +253,13 @@ legalRouter.post('/ip', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/ip/:id', async (c) => {
+legalRouter.get('/ip/:id', requireFeatureAccess('legal', 'ip', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.intellectualProperty.findFirst({ where: eq(schema.intellectualProperty.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/ip/:id', async (c) => {
+legalRouter.patch('/ip/:id', requireFeatureAccess('legal', 'ip', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -268,7 +268,7 @@ legalRouter.patch('/ip/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'intellectual_property', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/ip/:id', async (c) => {
+legalRouter.delete('/ip/:id', requireFeatureAccess('legal', 'ip', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.intellectualProperty).where(eq(schema.intellectualProperty.id, id));
@@ -277,11 +277,11 @@ legalRouter.delete('/ip/:id', async (c) => {
 });
 
 /* ── LEGAL SOPS ── */
-legalRouter.get('/sops', async (c) => {
+legalRouter.get('/sops', requireFeatureAccess('legal', 'sops', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.legalSops.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-legalRouter.post('/sops', async (c) => {
+legalRouter.post('/sops', requireFeatureAccess('legal', 'sops', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('sop');
@@ -290,13 +290,13 @@ legalRouter.post('/sops', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.get('/sops/:id', async (c) => {
+legalRouter.get('/sops/:id', requireFeatureAccess('legal', 'sops', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.legalSops.findFirst({ where: eq(schema.legalSops.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.patch('/sops/:id', async (c) => {
+legalRouter.patch('/sops/:id', requireFeatureAccess('legal', 'sops', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -305,7 +305,7 @@ legalRouter.patch('/sops/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'legal_sops', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-legalRouter.delete('/sops/:id', async (c) => {
+legalRouter.delete('/sops/:id', requireFeatureAccess('legal', 'sops', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.legalSops).where(eq(schema.legalSops.id, id));

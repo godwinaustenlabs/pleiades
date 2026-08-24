@@ -3,7 +3,7 @@ import { eq, and, gte, lte, desc } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
@@ -13,7 +13,7 @@ acquisitionRouter.use('*', authMiddleware);
 acquisitionRouter.use('*', requireAppAccess('acquisition'));
 
 /* ── USERS ── */
-acquisitionRouter.get('/users', async (c) => {
+acquisitionRouter.get('/users', requireFeatureAccess('acquisition', 'tasks', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     // Acquisition access is granted to roles, so resolve the roles that hold it
@@ -40,7 +40,7 @@ acquisitionRouter.get('/users', async (c) => {
 });
 
 /* ── CAMPAIGNS ── */
-acquisitionRouter.get('/campaigns', async (c) => {
+acquisitionRouter.get('/campaigns', requireFeatureAccess('acquisition', 'campaigns', 'view'), async (c) => {
   try {
     const { status } = c.req.query();
     const rows = await getDb(c.env).query.campaigns.findMany({
@@ -49,7 +49,7 @@ acquisitionRouter.get('/campaigns', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/campaigns', async (c) => {
+acquisitionRouter.post('/campaigns', requireFeatureAccess('acquisition', 'campaigns', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('camp');
@@ -58,13 +58,13 @@ acquisitionRouter.post('/campaigns', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/campaigns/:id', async (c) => {
+acquisitionRouter.get('/campaigns/:id', requireFeatureAccess('acquisition', 'campaigns', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.campaigns.findFirst({ where: eq(schema.campaigns.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/campaigns/:id', async (c) => {
+acquisitionRouter.patch('/campaigns/:id', requireFeatureAccess('acquisition', 'campaigns', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -73,7 +73,7 @@ acquisitionRouter.patch('/campaigns/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'campaigns', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/campaigns/:id', async (c) => {
+acquisitionRouter.delete('/campaigns/:id', requireFeatureAccess('acquisition', 'campaigns', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.campaigns).where(eq(schema.campaigns.id, id));
@@ -82,7 +82,7 @@ acquisitionRouter.delete('/campaigns/:id', async (c) => {
 });
 
 /* ── CONTACTS & LEADS ── */
-acquisitionRouter.get('/contacts', async (c) => {
+acquisitionRouter.get('/contacts', requireFeatureAccess('acquisition', 'contacts', 'view'), async (c) => {
   try {
     const { stage, owner } = c.req.query();
     const rows = await getDb(c.env).query.contactsLeads.findMany({
@@ -94,7 +94,7 @@ acquisitionRouter.get('/contacts', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/contacts', async (c) => {
+acquisitionRouter.post('/contacts', requireFeatureAccess('acquisition', 'contacts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('lead');
@@ -103,13 +103,13 @@ acquisitionRouter.post('/contacts', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/contacts/:id', async (c) => {
+acquisitionRouter.get('/contacts/:id', requireFeatureAccess('acquisition', 'contacts', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.contactsLeads.findFirst({ where: eq(schema.contactsLeads.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/contacts/:id', async (c) => {
+acquisitionRouter.patch('/contacts/:id', requireFeatureAccess('acquisition', 'contacts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -118,7 +118,7 @@ acquisitionRouter.patch('/contacts/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'contacts_leads', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/contacts/:id', async (c) => {
+acquisitionRouter.delete('/contacts/:id', requireFeatureAccess('acquisition', 'contacts', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     // Delete associated activities first to avoid foreign key constraint failure
@@ -129,7 +129,7 @@ acquisitionRouter.delete('/contacts/:id', async (c) => {
 });
 
 /* ── LEADS ACTIVITY ── */
-acquisitionRouter.get('/activity', async (c) => {
+acquisitionRouter.get('/activity', requireFeatureAccess('acquisition', 'activity', 'view'), async (c) => {
   try {
     const { contact_id } = c.req.query();
     const rows = await getDb(c.env).query.leadsActivity.findMany({
@@ -138,7 +138,7 @@ acquisitionRouter.get('/activity', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/activity', async (c) => {
+acquisitionRouter.post('/activity', requireFeatureAccess('acquisition', 'activity', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('act');
@@ -147,13 +147,13 @@ acquisitionRouter.post('/activity', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/activity/:id', async (c) => {
+acquisitionRouter.get('/activity/:id', requireFeatureAccess('acquisition', 'activity', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.leadsActivity.findFirst({ where: eq(schema.leadsActivity.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/activity/:id', async (c) => {
+acquisitionRouter.patch('/activity/:id', requireFeatureAccess('acquisition', 'activity', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -162,7 +162,7 @@ acquisitionRouter.patch('/activity/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'leads_activity', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/activity/:id', async (c) => {
+acquisitionRouter.delete('/activity/:id', requireFeatureAccess('acquisition', 'activity', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.leadsActivity).where(eq(schema.leadsActivity.id, id));
@@ -171,11 +171,11 @@ acquisitionRouter.delete('/activity/:id', async (c) => {
 });
 
 /* ── FUNNELS & PIPELINES ── */
-acquisitionRouter.get('/funnels', async (c) => {
+acquisitionRouter.get('/funnels', requireFeatureAccess('acquisition', 'funnels', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.funnelsPipelines.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/funnels', async (c) => {
+acquisitionRouter.post('/funnels', requireFeatureAccess('acquisition', 'funnels', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('fun');
@@ -187,13 +187,13 @@ acquisitionRouter.post('/funnels', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/funnels/:id', async (c) => {
+acquisitionRouter.get('/funnels/:id', requireFeatureAccess('acquisition', 'funnels', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.funnelsPipelines.findFirst({ where: eq(schema.funnelsPipelines.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/funnels/:id', async (c) => {
+acquisitionRouter.patch('/funnels/:id', requireFeatureAccess('acquisition', 'funnels', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -205,7 +205,7 @@ acquisitionRouter.patch('/funnels/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'funnels_pipelines', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/funnels/:id', async (c) => {
+acquisitionRouter.delete('/funnels/:id', requireFeatureAccess('acquisition', 'funnels', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.funnelsPipelines).where(eq(schema.funnelsPipelines.id, id));
@@ -214,7 +214,7 @@ acquisitionRouter.delete('/funnels/:id', async (c) => {
 });
 
 /* ── CONTENT CALENDAR ── */
-acquisitionRouter.get('/content', async (c) => {
+acquisitionRouter.get('/content', requireFeatureAccess('acquisition', 'content', 'view'), async (c) => {
   try {
     const { status, campaign_id } = c.req.query();
     const rows = await getDb(c.env).query.contentCalendar.findMany({
@@ -226,7 +226,7 @@ acquisitionRouter.get('/content', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/content', async (c) => {
+acquisitionRouter.post('/content', requireFeatureAccess('acquisition', 'content', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('cnt');
@@ -235,13 +235,13 @@ acquisitionRouter.post('/content', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/content/:id', async (c) => {
+acquisitionRouter.get('/content/:id', requireFeatureAccess('acquisition', 'content', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.contentCalendar.findFirst({ where: eq(schema.contentCalendar.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/content/:id', async (c) => {
+acquisitionRouter.patch('/content/:id', requireFeatureAccess('acquisition', 'content', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -250,7 +250,7 @@ acquisitionRouter.patch('/content/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'content_calendar', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/content/:id', async (c) => {
+acquisitionRouter.delete('/content/:id', requireFeatureAccess('acquisition', 'content', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.contentCalendar).where(eq(schema.contentCalendar.id, id));
@@ -259,7 +259,7 @@ acquisitionRouter.delete('/content/:id', async (c) => {
 });
 
 /* ── SPRINTS ── */
-acquisitionRouter.get('/sprints', async (c) => {
+acquisitionRouter.get('/sprints', requireFeatureAccess('acquisition', 'sprints', 'view'), async (c) => {
   try {
     const { status } = c.req.query();
     const rows = await getDb(c.env).query.sprints.findMany({
@@ -268,7 +268,7 @@ acquisitionRouter.get('/sprints', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/sprints', async (c) => {
+acquisitionRouter.post('/sprints', requireFeatureAccess('acquisition', 'sprints', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('spr');
@@ -277,13 +277,13 @@ acquisitionRouter.post('/sprints', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/sprints/:id', async (c) => {
+acquisitionRouter.get('/sprints/:id', requireFeatureAccess('acquisition', 'sprints', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.sprints.findFirst({ where: eq(schema.sprints.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/sprints/:id', async (c) => {
+acquisitionRouter.patch('/sprints/:id', requireFeatureAccess('acquisition', 'sprints', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -292,7 +292,7 @@ acquisitionRouter.patch('/sprints/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'sprints', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/sprints/:id', async (c) => {
+acquisitionRouter.delete('/sprints/:id', requireFeatureAccess('acquisition', 'sprints', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.sprints).where(eq(schema.sprints.id, id));
@@ -301,7 +301,7 @@ acquisitionRouter.delete('/sprints/:id', async (c) => {
 });
 
 /* ── ACQ TASKS ── */
-acquisitionRouter.get('/tasks', async (c) => {
+acquisitionRouter.get('/tasks', requireFeatureAccess('acquisition', 'tasks', 'view'), async (c) => {
   try {
     const { sprint_id, status, assignee } = c.req.query();
     const rows = await getDb(c.env).query.acqTasks.findMany({
@@ -314,7 +314,7 @@ acquisitionRouter.get('/tasks', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/tasks', async (c) => {
+acquisitionRouter.post('/tasks', requireFeatureAccess('acquisition', 'tasks', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('at');
@@ -323,13 +323,13 @@ acquisitionRouter.post('/tasks', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/tasks/:id', async (c) => {
+acquisitionRouter.get('/tasks/:id', requireFeatureAccess('acquisition', 'tasks', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.acqTasks.findFirst({ where: eq(schema.acqTasks.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/tasks/:id', async (c) => {
+acquisitionRouter.patch('/tasks/:id', requireFeatureAccess('acquisition', 'tasks', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -338,7 +338,7 @@ acquisitionRouter.patch('/tasks/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'acq_tasks', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/tasks/:id', async (c) => {
+acquisitionRouter.delete('/tasks/:id', requireFeatureAccess('acquisition', 'tasks', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.acqTasks).where(eq(schema.acqTasks.id, id));
@@ -347,7 +347,7 @@ acquisitionRouter.delete('/tasks/:id', async (c) => {
 });
 
 /* ── OUTREACH LOGS ── */
-acquisitionRouter.get('/outreach', async (c) => {
+acquisitionRouter.get('/outreach', requireFeatureAccess('acquisition', 'outreach', 'view'), async (c) => {
   try {
     const { date, start_date, end_date } = c.req.query();
     
@@ -369,7 +369,7 @@ acquisitionRouter.get('/outreach', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/outreach', async (c) => {
+acquisitionRouter.post('/outreach', requireFeatureAccess('acquisition', 'outreach', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('out');
@@ -378,13 +378,13 @@ acquisitionRouter.post('/outreach', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.get('/outreach/:id', async (c) => {
+acquisitionRouter.get('/outreach/:id', requireFeatureAccess('acquisition', 'outreach', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.outreachLogs.findFirst({ where: eq(schema.outreachLogs.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/outreach/:id', async (c) => {
+acquisitionRouter.patch('/outreach/:id', requireFeatureAccess('acquisition', 'outreach', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -393,7 +393,7 @@ acquisitionRouter.patch('/outreach/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'outreach_logs', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/outreach/:id', async (c) => {
+acquisitionRouter.delete('/outreach/:id', requireFeatureAccess('acquisition', 'outreach', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.outreachLogs).where(eq(schema.outreachLogs.id, id));
@@ -402,13 +402,13 @@ acquisitionRouter.delete('/outreach/:id', async (c) => {
 });
 
 /* ── DEAL PIPELINES ── */
-acquisitionRouter.get('/deal-pipelines', async (c) => {
+acquisitionRouter.get('/deal-pipelines', requireFeatureAccess('acquisition', 'deals', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.dealPipelines.findMany({
     with: { dealStages: { orderBy: (stages, { asc }) => [asc(stages.orderIndex)] } }
   })); }
   catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/deal-pipelines', async (c) => {
+acquisitionRouter.post('/deal-pipelines', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('dpip');
@@ -417,7 +417,7 @@ acquisitionRouter.post('/deal-pipelines', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/deal-pipelines/:id', async (c) => {
+acquisitionRouter.patch('/deal-pipelines/:id', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -426,7 +426,7 @@ acquisitionRouter.patch('/deal-pipelines/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'deal_pipelines', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/deal-pipelines/:id', async (c) => {
+acquisitionRouter.delete('/deal-pipelines/:id', requireFeatureAccess('acquisition', 'deals', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     // Also delete stages and deals first
@@ -438,7 +438,7 @@ acquisitionRouter.delete('/deal-pipelines/:id', async (c) => {
 });
 
 /* ── DEAL STAGES ── */
-acquisitionRouter.get('/deal-stages', async (c) => {
+acquisitionRouter.get('/deal-stages', requireFeatureAccess('acquisition', 'deals', 'view'), async (c) => {
   try { 
     const { pipeline_id } = c.req.query();
     const rows = await getDb(c.env).query.dealStages.findMany({
@@ -449,7 +449,7 @@ acquisitionRouter.get('/deal-stages', async (c) => {
   }
   catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/deal-stages', async (c) => {
+acquisitionRouter.post('/deal-stages', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('dstg');
@@ -458,7 +458,7 @@ acquisitionRouter.post('/deal-stages', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/deal-stages/:id', async (c) => {
+acquisitionRouter.patch('/deal-stages/:id', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -467,7 +467,7 @@ acquisitionRouter.patch('/deal-stages/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'deal_stages', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/deal-stages/:id', async (c) => {
+acquisitionRouter.delete('/deal-stages/:id', requireFeatureAccess('acquisition', 'deals', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.deals).where(eq(schema.deals.stageId, id));
@@ -477,7 +477,7 @@ acquisitionRouter.delete('/deal-stages/:id', async (c) => {
 });
 
 /* ── DEALS ── */
-acquisitionRouter.get('/deals', async (c) => {
+acquisitionRouter.get('/deals', requireFeatureAccess('acquisition', 'deals', 'view'), async (c) => {
   try { 
     const { pipeline_id } = c.req.query();
     const rows = await getDb(c.env).query.deals.findMany({
@@ -488,7 +488,7 @@ acquisitionRouter.get('/deals', async (c) => {
   }
   catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.post('/deals', async (c) => {
+acquisitionRouter.post('/deals', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('deal');
@@ -497,7 +497,7 @@ acquisitionRouter.post('/deals', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.patch('/deals/:id', async (c) => {
+acquisitionRouter.patch('/deals/:id', requireFeatureAccess('acquisition', 'deals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -506,7 +506,7 @@ acquisitionRouter.patch('/deals/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'deals', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-acquisitionRouter.delete('/deals/:id', async (c) => {
+acquisitionRouter.delete('/deals/:id', requireFeatureAccess('acquisition', 'deals', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.deals).where(eq(schema.deals.id, id));
