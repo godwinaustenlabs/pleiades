@@ -3,17 +3,8 @@ import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, Lay
 import Logo from '../components/Logo';
 import { Link } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
+import { usePermissions } from '../lib/usePermissions';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 const ALL_APPS = [
   {
@@ -93,8 +84,9 @@ const ALL_APPS = [
 
 function Home() {
   const [showProfile, setShowProfile] = useState(false);
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded } = usePermissions();
+  const loading = !loaded;
 
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('ga_user') || '{}'));
 
@@ -116,24 +108,7 @@ function Home() {
     return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
-  const fetchPermissions = async () => {
-    if (!user.id) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setLoading(false);
-    } catch (err) {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    fetchPermissions();
-  }, []);
 
   const visibleApps = useMemo(() => {
     if (user.isSuperadmin) return ALL_APPS;

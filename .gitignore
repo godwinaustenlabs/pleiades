@@ -181,3 +181,17 @@ dist
 .aider*
 public/apps/
 
+
+# Database dumps — these contain real password hashes and personal data and must
+# never be committed. Two of them previously were (see SECURITY.md).
+*.sql.dump
+data_only.sql
+old_db_dump.sql
+drop_tables.sql
+scratch/db-dumps/
+
+# Turborepo local cache — build artifacts, never source.
+.turbo/
+
+# graphify knowledge-graph output — regenerable from the corpus.
+graphify-out/

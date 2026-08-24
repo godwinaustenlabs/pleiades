@@ -4,9 +4,8 @@
  */
 import { relations } from 'drizzle-orm';
 import {
-  roles, permissions, rolePermissions, usersLogins, apiKeys,
-  roleHierarchy, userOwnership, passwordResetTokens, userAppAccess,
-  userAppPermissions, calendarFeeds
+  roles, usersLogins, apiKeys, roleAppPermissions,
+  userOwnership, passwordResetTokens, calendarFeeds
 } from './auth';
 import {
   employees, labs, employeeLab, clients, committees,
@@ -35,20 +34,14 @@ import {
 } from './crm';
 
 /* ── AUTH ── */
-export const rolesRelations = relations(roles, ({ many, one }) => ({
+export const rolesRelations = relations(roles, ({ many }) => ({
   usersLogins: many(usersLogins),
   apiKeys: many(apiKeys),
-  rolePermissions: many(rolePermissions),
-  hierarchy: one(roleHierarchy, { fields: [roles.id], references: [roleHierarchy.roleId] }),
+  appPermissions: many(roleAppPermissions),
 }));
 
-export const permissionsRelations = relations(permissions, ({ many }) => ({
-  rolePermissions: many(rolePermissions),
-}));
-
-export const rolePermissionsRelations = relations(rolePermissions, ({ one }) => ({
-  role: one(roles, { fields: [rolePermissions.roleId], references: [roles.id] }),
-  permission: one(permissions, { fields: [rolePermissions.permissionId], references: [permissions.id] }),
+export const roleAppPermissionsRelations = relations(roleAppPermissions, ({ one }) => ({
+  role: one(roles, { fields: [roleAppPermissions.roleId], references: [roles.id] }),
 }));
 
 export const usersLoginsRelations = relations(usersLogins, ({ one, many }) => ({
@@ -58,10 +51,6 @@ export const usersLoginsRelations = relations(usersLogins, ({ one, many }) => ({
   ownership: one(userOwnership, { fields: [usersLogins.id], references: [userOwnership.userId] }),
   // Reset tokens issued for this user
   resetTokens: many(passwordResetTokens),
-  // App access levels for this user (DEPRECATED)
-  appAccess: many(userAppAccess),
-  // Granular per-feature permissions
-  appPermissions: many(userAppPermissions),
   // Accounts that this user is the owner of (i.e. accounts they provisioned)
   ownedUsers: many(userOwnership, { relationName: 'ownerRelation' }),
   // Calendar feed token
@@ -72,11 +61,7 @@ export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
   role: one(roles, { fields: [apiKeys.roleId], references: [roles.id] }),
 }));
 
-/* ── NEW: HIERARCHY, OWNERSHIP, RESET TOKENS ── */
-export const roleHierarchyRelations = relations(roleHierarchy, ({ one }) => ({
-  role: one(roles, { fields: [roleHierarchy.roleId], references: [roles.id] }),
-}));
-
+/* ── OWNERSHIP, RESET TOKENS ── */
 export const userOwnershipRelations = relations(userOwnership, ({ one }) => ({
   user: one(usersLogins, {
     fields: [userOwnership.userId],
@@ -91,14 +76,6 @@ export const userOwnershipRelations = relations(userOwnership, ({ one }) => ({
 
 export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
   user: one(usersLogins, { fields: [passwordResetTokens.userId], references: [usersLogins.id] }),
-}));
-
-export const userAppAccessRelations = relations(userAppAccess, ({ one }) => ({
-  user: one(usersLogins, { fields: [userAppAccess.userId], references: [usersLogins.id] }),
-}));
-
-export const userAppPermissionsRelations = relations(userAppPermissions, ({ one }) => ({
-  user: one(usersLogins, { fields: [userAppPermissions.userId], references: [usersLogins.id] }),
 }));
 
 export const calendarFeedsRelations = relations(calendarFeeds, ({ one }) => ({

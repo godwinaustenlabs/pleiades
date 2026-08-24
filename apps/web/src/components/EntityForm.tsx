@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Save, X, Loader2, Upload, File, Trash2, Plus, GripVertical } from 'lucide-react';
+import { token as authToken } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
 export interface Field {
   key: string;
@@ -150,9 +152,9 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
     try {
       await onSubmit(cleanedData);
       setLoading(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('EntityForm submit error:', err);
-      setError(err.message || String(err) || 'An error occurred while saving.');
+      setError(errorMessage(err, 'An error occurred while saving.'));
       setLoading(false);
     }
   };
@@ -161,7 +163,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
     setUploading(key);
     setError('');
     try {
-      const token = localStorage.getItem('ga_token') || '';
+      const token = authToken();
       const prefix = pathPrefix || title.toLowerCase().replace(/\s+/g, '_');
       const r2Key = `${prefix}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const res = await fetch(`/api/assets/upload/${r2Key}`, {
@@ -177,7 +179,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
       const d = await res.json();
       
       setFormData({ ...formData, [key]: d.data.url });
-    } catch (err: any) {
+    } catch {
       setError('File upload failed. Please try again.');
     } finally {
       setUploading(null);
@@ -243,7 +245,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                         {formData[field.key].match(/\.(jpg|jpeg|png|gif|webp)$|^data:image/i) && (
                           <div className="w-full aspect-video rounded-xl overflow-hidden border border-white/10 bg-black/20">
                             <img 
-                              src={formData[field.key].startsWith('/api/') ? `${formData[field.key]}?token=${localStorage.getItem('ga_token')}` : formData[field.key]} 
+                              src={formData[field.key].startsWith('/api/') ? `${formData[field.key]}?token=${authToken()}` : formData[field.key]} 
                               alt="Preview" 
                               className="w-full h-full object-cover" 
                             />

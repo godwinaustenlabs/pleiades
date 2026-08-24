@@ -18,11 +18,12 @@ import HRReports from '../components/HRReports';
 import PayrollProcessingView from '../components/PayrollProcessingView';
 import EmployeeProfileTabs from '../components/EmployeeProfileTabs';
 import PaySlip from '../components/PaySlip';
-import CompanyDocumentsTab from '../components/CompanyDocumentsTab';
+import DocumentsTab from '../components/DocumentsTab';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
+import { errorMessage } from '../lib/errors';
 
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets' | 'reports' | 'sops';
 
@@ -35,14 +36,6 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Ops', label: 'Ops' },
   { value: 'Acquisition', label: 'Acquisition' },
 ];
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 function HR() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -63,8 +56,8 @@ function HR() {
   const [pendingCount, setPendingCount] = useState(0);
 
   // Granular Permissions
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
 
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('ga_user') || '{}'));
 
@@ -91,16 +84,6 @@ function HR() {
     setIsAuthenticated(false);
   };
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch (err) {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     // Superadmin bypass (frontend check)
@@ -137,12 +120,6 @@ function HR() {
       .then(d => setPayrollRecords(d.data || [])).catch(() => { });
   };
 
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchPermissions();
-    }
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permsLoaded) {
@@ -324,8 +301,8 @@ function HR() {
       setShowEntityForm(false);
       setEditingRecord(null);
       fetchEmployees();
-    } catch (err: any) {
-      alert(err.message || 'An error occurred while saving.');
+    } catch (err) {
+      alert(errorMessage(err, 'An error occurred while saving.'));
       throw err; // Re-throw for EntityForm to catch and show in its internal UI
     }
   };
@@ -358,8 +335,8 @@ function HR() {
         throw new Error(errData.error || 'Failed to delete employee');
       }
       fetchEmployees();
-    } catch (err: any) {
-      alert(err.message || 'An error occurred during deletion.');
+    } catch (err) {
+      alert(errorMessage(err, 'An error occurred during deletion.'));
     }
   };
 
@@ -520,7 +497,15 @@ function HR() {
         )}
 
         {tab === 'sops' && (
-          <CompanyDocumentsTab />
+          <DocumentsTab
+            endpoint="/hr/company-documents"
+            uploadPrefix="company-docs"
+            heading="SOPs & Documents"
+            description="Manage company-wide standard operating procedures, manuals, and policies."
+            documentTypes={['SOP', 'Policy', 'Manual', 'Template', 'Other']}
+            canEdit={getPerm('employees').canEdit}
+            canDelete={getPerm('employees').canDelete}
+          />
         )}
 
         {tab === 'appointments' && (
@@ -689,7 +674,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
         setAssets([...assets, { ...assigned, assignedTo: initialData.id, status: 'Assigned' }]);
         setUnassignedAssets(unassignedAssets.filter(a => a.id !== assetId));
       }
-    } catch {}
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleUnassignAsset = async (assetId: string) => {
@@ -704,11 +689,11 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
         setUnassignedAssets([...unassignedAssets, { ...unassigned, assignedTo: null, status: 'Available' }]);
         setAssets(assets.filter(a => a.id !== assetId));
       }
-    } catch {}
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploading] = useState(false);
   const [error, setError] = useState('');
 
   const [rawImage, setRawImage] = useState<string | null>(null);
@@ -722,7 +707,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
   const handleSaveCrop = async (blob: Blob) => {
     setError('');
     try {
-      const tokenString = localStorage.getItem('ga_token') || '';
+      const tokenString = token();
       const formData = new FormData();
       formData.append('file', blob, 'avatar.jpg');
       if (initialData?.id) {
@@ -756,8 +741,8 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
       } else {
         throw new Error(d.error || 'Upload failed');
       }
-    } catch (err: any) { 
-      setError(err.message || 'Photo upload failed'); 
+    } catch (err) { 
+      setError(errorMessage(err, 'Photo upload failed')); 
       // Re-throw so CropModal knows it failed and shows its internal error UI
       throw err;
     }
@@ -766,7 +751,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try { await onSubmit(formData); } catch (err) { alert('Error saving'); }
+    try { await onSubmit(formData); } catch { alert('Error saving'); }
     finally { setLoading(false); }
   };
 
@@ -933,7 +918,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Reporting Manager</label>
                   <select value={formData.reportingManagerId || ''} onChange={e => setFormData({ ...formData, reportingManagerId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
                     <option value="">None</option>
-                    {employees?.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    {employees?.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                   </select>
                 </div>
               </div>

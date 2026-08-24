@@ -3,15 +3,35 @@ import { eq, and, or } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess, APP_FEATURES } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess, listGrants } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
+import { hashPassword } from '../utils/password';
 
 const hrRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 hrRouter.use('*', authMiddleware);
 hrRouter.use('*', requireAppAccess('hr'));
+
+/**
+ * Validates a requested role id against the roles table.
+ *
+ * Falls back to DEFAULT_ROLE_ID, which carries no grants — a newly provisioned
+ * account can therefore reach nothing until it is explicitly given a role. An
+ * unknown role id is rejected rather than silently downgraded, so a typo in a
+ * provisioning call fails loudly instead of creating an account nobody notices
+ * has the wrong access.
+ */
+const DEFAULT_ROLE_ID = 'role_emp';
+
+async function resolveRoleId(c: any, requestedRoleId?: string): Promise<string> {
+  if (!requestedRoleId) return DEFAULT_ROLE_ID;
+  const db = getDb(c.env);
+  const role = await db.query.roles.findFirst({ where: eq(schema.roles.id, requestedRoleId) });
+  if (!role) throw new Error(`Unknown roleId: ${requestedRoleId}`);
+  return role.id;
+}
 
 async function sha256hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
@@ -22,12 +42,12 @@ async function sha256hex(input: string): Promise<string> {
 }
 
 /* ── SECTORS ── */
-hrRouter.get('/sectors', async (c) => {
+hrRouter.get('/sectors', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.sectors.findMany()); }
   catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/sectors', async (c) => {
+hrRouter.post('/sectors', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -39,7 +59,7 @@ hrRouter.post('/sectors', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.get('/sectors/:id', async (c) => {
+hrRouter.get('/sectors/:id', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.sectors.findFirst({ where: eq(schema.sectors.id, c.req.param('id')!) });
     if (!row) return notFound(c);
@@ -47,7 +67,7 @@ hrRouter.get('/sectors/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.patch('/sectors/:id', async (c) => {
+hrRouter.patch('/sectors/:id', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -59,7 +79,7 @@ hrRouter.patch('/sectors/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.delete('/sectors/:id', async (c) => {
+hrRouter.delete('/sectors/:id', requireFeatureAccess('hr', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -76,7 +96,7 @@ hrRouter.delete('/sectors/:id', async (c) => {
 });
 
 /* ── APPOINTMENTS ── */
-hrRouter.get('/appointments', async (c) => {
+hrRouter.get('/appointments', requireFeatureAccess('hr', 'appointments', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { employee_id } = c.req.query();
@@ -87,7 +107,7 @@ hrRouter.get('/appointments', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/appointments', async (c) => {
+hrRouter.post('/appointments', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -99,7 +119,7 @@ hrRouter.post('/appointments', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/appointments/provision', async (c) => {
+hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const actor = c.get('user');
@@ -141,14 +161,16 @@ hrRouter.post('/appointments/provision', async (c) => {
       if (username) updateData.username = username;
       if (body.name) updateData.name = body.name;
       if (body.password) {
-        updateData.passwordHash = await sha256hex(body.password);
+        updateData.passwordHash = await hashPassword(body.password);
         updateData.passwordUpdatedAt = new Date();
       }
-      // If provisioned as CEO, grant superadmin status
-      if (body.roleOrTitle?.toUpperCase() === 'CEO') {
-        updateData.isSuperadmin = true;
-      }
-      
+      // NOTE: superadmin is deliberately NOT settable here. This previously read
+      // `body.roleOrTitle === 'CEO'` — a free-text field on the request — and
+      // granted superadmin from it, contradicting the schema's own rule that
+      // is_superadmin is only ever set by direct database access. Elevate a user
+      // by assigning them a role instead.
+      if (body.roleId) updateData.roleId = await resolveRoleId(c, body.roleId);
+
       try {
         await db.update(schema.usersLogins).set(updateData).where(eq(schema.usersLogins.id, accountId));
       } catch (err: any) {
@@ -160,7 +182,7 @@ hrRouter.post('/appointments/provision', async (c) => {
       if (!email || !username) return c.json({ success: false, error: 'Email and Username are required for new accounts' }, 400);
       
       accountId = generateId('usr');
-      const passwordHash = await sha256hex(body.password);
+      const passwordHash = await hashPassword(body.password);
       
       // Verify if actor exists to avoid FK failure on createdByUserId
       let creatorId = null;
@@ -176,10 +198,11 @@ hrRouter.post('/appointments/provision', async (c) => {
           username,
           name: body.name || username,
           passwordHash,
-          roleId: 'role_emp', // Fixed: confirmed 'role_emp' (underscored) exists in remote DB
+          roleId: await resolveRoleId(c, body.roleId),
           employeeId: body.employeeId || null,
           isActive: true,
-          isSuperadmin: body.roleOrTitle?.toUpperCase() === 'CEO',
+          // Never derived from request input — see the note on the update path above.
+          isSuperadmin: false,
           failedAttempts: 0,
           createdAt: new Date(),
           createdByUserId: creatorId,
@@ -231,56 +254,11 @@ hrRouter.post('/appointments/provision', async (c) => {
       if (actor?.id) await logAudit(c.env, actor.id, 'CREATE', 'appointments', appointmentId, { employeeId: body.employeeId, accountId });
     }
 
-    // 3. Setup Granular Permissions
-    // body.permissions should be an array of { appName, feature, canView, canEdit, canDelete }
-    if (body.permissions && Array.isArray(body.permissions)) {
-      // Clear existing permissions for this user before reapplying
-      await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, accountId));
-      
-      const permInserts = body.permissions.map((p: any) => ({
-        id: generateId('perm'),
-        userId: accountId,
-        appName: p.appName,
-        feature: p.feature,
-        canView: p.canView ?? false,
-        canEdit: p.canEdit ?? false,
-        canDelete: p.canDelete ?? false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
-      
-      if (permInserts.length > 0) {
-        // Batch inserts to avoid "too many SQL variables" error (limit is often 999 or lower in D1)
-        const batches = chunk(permInserts, 5);
-        for (const b of batches) {
-          await db.insert(schema.userAppPermissions).values(b as any);
-        }
-      }
-    } else if (body.roleOrTitle?.toUpperCase() === 'CEO') {
-      // Auto-grant ALL permissions for CEO
-      await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, accountId));
-      const allPerms: any[] = [];
-      for (const [app, features] of Object.entries(APP_FEATURES)) {
-        for (const feature of features) {
-          allPerms.push({
-            id: generateId('perm'),
-            userId: accountId,
-            appName: app,
-            feature: feature,
-            canView: true,
-            canEdit: true,
-            canDelete: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
-      }
-      // Batch inserts to avoid "too many SQL variables" error
-      const batches = chunk(allPerms, 5);
-      for (const b of batches) {
-        await db.insert(schema.userAppPermissions).values(b as any);
-      }
-    }
+    // 3. Access is governed by the account's role (assigned above via
+    // resolveRoleId). This step used to write per-user rows into
+    // user_app_permissions, and auto-granted every permission in the system when
+    // body.roleOrTitle happened to be the string 'CEO'. Nothing reads that table
+    // now, so those writes would only produce dead data.
 
     // 4. Auto-grant CRM member access if committee is assigned
     if (body.committeeId && body.employeeId) {
@@ -296,40 +274,11 @@ hrRouter.post('/appointments/provision', async (c) => {
         });
       }
       
-      // Ensure they have 'view' access to 'tickets' and 'tasks' in CRM
-      const crmFeatures = ['tickets', 'tasks', 'documents', 'planner'];
-      for (const f of crmFeatures) {
-        const existing = await db.query.userAppPermissions.findFirst({
-          where: and(
-            eq(schema.userAppPermissions.userId, accountId),
-            eq(schema.userAppPermissions.appName, 'crm'),
-            eq(schema.userAppPermissions.feature, f)
-          )
-        });
-        if (!existing) {
-          await db.insert(schema.userAppPermissions).values({
-            id: generateId('perm'), userId: accountId, appName: 'crm', feature: f, canView: true, canEdit: false, canDelete: false, createdAt: new Date(), updatedAt: new Date(),
-          });
-        }
-      }
+      // CRM access follows from committee membership — see the committee rule in
+      // src/middleware/rbac.ts — so no per-user grants are written here.
     }
 
-    // 5. Ensure basic dashboard access
-    const dashFeatures = ['overview', 'notes'];
-    for (const f of dashFeatures) {
-      const existing = await db.query.userAppPermissions.findFirst({
-        where: and(
-          eq(schema.userAppPermissions.userId, accountId),
-          eq(schema.userAppPermissions.appName, 'dashboard'),
-          eq(schema.userAppPermissions.feature, f)
-        )
-      });
-      if (!existing) {
-        await db.insert(schema.userAppPermissions).values({
-          id: generateId('perm'), userId: accountId, appName: 'dashboard', feature: f, canView: true, canEdit: true, canDelete: true, createdAt: new Date(), updatedAt: new Date(),
-        });
-      }
-    }
+    // 5. Dashboard access comes from the assigned role.
 
     return ok(c, { success: true, accountId, appointmentId });
   } catch (err: any) {
@@ -351,7 +300,7 @@ hrRouter.post('/appointments/provision', async (c) => {
   }
 });
 
-hrRouter.get('/appointments/:id', async (c) => {
+hrRouter.get('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.appointments.findFirst({ where: eq(schema.appointments.id, c.req.param('id')!) });
     if (!row) return notFound(c);
@@ -359,7 +308,7 @@ hrRouter.get('/appointments/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.patch('/appointments/:id', async (c) => {
+hrRouter.patch('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -371,7 +320,7 @@ hrRouter.patch('/appointments/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.delete('/appointments/:id', async (c) => {
+hrRouter.delete('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -403,7 +352,7 @@ hrRouter.delete('/appointments/:id', async (c) => {
 });
 
 /* ── PAYROLL RECORDS ── */
-hrRouter.get('/payroll', async (c) => {
+hrRouter.get('/payroll', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { employee_id, month } = c.req.query();
@@ -417,7 +366,7 @@ hrRouter.get('/payroll', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/payroll', async (c) => {
+hrRouter.post('/payroll', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -429,7 +378,7 @@ hrRouter.post('/payroll', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.get('/payroll/:id', async (c) => {
+hrRouter.get('/payroll/:id', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.payrollRecords.findFirst({ where: eq(schema.payrollRecords.id, c.req.param('id')!) });
     if (!row) return notFound(c);
@@ -437,7 +386,7 @@ hrRouter.get('/payroll/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.patch('/payroll/:id', async (c) => {
+hrRouter.patch('/payroll/:id', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -449,7 +398,7 @@ hrRouter.patch('/payroll/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.delete('/payroll/:id', async (c) => {
+hrRouter.delete('/payroll/:id', requireFeatureAccess('hr', 'payroll', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -461,7 +410,7 @@ hrRouter.delete('/payroll/:id', async (c) => {
 });
 
 /* ── LEGAL TRACKER (HR copy) ── */
-hrRouter.get('/legal-tracker', async (c) => {
+hrRouter.get('/legal-tracker', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { employee_id } = c.req.query();
@@ -472,7 +421,7 @@ hrRouter.get('/legal-tracker', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/legal-tracker', async (c) => {
+hrRouter.post('/legal-tracker', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -484,7 +433,7 @@ hrRouter.post('/legal-tracker', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.get('/legal-tracker/:id', async (c) => {
+hrRouter.get('/legal-tracker/:id', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.legalTracker.findFirst({ where: eq(schema.legalTracker.id, c.req.param('id')!) });
     if (!row) return notFound(c);
@@ -492,7 +441,7 @@ hrRouter.get('/legal-tracker/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.patch('/legal-tracker/:id', async (c) => {
+hrRouter.patch('/legal-tracker/:id', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -504,7 +453,7 @@ hrRouter.patch('/legal-tracker/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.delete('/legal-tracker/:id', async (c) => {
+hrRouter.delete('/legal-tracker/:id', requireFeatureAccess('hr', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -515,24 +464,21 @@ hrRouter.delete('/legal-tracker/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-/* ── PERMISSIONS MANAGEMENT (Legacy Access removed) ── */
-hrRouter.get('/employees/:id/permissions', async (c) => {
+/* ── PERMISSIONS (read-only; grants live on the role) ── */
+hrRouter.get('/employees/:id/permissions', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try {
-    const db = getDb(c.env);
-    const userId = c.req.param('id');
-    const rows = await db.query.userAppPermissions.findMany({
-      where: eq(schema.userAppPermissions.userId, userId!),
-    });
-    return ok(c, rows);
+    // Effective grants for the account, derived from its role. Previously read
+    // per-user rows from user_app_permissions.
+    return ok(c, await listGrants(c, c.req.param('id')!));
   } catch (err) { return serverError(c, err); }
 });
 
 /* ── ATTENDANCE ── */
-hrRouter.get('/attendance', async (c) => {
+hrRouter.get('/attendance', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.attendance.findMany({ where: c.req.query('employee_id') ? eq(schema.attendance.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/attendance', async (c) => {
+hrRouter.post('/attendance', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('att');
     await db.insert(schema.attendance).values({ ...body, id, createdAt: new Date() });
@@ -542,11 +488,11 @@ hrRouter.post('/attendance', async (c) => {
 });
 
 /* ── LEAVE REQUESTS ── */
-hrRouter.get('/leave-requests', async (c) => {
+hrRouter.get('/leave-requests', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.leaveRequests.findMany({ where: c.req.query('employee_id') ? eq(schema.leaveRequests.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/leave-requests', async (c) => {
+hrRouter.post('/leave-requests', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('lr');
     await db.insert(schema.leaveRequests).values({ ...body, id, status: 'Pending', createdAt: new Date() });
@@ -554,7 +500,7 @@ hrRouter.post('/leave-requests', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-hrRouter.patch('/leave-requests/:id/approve', async (c) => {
+hrRouter.patch('/leave-requests/:id/approve', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id'); const body = await c.req.json();
     await db.update(schema.leaveRequests).set({ status: body.status, approvedBy: user.employeeId }).where(eq(schema.leaveRequests.id, id));
@@ -564,17 +510,17 @@ hrRouter.patch('/leave-requests/:id/approve', async (c) => {
 });
 
 /* ── LEAVE BALANCES ── */
-hrRouter.get('/leave-balances', async (c) => {
+hrRouter.get('/leave-balances', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.leaveBalances.findMany({ where: c.req.query('employee_id') ? eq(schema.leaveBalances.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
 
 /* ── EMPLOYEE DOCUMENTS ── */
-hrRouter.get('/documents', async (c) => {
+hrRouter.get('/documents', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.employeeDocuments.findMany({ where: c.req.query('employee_id') ? eq(schema.employeeDocuments.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/documents', async (c) => {
+hrRouter.post('/documents', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('doc');
     await db.insert(schema.employeeDocuments).values({ ...body, id, createdAt: new Date() });
@@ -582,7 +528,7 @@ hrRouter.post('/documents', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-hrRouter.delete('/documents/:id', async (c) => {
+hrRouter.delete('/documents/:id', requireFeatureAccess('hr', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id');
     await db.delete(schema.employeeDocuments).where(eq(schema.employeeDocuments.id, id));
@@ -592,11 +538,11 @@ hrRouter.delete('/documents/:id', async (c) => {
 });
 
 /* ── SALARY STRUCTURES ── */
-hrRouter.get('/salary-structures', async (c) => {
+hrRouter.get('/salary-structures', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.salaryStructures.findMany({ where: c.req.query('employee_id') ? eq(schema.salaryStructures.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/salary-structures', async (c) => {
+hrRouter.post('/salary-structures', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ss');
     await db.insert(schema.salaryStructures).values({ ...body, id, createdAt: new Date() });
@@ -606,11 +552,11 @@ hrRouter.post('/salary-structures', async (c) => {
 });
 
 /* ── LOANS ── */
-hrRouter.get('/loans', async (c) => {
+hrRouter.get('/loans', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.loans.findMany({ where: c.req.query('employee_id') ? eq(schema.loans.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/loans', async (c) => {
+hrRouter.post('/loans', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ln');
     await db.insert(schema.loans).values({ ...body, id, createdAt: new Date() });
@@ -620,11 +566,11 @@ hrRouter.post('/loans', async (c) => {
 });
 
 /* ── ASSETS ── */
-hrRouter.get('/assets', async (c) => {
+hrRouter.get('/assets', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.assets.findMany({ where: c.req.query('assigned_to') ? eq(schema.assets.assignedTo, c.req.query('assigned_to')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/assets', async (c) => {
+hrRouter.post('/assets', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('ast');
     await db.insert(schema.assets).values({ ...body, id, createdAt: new Date() });
@@ -632,7 +578,7 @@ hrRouter.post('/assets', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-hrRouter.patch('/assets/:id', async (c) => {
+hrRouter.patch('/assets/:id', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const id = c.req.param('id'); const body = await c.req.json();
     await db.update(schema.assets).set(body).where(eq(schema.assets.id, id));
@@ -642,11 +588,11 @@ hrRouter.patch('/assets/:id', async (c) => {
 });
 
 /* ── PERFORMANCE REVIEWS ── */
-hrRouter.get('/performance', async (c) => {
+hrRouter.get('/performance', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.performanceReviews.findMany({ where: c.req.query('employee_id') ? eq(schema.performanceReviews.employeeId, c.req.query('employee_id')!) : undefined })); }
   catch (err) { return serverError(c, err); }
 });
-hrRouter.post('/performance', async (c) => {
+hrRouter.post('/performance', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('perf');
     await db.insert(schema.performanceReviews).values({ ...body, id, reviewerId: user.employeeId, createdAt: new Date() });
@@ -658,7 +604,7 @@ hrRouter.post('/performance', async (c) => {
 /* ── SALARY SCHEMA (Active structure + components) ── */
 
 /** GET active structure + all its components for one employee */
-hrRouter.get('/salary-structures/:employeeId/active', async (c) => {
+hrRouter.get('/salary-structures/:employeeId/active', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { employeeId } = c.req.param();
@@ -678,7 +624,7 @@ hrRouter.get('/salary-structures/:employeeId/active', async (c) => {
  * Body: { baseSalary, effectiveDate, components: [{ componentName, componentType, amountType, value }] }
  * Deactivates old structure, creates new one with components.
  */
-hrRouter.post('/salary-structures/:employeeId/setup', async (c) => {
+hrRouter.post('/salary-structures/:employeeId/setup', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -730,7 +676,7 @@ hrRouter.post('/salary-structures/:employeeId/setup', async (c) => {
  * GET /salary-structures/:employeeId/calculate
  * Returns: { baseSalary, earnings[], deductions[], grossSalary, totalDeductions, netPay }
  */
-hrRouter.get('/salary-structures/:employeeId/calculate', async (c) => {
+hrRouter.get('/salary-structures/:employeeId/calculate', requireFeatureAccess('hr', 'payroll', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { employeeId } = c.req.param();
@@ -789,7 +735,7 @@ hrRouter.get('/salary-structures/:employeeId/calculate', async (c) => {
  * Body: { month: 'YYYY-MM' }
  * Calculates and inserts payroll records for ALL active employees.
  */
-hrRouter.post('/payroll/generate', async (c) => {
+hrRouter.post('/payroll/generate', requireFeatureAccess('hr', 'payroll', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -862,34 +808,40 @@ hrRouter.post('/payroll/generate', async (c) => {
 });
 
 /* ── COMPANY DOCUMENTS / SOPs ── */
-hrRouter.get('/company-documents', async (c) => {
+hrRouter.get('/company-documents', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const rows = await db.query.companyDocuments.findMany({
+      where: eq(schema.companyDocuments.department, 'hr'),
       orderBy: (docs, { desc }) => [desc(docs.createdAt)],
     });
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.post('/company-documents', async (c) => {
+hrRouter.post('/company-documents', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json();
     const id = generateId('cdoc');
-    await db.insert(schema.companyDocuments).values({ ...body, id, createdAt: new Date() });
+    await db.insert(schema.companyDocuments).values({
+      ...body, id, department: 'hr', createdAt: new Date(),
+    });
     await logAudit(c.env, user.id, 'CREATE', 'company_documents', id, body);
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
 
-hrRouter.delete('/company-documents/:id', async (c) => {
+hrRouter.delete('/company-documents/:id', requireFeatureAccess('hr', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const id = c.req.param('id');
-    await db.delete(schema.companyDocuments).where(eq(schema.companyDocuments.id, id!));
+    await db.delete(schema.companyDocuments).where(and(
+      eq(schema.companyDocuments.id, id!),
+      eq(schema.companyDocuments.department, 'hr'),
+    ));
     await logAudit(c.env, user.id, 'DELETE', 'company_documents', id!);
     return ok(c, { id, deleted: true });
   } catch (err) { return serverError(c, err); }

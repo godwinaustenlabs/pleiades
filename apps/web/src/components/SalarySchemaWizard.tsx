@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, X, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Save, AlertCircle, Loader2 } from 'lucide-react';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 interface Component {
   id?: string;
@@ -99,8 +99,8 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
       if (!res.ok) throw new Error(d.error || 'Failed to save');
       onSaved();
       onClose();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }

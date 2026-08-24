@@ -6,4 +6,3 @@ export function getDb(env: any) {
 }
 
 export * as schema from './schema';
-export * from './utils/permissions';

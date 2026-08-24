@@ -1,5 +1,17 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
+/**
+ * Authorization model: users_logins.role_id → roles → role_app_permissions.
+ *
+ * Removed in the roles-only consolidation:
+ *   role_permissions / role_hierarchy  — declared here but never deployed, so
+ *     every query against them failed in production.
+ *   user_app_access                    — deprecated, zero rows.
+ *   user_app_permissions               — superseded by role_app_permissions;
+ *     migration 0020 copies its data onto roles.
+ * The tables themselves are dropped in a follow-up migration, not 0020, so the
+ * roles cutover stays reversible.
+ */
 export const roles = sqliteTable('roles', {
   id: text('id').primaryKey(),
   name: text('name').notNull().unique(), // e.g., 'CEO', 'HR_Manager', 'Finance_Manager', 'Employee'
@@ -12,10 +24,6 @@ export const permissions = sqliteTable('permissions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
-export const rolePermissions = sqliteTable('role_permissions', {
-  roleId: text('role_id').notNull().references(() => roles.id),
-  permissionId: text('permission_id').notNull().references(() => permissions.id),
-});
 
 export const usersLogins = sqliteTable('users_logins', {
   id: text('id').primaryKey(),
@@ -58,24 +66,6 @@ export const auditLogs = sqliteTable('audit_logs', {
 
 // ── HIERARCHICAL ACCOUNT MANAGEMENT ──────────────────────────────────────────
 
-/**
- * role_hierarchy
- * Numeric rank per role — drives the RBAC engine instead of a hardcoded string map.
- *   level 1 → CEO         (sees everything, approves any reset, unlimited provision)
- *   level 2 → HR_Manager  (provisions employees under them, approves their resets)
- *   level 3 → Dept_Head   (Finance_Manager, Legal_Officer, Tech_Lead, Marketing_Lead)
- *   level 4 → Employee    (read-own only; can request — not approve — resets)
- *
- * canProvisionRoleIds  → JSON array of role IDs this role may create accounts for
- * allowedModules       → JSON array of app modules ('hr', 'finance', 'legal', 'tech', 'acquisition', 'ops', 'mcp_server')
- */
-export const roleHierarchy = sqliteTable('role_hierarchy', {
-  roleId: text('role_id').primaryKey().references(() => roles.id),
-  level: integer('level').notNull(),
-  canProvisionRoleIds: text('can_provision_role_ids').default('[]'),  // JSON
-  allowedModules: text('allowed_modules').notNull().default('[]'),     // JSON
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
 
 /**
  * user_ownership
@@ -114,29 +104,19 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
   status: text('status').notNull().default('pending'),
 });
 
-/**
- * user_app_access (DEPRECATED — kept for backward compat during migration)
- * Maps a user to a specific app with an access level.
- */
-export const userAppAccess = sqliteTable('user_app_access', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => usersLogins.id),
-  appName: text('app_name').notNull(),
-  accessLevel: text('access_level').notNull(),
-  canCreateTasks: integer('can_create_tasks', { mode: 'boolean' }).default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
+
 
 /**
- * user_app_permissions
- * Granular per-feature permissions for each app.
- * Each row grants a specific feature within an app to a user.
- * A user must have at least one row with can_view=1 for an app to be able to login to that app.
- * Features are app-specific (e.g., HR has 'employees', 'appointments', 'payroll', 'resets', 'tasks').
+ * role_app_permissions
+ * The single source of authorization truth. Each row grants one feature of one
+ * app to a role; users inherit their grants via users_logins.role_id.
+ *
+ * Resolution is: role_id → role_app_permissions. There is no per-user override
+ * and no fallback chain — see src/middleware/rbac.ts.
  */
-export const userAppPermissions = sqliteTable('user_app_permissions', {
+export const roleAppPermissions = sqliteTable('role_app_permissions', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => usersLogins.id),
+  roleId: text('role_id').notNull().references(() => roles.id),
   appName: text('app_name').notNull(),
   feature: text('feature').notNull(),
   canView: integer('can_view', { mode: 'boolean' }).default(false),

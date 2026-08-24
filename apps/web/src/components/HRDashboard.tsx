@@ -9,7 +9,7 @@ interface HRDashboardProps {
   assets: any[];
 }
 
-export default function HRDashboard({ employees, attendance, leaves, payroll, assets }: HRDashboardProps) {
+export default function HRDashboard({ employees, attendance, leaves }: HRDashboardProps) {
   const activeEmployees = employees.filter(e => e.employmentStatus === 'active');
   
   const today = new Date().toISOString().split('T')[0];

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { format, addDays, subDays, startOfWeek, addWeeks, subWeeks, parseISO } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, addWeeks, subWeeks } from 'date-fns';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 import {
   ChevronLeft, ChevronRight, MessageSquare, Mail, CornerDownRight, Share2,
   Calendar as CalendarIcon, Loader2, Download, BarChart3, CheckCircle2,
-  AlertCircle, RefreshCw, TrendingUp, Users, Target
+  AlertCircle, RefreshCw, TrendingUp, Target
 } from 'lucide-react';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 type OutreachRecord = {
   id: string;
@@ -91,9 +91,9 @@ export default function OutreachTracker() {
       }
 
       setFetchError(null);
-    } catch (e: any) {
+    } catch (e) {
       console.error('[OutreachTracker] Fetch error:', e);
-      setFetchError(e.message || 'Failed to load data');
+      setFetchError(errorMessage(e, 'Failed to load data'));
       // Do NOT reset form fields on error — keep whatever was there
     } finally {
       setLoading(false);
@@ -141,7 +141,7 @@ export default function OutreachTracker() {
         }
         setSaveStatus('saved');
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error('[OutreachTracker] Save error:', e);
       setSaveStatus('error');
     }
@@ -266,7 +266,9 @@ export default function OutreachTracker() {
   };
 
   // ─── Save status badge ────────────────────────────────────────────────────
-  const SaveBadge = () => {
+  // A render helper, not a component: defining a component inside render remounts
+  // it (and resets its state) on every render.
+  const renderSaveBadge = () => {
     if (loading) return null;
     if (saveStatus === 'saving') return (
       <span className="text-sm font-semibold text-textSecondary flex items-center gap-2">
@@ -409,7 +411,7 @@ export default function OutreachTracker() {
                   )}
                 </div>
                 <div className="flex items-center gap-4">
-                  <SaveBadge />
+                  {renderSaveBadge()}
                   <button
                     onClick={doSave}
                     disabled={saveStatus === 'saving'}

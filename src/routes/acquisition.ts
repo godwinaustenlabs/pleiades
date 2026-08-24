@@ -16,17 +16,19 @@ acquisitionRouter.use('*', requireAppAccess('acquisition'));
 acquisitionRouter.get('/users', async (c) => {
   try {
     const db = getDb(c.env);
-    const perms = await db.query.userAppPermissions.findMany({
-      where: eq(schema.userAppPermissions.appName, 'acquisition'),
+    // Acquisition access is granted to roles, so resolve the roles that hold it
+    // and then the users carrying those roles.
+    const perms = await db.query.roleAppPermissions.findMany({
+      where: eq(schema.roleAppPermissions.appName, 'acquisition'),
     });
-    const permittedUserIds = new Set(perms.map(p => p.userId));
-    
+    const permittedRoleIds = new Set(perms.map(p => p.roleId));
+
     const allUsers = await db.query.usersLogins.findMany({
       with: { employee: true },
       columns: { passwordHash: false }
     });
-    
-    const acquisitionUsers = allUsers.filter(u => u.isSuperadmin || permittedUserIds.has(u.id));
+
+    const acquisitionUsers = allUsers.filter(u => u.isSuperadmin || permittedRoleIds.has(u.roleId));
     const result = acquisitionUsers.map(u => ({
       id: u.id,
       email: u.email,

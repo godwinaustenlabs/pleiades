@@ -14,9 +14,9 @@ import MobileTabMenu from '../components/MobileTabMenu';
 import Login from './Login';
 import { Share2, RefreshCw, Copy, Check, Eye, Edit2, LogOut } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 export default function UserDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes'>('overview');
@@ -117,7 +117,7 @@ export default function UserDashboard() {
         headers: { Authorization: `Bearer ${token()}` }
       });
       if (res.ok) await fetchAttendance();
-    } catch (err) {}
+    } catch { /* non-fatal: leave prior state */ }
     finally { setAttendanceLoading(false); }
   };
 
@@ -129,7 +129,7 @@ export default function UserDashboard() {
         headers: { Authorization: `Bearer ${token()}` }
       });
       if (res.ok) await fetchAttendance();
-    } catch (err) {}
+    } catch { /* non-fatal: leave prior state */ }
     finally { setAttendanceLoading(false); }
   };
 
@@ -191,7 +191,7 @@ export default function UserDashboard() {
       fetchNotes();
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Error saving note');
+      alert(err instanceof Error ? errorMessage(err) : 'Error saving note');
     }
   };
 
@@ -846,8 +846,8 @@ export default function UserDashboard() {
               if (!res.ok) throw new Error('Failed to update task');
               setEditingTask(null);
               fetchDashboard();
-            } catch (err: any) {
-              alert(err.message || 'Error updating task');
+            } catch (err) {
+              alert(errorMessage(err, 'Error updating task'));
             }
           }}
         />

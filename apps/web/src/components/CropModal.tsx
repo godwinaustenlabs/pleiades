@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, CheckCircle, Loader2, ZoomIn, ZoomOut, Move } from 'lucide-react';
+import { CheckCircle, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface CropModalProps {
   image: string;

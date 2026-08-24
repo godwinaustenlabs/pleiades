@@ -70,11 +70,20 @@ export const employeeDocuments = sqliteTable('employee_documents', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+/**
+ * company_documents
+ * Shared document store, scoped by `department` so each module gets its own
+ * docs tab off one table (hr = SOPs/policies, finance = statements/filings, …).
+ * Files live in R2 via /api/assets; `url` is the download path.
+ */
 export const companyDocuments = sqliteTable('company_documents', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   documentType: text('document_type').notNull(), // SOP, Policy, Manual, Other
   url: text('url').notNull(),
+  // Owning module: 'hr' | 'finance' | … Matches the RBAC app name, so the
+  // docs feature is gated as <department>/docs.
+  department: text('department').notNull().default('hr'),
   uploadedBy: text('uploaded_by').references(() => employees.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });

@@ -1,0 +1,171 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+GAnovaOS ("officeOS") is an internal company operating system deployed as a **single Cloudflare Worker**. One Hono API (`src/`) serves `/api/*` and also serves the built React SPA (`apps/web/dist`) as static assets with SPA fallback. Persistence is Cloudflare D1 (SQLite) via Drizzle ORM, plus KV, R2, and Workers AI bindings.
+
+## Commands
+
+```bash
+npm run dev        # root: `wrangler dev` + `turbo run dev` (Vite) concurrently
+npm run build      # turbo build across workspaces
+npm run lint       # turbo lint (ESLint, web workspace only)
+npm run format     # prettier over **/*.{ts,tsx,md} — see the tabs caveat below
+
+cd apps/web && npm run dev     # Vite only (port 5173, proxies /api -> 127.0.0.1:8788)
+cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
+```
+
+```bash
+npm test          # vitest — RBAC permission-matrix suite (see test/)
+npm run test:watch
+```
+
+`npm run lint` passes (0 errors). It still reports ~290 **warnings**, which are tracked
+debt, not noise — see the commented rules in `apps/web/eslint.config.js` for why each is
+a warning and what clearing it requires. The short version: `no-explicit-any` needs the
+UI to take real domain types (available type-only from `packages/database` via Drizzle's
+`$inferSelect`), and the `react-hooks/*` warnings flag the app-wide "fetch in an effect"
+pattern rather than actual defects. Don't silence them; burn them down.
+
+Gates: `npm test`, `npx tsc --noEmit -p tsconfig.json`, `cd apps/web && npx tsc -b`,
+`npm run build`, `npm run lint`.
+
+### Database / migrations
+
+Run D1 commands **from the repo root** — the D1 binding lives only in the root `wrangler.jsonc`, and `migrations_dir` points at `packages/database/migrations`:
+
+```bash
+npx wrangler d1 migrations apply office-db --local     # or --remote
+npx wrangler d1 execute office-db --local --command="..."
+cd packages/database && npm run generate                # drizzle-kit generate:sqlite
+```
+
+Note: `packages/database`'s own `migrate` script names a stale database (`ganova-db`); the real database is `office-db`. Prefer the root-level command above.
+
+## Architecture
+
+### Request flow
+
+`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack`. Each router applies its own middleware at the top of its file:
+
+```ts
+hrRouter.use('*', authMiddleware);
+hrRouter.use('*', requireAppAccess('hr'));
+```
+
+Anything not matching `/api/*` falls through to the `ASSETS` binding and is served as the SPA.
+
+### Auth (`src/middleware/auth.ts`)
+
+`authMiddleware` resolves an identity from three sources, in order, and sets `c.get('user')` as a `UserPayload`:
+
+1. `x-api-key` header → agent identity from the `api_keys` table (`type: 'agent'`, never superadmin).
+2. `x-slack-id` header → active employee looked up by `employees.slackId`, then their `users_logins` row. If the header is present but unmatched, the request is rejected — it does not fall through.
+3. `Authorization: Bearer <jwt>` → falls back to the `auth_token` cookie, then a `?token=` query param (the query-param path exists so `<img>`/download URLs can authenticate).
+
+`/api/portal` is a **separate auth world**: it has its own `clientAuth` using JWTs with `type: 'client'` and does not use `authMiddleware`.
+
+### Authorization (`src/middleware/rbac.ts`)
+
+**Roles only.** There is exactly one resolution path and no fallback chain:
+
+```
+users_logins.role_id → role_app_permissions → (appName, feature, canView/canEdit/canDelete)
+```
+
+- `requireAppAccess(module)` — gate a whole router (needs view on any feature of it).
+- `requireFeatureAccess(app, feature, 'view'|'edit'|'delete')` / `checkFeaturePermission(...)` — per-feature. `delete` implies `edit` implies `view`.
+- `listGrants(c, userId?)` — effective grants, with the implication chain flattened. Backs `/api/permissions/me` and `/api/permissions/user/:id`.
+- Superadmin (`users_logins.is_superadmin`) bypasses everything. It is settable **only** by direct DB access, never through the API.
+
+Two things worth knowing:
+
+- The role is re-read from the database on each request rather than trusted from the JWT's `roleId` claim — tokens live 8 hours, so trusting the claim would let a revoked role keep working until expiry. Grants are cached per request in a `WeakMap` keyed on the Hono context, so this costs one query per request, not per check.
+- **Committee membership implies the CRM Member role's `crm` grants.** This is a real rule, defined once in `resolveGrants`, not an incidental fallback.
+
+`APP_FEATURES` in `rbac.ts` is the **single source of truth** for which features exist per app, consumed by both the backend and the permissions UI. Adding a feature means editing that map.
+
+Permissions belong to roles, so there is no per-user grant editing. Manage access with
+`PUT /api/admin/roles/:roleId/permissions` (changes everyone holding the role) and
+`PATCH /api/admin/users/:id` (changes which role a user holds).
+
+Removed in the roles-only consolidation — do not reintroduce: `user_app_permissions`
+(superseded), `user_app_access` (deprecated, empty), and `role_permissions` /
+`role_hierarchy` (declared in the schema but never deployed, so every query against them
+failed in production).
+
+### Route conventions
+
+Every handler follows the same shape — deviating from it will look out of place:
+
+```ts
+router.post('/things', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const body = await c.req.json();
+    const id = generateId('thg');              // src/utils/id.ts — prefix_<32 hex>
+    await db.insert(schema.things).values({ ...body, id, createdAt: new Date() });
+    await logAudit(c.env, user.id, 'CREATE', 'things', id, body);   // src/utils/audit.ts
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+```
+
+- Responses always go through `src/utils/response.ts` (`ok`/`created`/`notFound`/`badRequest`/`forbidden`/`serverError`), which produce `{ success, data }` or `{ success, error }`. The frontend unwraps `.data`.
+- `logAudit` writes to `audit_logs` and deliberately swallows its own errors; call it after every mutation.
+- On PATCH, strip `id`, `createdAt`, `updatedAt` from the body before `set(...)`.
+- D1 has a bound-parameter limit — use `chunk` from `src/utils/batch.ts` for bulk writes.
+
+### Database (`packages/database`)
+
+`role_app_permissions` is the authorization table (see Authorization above).
+
+Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@ganova/database` (path-mapped in the root `tsconfig.json`).
+
+Column names are snake_case in SQL, camelCase in TS, and primary keys are often *not* named `id` in SQL (e.g. `universalTasks.id` maps to the `task_id` column) — always check the schema file rather than assuming.
+
+`company_documents` is a **shared** document store scoped by a `department` column
+(`hr`, `finance`, …) rather than one table per module. Each module's routes filter and
+stamp that column server-side — the department is never taken from the request body, and
+deletes are scoped to it so one module cannot remove another's files by id. The UI is one
+component, `apps/web/src/components/DocumentsTab.tsx`, parameterised by endpoint. Adding
+a docs tab to another module means: a `docs` entry in that app's `APP_FEATURES`, three
+routes filtered to the department, a migration granting `<app>/docs`, and mounting
+`<DocumentsTab endpoint="/<app>/documents" … />`. Files themselves live in R2 behind
+`/api/assets`.
+
+`universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
+
+### Frontend (`apps/web`)
+
+One page component per module in `src/pages/` mapped 1:1 to routes in `App.tsx`; pages are large and self-contained (fetching, state, and most UI live inline), with shared widgets extracted into `src/components/`.
+
+`src/lib/auth.ts` owns `API`, `token()`, `currentUser()` and `authHeaders()` — these were previously copy-pasted into ~20 files. Import them; do not redefine them locally.
+
+`src/lib/usePermissions.ts` is the single client-side permission source: it loads
+`/api/permissions/me` once and exposes `can(app, feature, level)` and `canSeeApp(app)`.
+Pages destructure it as `{ grants: userPermissions, loaded: permsLoaded }`. The client
+never computes access itself — it renders what the server says the role grants.
+
+Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_token` for the client portal, `theme` for the dark-mode class toggled on `<html>` in `App.tsx`. Tailwind v4 via PostCSS; dark mode is class-based.
+
+### Bindings and secrets
+
+`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `CLIENTS_KV_NAMESPACE`, `MEMORY_KV_NAMESPACE`, `AI`, and `CRM_BUCKET` (R2, `office-crm-docs`, used by `/api/assets` for uploads/downloads). Local secrets live in `.dev.vars` (`JWT_SECRET`, `API_KEY_SECRET`, `DASHBOARD_PASSWORD`); the full env surface is the `Env` type in `src/index.ts`. Slack (`SLACK_*`) and WhatsApp (`WA_*`) values are secrets, not vars.
+
+## Gotchas
+
+- **Do not run `npm run format` across the repo.** `.prettierrc`/`.editorconfig` specify tabs, but the existing TypeScript sources are 2-space indented; a blanket format reflows the whole codebase. Match the indentation of the file you are editing.
+- The Vite dev proxy targets `127.0.0.1:8788` while `wrangler dev` defaults to `8787`. If `/api` calls 502 in dev, start the worker on 8788 (`npx wrangler dev --port 8788`).
+- `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it.
+- `scratch/` holds one-off seed scripts and SQL patches, and the root `*.sql` dumps are historical snapshots — neither is part of the build.
+- **The Drizzle schema has drifted from production before.** `role_hierarchy` and `role_permissions` were defined in `schema/auth.ts` for a long time but never existed in the D1 database, so every route touching them returned a 500 that nobody noticed. If you add a table, confirm the migration actually ran against `office-db` (`SELECT name FROM sqlite_master`).
+- `test/schema.sql` is the **production** DDL, pulled from `sqlite_master`, precisely so the test database cannot drift from the real one. Regenerate it rather than hand-editing.
+
+## Conventions
+
+Components in `PascalCase`, pages named by domain (`Finance.tsx`), schema files by domain (`schema/crm.ts`). Commit subjects are short with conventional prefixes (`feat:`, `fix:`). Call out schema/migration changes explicitly in PRs when `packages/database/migrations/` is touched.

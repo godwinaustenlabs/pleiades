@@ -3,9 +3,9 @@ import { User, FileText, Banknote, Calendar, Briefcase, TrendingUp, X, Settings,
 import SalarySchemaWizard from './SalarySchemaWizard';
 import PaySlip from './PaySlip';
 import AssetPreviewModal from './AssetPreviewModal';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 interface EmployeeProfileTabsProps {
   employee: any;
@@ -15,7 +15,7 @@ interface EmployeeProfileTabsProps {
 
 type Tab = 'profile' | 'documents' | 'payroll' | 'attendance' | 'assets' | 'performance';
 
-export default function EmployeeProfileTabs({ employee, onClose, onSave }: EmployeeProfileTabsProps) {
+export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfileTabsProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [showSchemaWizard, setShowSchemaWizard] = useState(false);
   const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
@@ -51,8 +51,7 @@ export default function EmployeeProfileTabs({ employee, onClose, onSave }: Emplo
     setUploadingDoc(true);
     try {
       // 1. Upload file to R2
-      const ext = file.name.split('.').pop();
-      const r2Key = `employee-docs/${employee.id}/${Date.now()}-${file.name}`;
+        const r2Key = `employee-docs/${employee.id}/${Date.now()}-${file.name}`;
       const uploadRes = await fetch(`${API}/assets/upload/${r2Key}`, {
         method: 'PUT',
         headers: { 'Content-Type': file.type || 'application/octet-stream', Authorization: `Bearer ${token()}` },
@@ -75,8 +74,8 @@ export default function EmployeeProfileTabs({ employee, onClose, onSave }: Emplo
       });
       if (!metaRes.ok) throw new Error('Failed to save document record');
       await loadDocuments();
-    } catch (err: any) {
-      setDocError(err.message || 'Upload failed');
+    } catch (err) {
+      setDocError(errorMessage(err, 'Upload failed'));
     } finally { setUploadingDoc(false); }
   };
 

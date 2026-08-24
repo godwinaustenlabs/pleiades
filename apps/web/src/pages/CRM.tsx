@@ -3,7 +3,7 @@ import {
   Building2, Ticket, CheckCircle2,
   Plus, Search, Filter, MoreHorizontal,
   ChevronRight, Calendar, FileText, LayoutDashboard,
-  Shield, ExternalLink, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon,
+  Shield, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon,
   PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import AssetPreviewModal from '../components/AssetPreviewModal';
@@ -11,17 +11,10 @@ import TaskBoard from '../components/TaskBoard';
 import EntityForm from '../components/EntityForm';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 export default function CRM() {
   const [committees, setCommittees] = useState<any[]>([]);
@@ -41,8 +34,8 @@ export default function CRM() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
   const [plannerEvents, setPlannerEvents] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [showEntityForm, setShowEntityForm] = useState<'planner' | 'document' | null>(null);
@@ -52,16 +45,6 @@ export default function CRM() {
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch (err) {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     if (user.isSuperadmin) return { canView: true, canEdit: true, canDelete: true };
@@ -89,13 +72,12 @@ export default function CRM() {
       } else if (list.length > 0) setSelectedCommittee(list[0]);
       
       setLoading(false);
-    } catch (err) {
+    } catch {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPermissions();
     fetchCommittees();
   }, []);
 
@@ -107,7 +89,7 @@ export default function CRM() {
       });
       const d = await res.json();
       setTickets(d.data || []);
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   useEffect(() => {
@@ -125,7 +107,7 @@ export default function CRM() {
       const res = await fetch(`${API}/crm/committees/${selectedCommittee.id}/planner`, { headers: { Authorization: `Bearer ${token()}` } });
       const d = await res.json();
       setPlannerEvents(d.data || []);
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const fetchDocuments = async () => {
@@ -134,7 +116,7 @@ export default function CRM() {
       const res = await fetch(`${API}/crm/committees/${selectedCommittee.id}/documents`, { headers: { Authorization: `Bearer ${token()}` } });
       const d = await res.json();
       setDocuments(d.data || []);
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const fetchNotes = async (ticketId: string) => {
@@ -142,7 +124,7 @@ export default function CRM() {
       const res = await fetch(`${API}/crm/tickets/${ticketId}/notes`, { headers: { Authorization: `Bearer ${token()}` } });
       const d = await res.json();
       setNotes(d.data || []);
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleOpenConversation = (ticket: any) => {
@@ -160,7 +142,7 @@ export default function CRM() {
         body: JSON.stringify({ status: 'resolved' }),
       });
       if (res.ok) fetchTickets();
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleDeleteTicket = async (ticketId: string) => {
@@ -174,7 +156,7 @@ export default function CRM() {
         setShowConversation(false);
         fetchTickets();
       }
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleDeletePlanner = async (plannerId: string) => {
@@ -187,7 +169,7 @@ export default function CRM() {
       if (res.ok) {
         fetchPlanner();
       }
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleDeleteDocument = async (docId: string) => {
@@ -200,7 +182,7 @@ export default function CRM() {
       if (res.ok) {
         setDocuments(prev => prev.filter(d => d.id !== docId));
       }
-    } catch (err) { }
+    } catch { /* non-fatal: leave prior state */ }
   };
 
   const handleEntitySubmit = async (data: any) => {
@@ -231,8 +213,8 @@ export default function CRM() {
       }
       setShowEntityForm(null);
       setEditingPlanner(null);
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     }
   };
 

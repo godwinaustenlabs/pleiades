@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
+import { API } from '../lib/auth';
 import {
   Shield, Ticket, AlertCircle, Send, LogOut,
   Building2, ChevronRight, Trash2
 } from 'lucide-react';
 
-const API = '/api';
 
 export default function ClientPortal() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ga_client_token'));
@@ -78,7 +78,7 @@ export default function ClientPortal() {
       } else {
         setError(d.error || 'Login failed');
       }
-    } catch (err) {
+    } catch {
       setError('Connection error');
     } finally {
       setLoading(false);

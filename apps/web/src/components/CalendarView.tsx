@@ -83,8 +83,8 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
     const weekEvents: any[] = [];
 
     tasks.forEach(t => {
-      let start = new Date(t.startDate || t.createdAt);
-      let end = t.dueDate ? new Date(t.dueDate) : new Date(start);
+      const start = new Date(t.startDate || t.createdAt);
+      const end = t.dueDate ? new Date(t.dueDate) : new Date(start);
 
       // Apply drag preview offset dynamically in real time
       const isDraggingThis = isDragging && isDragging.id === t.id;
@@ -153,7 +153,6 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
     
     if (!found) {
       const firstRect = weekElements[0].getBoundingClientRect();
-      const lastRect = weekElements[weekElements.length - 1].getBoundingClientRect();
       if (clientY < firstRect.top) weekIndex = 0;
       else weekIndex = weekElements.length - 1;
     }

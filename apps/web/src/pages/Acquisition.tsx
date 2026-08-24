@@ -13,21 +13,13 @@ import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
 import DealPipelineView from '../components/DealPipelineView';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 
 
 type Tab = 'funnels' | 'campaigns' | 'deals' | 'leads' | 'content' | 'sprints' | 'tasks' | 'outreach';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 function Acquisition() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -46,8 +38,8 @@ function Acquisition() {
   const tabToRoute = (t: string) => t === 'leads' ? 'contacts' : t;
 
   // Granular Permissions
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
@@ -57,16 +49,6 @@ function Acquisition() {
     return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch (err) {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     if (user.isSuperadmin) return { canView: true, canEdit: true, canDelete: true };
@@ -99,9 +81,6 @@ function Acquisition() {
       .catch(() => setLoading(false));
   };
 
-  useEffect(() => {
-    if (isAuthenticated) fetchPermissions();
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permsLoaded) {
@@ -201,7 +180,7 @@ function Acquisition() {
 
       await Promise.all(promises);
       fetchData();
-    } catch (err) {
+    } catch {
       alert('Error importing CSV: Ensure columns match the lead schema.');
     } finally {
       setLoading(false);

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, Key, Save, X, CheckCircle, AlertCircle, Loader2, Camera, Sun, Moon, Monitor } from 'lucide-react';
+import { User, Key, Save, X, Loader2, Camera, Sun, Moon, Monitor } from 'lucide-react';
 import CropModal from './CropModal';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 interface ProfileModalProps {
   onClose: () => void;
@@ -130,8 +130,8 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
       } else {
         throw new Error(d.error || 'Failed to upload photo');
       }
-    } catch (e: any) {
-      setError(e.message || "Save error");
+    } catch (e) {
+      setError(errorMessage(e, "Save error"));
       throw e;
     }
   };

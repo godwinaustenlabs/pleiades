@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Download, FileText, Users, Calendar, Banknote, Shield, Filter, X, Loader2 } from 'lucide-react';
+import { Download, FileText, Users, Calendar, Banknote, Shield, X, Loader2 } from 'lucide-react';
+import { token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 interface HRReportsProps {
   employees: any[];
@@ -18,7 +18,7 @@ interface ReportConfig {
   empKey: string;
 }
 
-export default function HRReports({ employees }: HRReportsProps) {
+export default function HRReports(_props: HRReportsProps) {
   const reports: ReportConfig[] = [
     { id: 'emp_dir', name: 'Employee Directory', desc: 'Complete list of active and inactive employees.', icon: Users, endpoint: '/api/core/employees', dateKey: 'hireDate', empKey: 'id' },
     { id: 'att_rep', name: 'Attendance Report', desc: 'Detailed log of check-in, check-out, status, and total hours.', icon: Calendar, endpoint: '/api/hr/attendance', dateKey: 'date', empKey: 'employeeId' },
@@ -73,7 +73,7 @@ export default function HRReports({ employees }: HRReportsProps) {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to fetch report data');
 
-      let rawData = d.data || [];
+      const rawData = d.data || [];
 
       // 2. Perform Client-side Date Range and Employee Filtering
       const filteredData = rawData.filter((row: any) => {
@@ -137,8 +137,8 @@ export default function HRReports({ employees }: HRReportsProps) {
       // 3. Render and Print PDF
       openReportPrintWindow(selectedReport, finalData);
       setSelectedReport(null);
-    } catch (err: any) {
-      setError(err.message || 'Report generation failed');
+    } catch (err) {
+      setError(errorMessage(err, 'Report generation failed'));
     } finally {
       setLoading(false);
     }

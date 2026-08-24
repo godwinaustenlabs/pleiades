@@ -10,19 +10,12 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'reports' | 'tasks';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 function Ops() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -43,8 +36,8 @@ function Ops() {
   const [showNestedForm, setShowNestedForm] = useState<string | null>(null);
 
   // Granular Permissions
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
 
   const handleLogout = () => {
     localStorage.removeItem('ga_token');
@@ -60,16 +53,6 @@ function Ops() {
     return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch (err) {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     if (user.isSuperadmin) return { canView: true, canEdit: true, canDelete: true };
@@ -101,9 +84,6 @@ function Ops() {
       .then(r => r.json()).then(d => setClientsList(d.data || [])).catch(() => { });
   };
 
-  useEffect(() => {
-    if (isAuthenticated) fetchPermissions();
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permsLoaded) {
@@ -195,8 +175,8 @@ function Ops() {
       setShowEntityForm(false);
       setEditingRecord(null);
       fetchData();
-    } catch (err: any) {
-      alert(err.message || 'An error occurred while saving.');
+    } catch (err) {
+      alert(errorMessage(err, 'An error occurred while saving.'));
       throw err;
     }
   };
@@ -333,8 +313,8 @@ function Ops() {
                   throw new Error(errData.error || `Failed to delete ${tab.slice(0, -1)}`);
                 }
                 fetchData();
-              } catch (err: any) {
-                alert(err.message || 'An error occurred during deletion.');
+              } catch (err) {
+                alert(errorMessage(err, 'An error occurred during deletion.'));
               }
             }}
             rowActions={tab === 'clients' ? [

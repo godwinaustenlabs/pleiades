@@ -5,6 +5,7 @@ import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
 import { ok, badRequest, notFound, serverError } from '../utils/response';
+import { hashPassword, verifyPassword } from '../utils/password';
 
 const portalRouter = new Hono<{ Bindings: Env; Variables: { client: { id: string; clientId: string; name: string; type: string } } }>();
 
@@ -39,8 +40,8 @@ portalRouter.post('/login', async (c) => {
     if (cl.lockedUntil && new Date(cl.lockedUntil) > new Date()) {
       return c.json({ error: 'Account locked. Try later.' }, 429);
     }
-    const hash = await sha256hex(password);
-    if (cl.passwordHash !== hash) {
+    const { valid, needsUpgrade } = await verifyPassword(password, cl.passwordHash);
+    if (!valid) {
       const att = (cl.failedAttempts ?? 0) + 1;
       await db.update(schema.clientLogins).set({
         failedAttempts: att,
@@ -48,7 +49,13 @@ portalRouter.post('/login', async (c) => {
       }).where(eq(schema.clientLogins.id, cl.id));
       return c.json({ error: 'Invalid credentials' }, 401);
     }
-    await db.update(schema.clientLogins).set({ failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(schema.clientLogins.id, cl.id));
+    // Upgrade a legacy unsalted hash while the plaintext is available.
+    await db.update(schema.clientLogins).set({
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+      ...(needsUpgrade ? { passwordHash: await hashPassword(password) } : {}),
+    }).where(eq(schema.clientLogins.id, cl.id));
     const now = Math.floor(Date.now() / 1000);
     const token = await sign({ id: cl.id, clientId: cl.clientId, name: cl.name || (cl as any).client?.clientName, type: 'client', iat: now, exp: now + 28800 }, c.env.JWT_SECRET, 'HS256');
     return ok(c, { token, expiresIn: 28800, client: { id: cl.id, clientId: cl.clientId, email: cl.email, name: cl.name, companyName: (cl as any).client?.clientName } });

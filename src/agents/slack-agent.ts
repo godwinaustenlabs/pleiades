@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Pipeline } from 'nova-agent-framework';
 import { Env } from '../index';
+import { verifySlackSignature, resolveSlackActor } from './lib/slack';
 
 // Helper: Post a message back to Slack using the Bot OAuth token (chat.postMessage)
 async function postToSlack(botToken: string, channel: string, text: string, threadTs?: string) {
@@ -49,8 +50,18 @@ const createSlackAgentRouter = (app: Hono<{ Bindings: Env }>) => {
     let userPrompt = '';
     let threadTs: string | undefined = undefined;
 
+    // Read the RAW body first and verify Slack's signature over those exact
+    // bytes. Parsing and re-serializing changes the bytes and every signature
+    // would fail. Slack signs the url_verification challenge too, so this runs
+    // before the handshake is answered.
+    const rawBody = await c.req.text();
+    if (!(await verifySlackSignature(env, c.req.raw, rawBody))) {
+      console.error('[Slack Agent] Rejected request with invalid signature');
+      return c.text('unauthorized', 401);
+    }
+
     if (contentType.includes('application/json')) {
-      body = await c.req.json();
+      body = JSON.parse(rawBody);
 
       // 1. Handle Slack's URL verification handshake
       if (body.type === 'url_verification') {
@@ -108,25 +119,43 @@ const createSlackAgentRouter = (app: Hono<{ Bindings: Env }>) => {
       const rawText: string = event.text || '';
       userPrompt = rawText.replace(/<@[A-Z0-9]+>/g, '').trim() || 'Hello';
     } else {
-      // Slash commands
-      body = await c.req.parseBody();
-      slackID = body.user_id as string;
-      channel = body.channel_id as string;
-      userPrompt = (body.text as string) || 'Hello';
-      (c as any)._responseUrl = body.response_url as string;
+      // Slash commands (application/x-www-form-urlencoded), parsed from the
+      // same raw bytes the signature was computed over.
+      const form = new URLSearchParams(rawBody);
+      body = Object.fromEntries(form);
+      slackID = form.get('user_id') || '';
+      channel = form.get('channel_id') || '';
+      userPrompt = form.get('text') || 'Hello';
+      (c as any)._responseUrl = form.get('response_url') || '';
 
       if (!slackID || !channel) {
         return c.body(null, 200);
       }
     }
 
+    // Map the (now verified) Slack user to an officeOS account. The Slack id is
+    // never an identity by itself — this lookup is the only thing that turns it
+    // into one, and it happens after signature verification.
+    const actor = await resolveSlackActor(env, slackID);
+    if (!actor) {
+      return c.json({
+        response_type: 'ephemeral',
+        text: "Your Slack account isn't linked to an active officeOS user, so I can't act on your behalf.",
+      }, 200);
+    }
+
+    const actorUserId = actor.userId;
+
     async function callApi(method: string, path: string, body?: any) {
       const baseUrl = new URL(c.req.url).origin;
       const url = `${baseUrl}${path}`;
 
+      // Authorize as the resolved user via the secret-gated internal header.
+      // The secret never leaves the Worker, so this cannot be forged externally.
       const headers: any = {
         'Content-Type': 'application/json',
-        'x-slack-id': slackID
+        'x-agent-actor': actorUserId,
+        'x-agent-secret': env.AGENT_INTERNAL_SECRET || '',
       };
 
       const fetchOpts: any = { method, headers };

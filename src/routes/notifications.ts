@@ -3,7 +3,8 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { ok, serverError, notFound, created } from '../utils/response';
+import { requireFeatureAccess } from '../middleware/rbac';
+import { ok, serverError, notFound, badRequest, created } from '../utils/response';
 import { generateId } from '../utils/id';
 
 const notificationsRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
@@ -46,10 +47,26 @@ notificationsRouter.patch('/:id/read', async (c) => {
 });
 
 // POST /notifications/send (Broadcast or direct)
-notificationsRouter.post('/send', async (c) => {
+/**
+ * POST /notifications/send
+ *
+ * Sends a notification to another user. Previously this had no authorization at
+ * all: any authenticated user could deliver a notification — including an
+ * arbitrary `link` — to any other user, which is a ready-made phishing channel.
+ * It now requires the ability to administer users.
+ */
+notificationsRouter.post('/send', requireFeatureAccess('admin', 'users', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const { userId, title, message, type, link } = await c.req.json();
+    if (!userId || !title || !message) return badRequest(c, 'userId, title and message are required');
+
+    // Only notify accounts that actually exist, so this can't be used to seed
+    // rows against arbitrary ids.
+    const target = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, userId),
+    });
+    if (!target) return notFound(c, 'User not found');
     const id = generateId('ntf');
     
     await db.insert(schema.userNotifications).values({

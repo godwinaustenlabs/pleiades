@@ -12,6 +12,21 @@ import { postToSlack } from '../utils/slack';
 const tasksRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 tasksRouter.use('*', authMiddleware);
 
+/** Departments that carry a `tasks` feature in the permission model. */
+const TASK_DEPARTMENTS = ['hr', 'finance', 'legal', 'ops', 'acquisition', 'tech', 'crm', 'dashboard'];
+
+/**
+ * The departments whose tasks this caller may view. Grants are cached per
+ * request, so this costs at most one database read regardless of list length.
+ */
+async function viewableTaskDepartments(c: any): Promise<string[]> {
+  const allowed: string[] = [];
+  for (const dept of TASK_DEPARTMENTS) {
+    if (await checkFeaturePermission(c, dept, 'tasks', 'view')) allowed.push(dept);
+  }
+  return allowed;
+}
+
 /**
  * Sanitizes input body to ensure FK fields are null instead of empty strings
  */
@@ -41,12 +56,15 @@ tasksRouter.get('/', async (c) => {
       if (!canView) {
         return c.json({ success: false, error: `Permission denied: cannot view tasks for ${dept}` }, 403);
       }
-    } else if (user.type !== 'agent' && !user.isSuperadmin) {
-      // If no department is specified, and user is not superadmin/agent, 
-      // they can only see tasks where they are the assignee, 
-      // UNLESS they have global HR view (simplified for now: just filter if not superadmin)
-      // Actually, let's keep it simple: if no dept, they see all, but we should ideally filter.
-      // For now, let's just enforce dept-based RBAC as requested.
+    }
+
+    // With no `dept` filter this endpoint used to return EVERY task in the
+    // company to any authenticated caller — the branch here was empty, with a
+    // comment acknowledging the check had been skipped. Callers are now limited
+    // to departments they can view tasks in, plus tasks assigned to them.
+    let visibleDepartments: string[] | null = null;
+    if (!dept && user.type !== 'agent' && !user.isSuperadmin) {
+      visibleDepartments = await viewableTaskDepartments(c);
     }
 
     let conditions = [];
@@ -63,6 +81,15 @@ tasksRouter.get('/', async (c) => {
         assignments: true
       }
     });
+
+    // Restrict an unscoped listing to what this caller may actually see.
+    if (visibleDepartments) {
+      const allowed = new Set(visibleDepartments);
+      tasks = tasks.filter((t) =>
+        allowed.has((t.department || '').toLowerCase()) ||
+        (!!user.employeeId && t.assignments?.some((a: any) => a.employeeId === user.employeeId)),
+      );
+    }
 
     // Filter by userId (employeeId) via assignments if specified
     if (userId) {

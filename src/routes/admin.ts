@@ -3,14 +3,20 @@ import { eq, desc, and, or } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess, requireSelfOrOwner } from '../middleware/rbac';
+import { APP_FEATURES, checkFeaturePermission, requireAppAccess, requireFeatureAccess, requireSelfOrOwner } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
+import { chunk } from '../utils/batch';
+import { hashPassword } from '../utils/password';
 
 
 const adminRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 adminRouter.use('*', authMiddleware);
+// The admin surface was previously gated on the `hr` module, which meant any user
+// with HR view could administer roles, users and API keys. It is now gated on a
+// dedicated `admin` module, with per-feature levels on each route below.
+adminRouter.use('*', requireAppAccess('admin'));
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
@@ -22,12 +28,12 @@ async function sha256hex(input: string): Promise<string> {
 
 // ── ROLES ─────────────────────────────────────────────────────────────────────
 
-adminRouter.get('/roles', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/roles', requireFeatureAccess('admin', 'roles', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.roles.findMany()); }
   catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/roles', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.post('/roles', requireFeatureAccess('admin', 'roles', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!;
     const { name } = await c.req.json<{ name: string }>();
@@ -39,7 +45,7 @@ adminRouter.post('/roles', requireAppAccess('hr', 'admin'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.patch('/roles/:id', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.patch('/roles/:id', requireFeatureAccess('admin', 'roles', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!;
     const id = c.req.param('id')!;
@@ -50,7 +56,7 @@ adminRouter.patch('/roles/:id', requireAppAccess('hr', 'admin'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.delete('/roles/:id', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.delete('/roles/:id', requireFeatureAccess('admin', 'roles', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!; const id = c.req.param('id')!;
     if (!id) return badRequest(c, 'id is required');
@@ -61,12 +67,12 @@ adminRouter.delete('/roles/:id', requireAppAccess('hr', 'admin'), async (c) => {
 
 // ── PERMISSIONS ────────────────────────────────────────────────────────────────
 
-adminRouter.get('/permissions', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.permissions.findMany()); }
   catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/permissions', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.post('/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!;
     const { name } = await c.req.json<{ name: string }>();
@@ -78,7 +84,7 @@ adminRouter.post('/permissions', requireAppAccess('hr', 'admin'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.delete('/permissions/:id', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.delete('/permissions/:id', requireFeatureAccess('admin', 'permissions', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!; const id = c.req.param('id')!;
     if (!id) return badRequest(c, 'id is required');
@@ -87,83 +93,65 @@ adminRouter.delete('/permissions/:id', requireAppAccess('hr', 'admin'), async (c
   } catch (err) { return serverError(c, err); }
 });
 
-// ── ROLE PERMISSIONS ───────────────────────────────────────────────────────────
+// ── ROLE GRANTS ────────────────────────────────────────────────────────────────
+// Replaces the old /role-permissions and /role-hierarchy routes, which queried
+// `role_permissions` and `role_hierarchy` — tables that were never deployed, so
+// every one of those routes returned a 500. Role grants now live in
+// role_app_permissions and are managed here.
 
-adminRouter.get('/role-permissions', requireAppAccess('hr'), async (c) => {
-  try { return ok(c, await getDb(c.env).query.rolePermissions.findMany()); }
-  catch (err) { return serverError(c, err); }
-});
-
-adminRouter.post('/role-permissions', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.get('/roles/:roleId/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
   try {
-    const db = getDb(c.env); const user = c.get('user')!!;
-    const body = await c.req.json<{ roleId: string; permissionId: string }>();
-    if (!body.roleId || !body.permissionId) return badRequest(c, 'roleId and permissionId required');
-    await db.insert(schema.rolePermissions).values(body);
-    await logAudit(c.env, user.id, 'CREATE', 'role_permissions', body.roleId, body);
-    return created(c, body);
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.delete('/role-permissions', requireAppAccess('hr', 'admin'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user')!!;
-    const { roleId, permissionId } = await c.req.json<{ roleId: string; permissionId: string }>();
-    await db.delete(schema.rolePermissions).where(
-      and(eq(schema.rolePermissions.roleId, roleId), eq(schema.rolePermissions.permissionId, permissionId))
-    );
-    await logAudit(c.env, user.id, 'DELETE', 'role_permissions', roleId, { permissionId });
-    return ok(c, { removed: true });
-  } catch (err) { return serverError(c, err); }
-});
-
-// ── ROLE HIERARCHY ───────────────────────────────────────────────────────────
-
-adminRouter.get('/role-hierarchy', requireAppAccess('hr'), async (c) => {
-  try { return ok(c, await getDb(c.env).query.roleHierarchy.findMany({ with: { role: true } })); }
-  catch (err) { return serverError(c, err); }
-});
-
-adminRouter.post('/role-hierarchy', requireAppAccess('hr', 'admin'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user')!!;
-    const body = await c.req.json<{
-      roleId: string; level: number;
-      canProvisionRoleIds?: string[]; allowedModules?: string[];
-    }>();
-    if (!body.roleId || body.level === undefined) return badRequest(c, 'roleId and level required');
-    await db.insert(schema.roleHierarchy).values({
-      roleId: body.roleId,
-      level: body.level,
-      canProvisionRoleIds: JSON.stringify(body.canProvisionRoleIds ?? []),
-      allowedModules: JSON.stringify(body.allowedModules ?? []),
-      createdAt: new Date(),
+    const rows = await getDb(c.env).query.roleAppPermissions.findMany({
+      where: eq(schema.roleAppPermissions.roleId, c.req.param('roleId')!),
     });
-    await logAudit(c.env, user.id, 'CREATE', 'role_hierarchy', body.roleId, body);
-    return created(c, body);
+    return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.patch('/role-hierarchy/:roleId', requireAppAccess('hr', 'admin'), async (c) => {
+/**
+ * PUT /admin/roles/:roleId/permissions
+ * Replaces a role's entire grant set. Body: { permissions: [{ appName, feature,
+ * canView, canEdit, canDelete }] }. Every user holding the role is affected.
+ */
+adminRouter.put('/roles/:roleId/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
   try {
-    const db = getDb(c.env); const user = c.get('user')!!;
+    const db = getDb(c.env);
+    const user = c.get('user');
     const roleId = c.req.param('roleId')!;
-    const body = await c.req.json<{
-      level?: number; canProvisionRoleIds?: string[]; allowedModules?: string[];
-    }>();
-    const updates: Record<string, any> = {};
-    if (body.level !== undefined) updates.level = body.level;
-    if (body.canProvisionRoleIds !== undefined) updates.canProvisionRoleIds = JSON.stringify(body.canProvisionRoleIds);
-    if (body.allowedModules !== undefined) updates.allowedModules = JSON.stringify(body.allowedModules);
-    await db.update(schema.roleHierarchy).set(updates).where(eq(schema.roleHierarchy.roleId, roleId));
-    await logAudit(c.env, user.id, 'UPDATE', 'role_hierarchy', roleId, updates);
-    return ok(c, { roleId });
+    const { permissions } = await c.req.json<{ permissions: any[] }>();
+    if (!Array.isArray(permissions)) return badRequest(c, 'permissions array required');
+
+    const unknown = permissions.filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature));
+    if (unknown.length > 0) {
+      return badRequest(c, `Unknown app/feature: ${unknown.map((p) => `${p.appName}/${p.feature}`).join(', ')}`);
+    }
+
+    await db.delete(schema.roleAppPermissions).where(eq(schema.roleAppPermissions.roleId, roleId));
+
+    const now = new Date();
+    const toInsert = permissions.map((p) => ({
+      id: generateId('rap'),
+      roleId,
+      appName: p.appName,
+      feature: p.feature,
+      canView: p.canView ?? false,
+      canEdit: p.canEdit ?? false,
+      canDelete: p.canDelete ?? false,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    for (const batch of chunk(toInsert, 5)) {
+      if (batch.length > 0) await db.insert(schema.roleAppPermissions).values(batch as any);
+    }
+
+    await logAudit(c.env, user.id, 'UPDATE', 'role_app_permissions', roleId, { count: toInsert.length });
+    return ok(c, { roleId, count: toInsert.length });
   } catch (err) { return serverError(c, err); }
 });
 
 // ── USERS (LOGINS) ────────────────────────────────────────────────────────────
 
-adminRouter.get('/users', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.get('/users', requireFeatureAccess('admin', 'users', 'view'), async (c) => {
   try {
     const rows = await getDb(c.env).query.usersLogins.findMany({
       with: { role: true, ownership: true },
@@ -173,7 +161,7 @@ adminRouter.get('/users', requireAppAccess('hr', 'admin'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.get('/users/:id', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/users/:id', requireFeatureAccess('admin', 'users', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.usersLogins.findFirst({
       where: eq(schema.usersLogins.id, c.req.param('id')!),
@@ -185,7 +173,7 @@ adminRouter.get('/users/:id', requireAppAccess('hr'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.patch('/users/:id', requireAppAccess('hr'), async (c) => {
+adminRouter.patch('/users/:id', requireFeatureAccess('admin', 'users', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const body = await c.req.json(); const id = c.req.param('id')!;
@@ -196,7 +184,7 @@ adminRouter.patch('/users/:id', requireAppAccess('hr'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.delete('/users/:id', requireAppAccess('hr'), async (c) => {
+adminRouter.delete('/users/:id', requireFeatureAccess('admin', 'users', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!; const id = c.req.param('id')!;
     await db.delete(schema.usersLogins).where(eq(schema.usersLogins.id, id));
@@ -207,7 +195,7 @@ adminRouter.delete('/users/:id', requireAppAccess('hr'), async (c) => {
 
 // ── HR-GATED USER PROVISIONING ────────────────────────────────────────────────
 
-adminRouter.post('/users/provision', requireAppAccess('hr'), async (c) => {
+adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const actor = c.get('user')!!;
@@ -220,17 +208,10 @@ adminRouter.post('/users/provision', requireAppAccess('hr'), async (c) => {
     }
     if (body.password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
 
-    const hrAccess = await db.query.userAppAccess.findFirst({
-      where: and(
-        eq(schema.userAppAccess.userId, actor.id),
-        eq(schema.userAppAccess.appName, 'hr'),
-        eq(schema.userAppAccess.accessLevel, 'admin')
-      )
-    });
+    // This previously read user_app_access, a table with no rows in production,
+    // so the "is an admin" branch below was unreachable for every caller.
+    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
 
-    if (!hrAccess) {
-      return c.json({ error: 'Forbidden: only HR Admins can provision accounts' }, 403);
-    }
 
     const email = body.email.toLowerCase().trim();
     const username = body.username?.toLowerCase().trim();
@@ -246,7 +227,7 @@ adminRouter.post('/users/provision', requireAppAccess('hr'), async (c) => {
       if (username && existing.username === username) return badRequest(c, 'An account with this username already exists');
     }
 
-    const passwordHash = await sha256hex(body.password);
+    const passwordHash = await hashPassword(body.password);
     const id = generateId('user');
     const now = new Date();
 
@@ -277,19 +258,15 @@ adminRouter.post('/users/provision', requireAppAccess('hr'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.get('/users/my-team', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/users/my-team', requireFeatureAccess('admin', 'users', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const actor = c.get('user')!!;
-    const hrAccess = await db.query.userAppAccess.findFirst({
-      where: and(
-        eq(schema.userAppAccess.userId, actor.id),
-        eq(schema.userAppAccess.appName, 'hr'),
-        eq(schema.userAppAccess.accessLevel, 'admin')
-      )
-    });
+    // This previously read user_app_access, a table with no rows in production,
+    // so the "is an admin" branch below was unreachable for every caller.
+    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
 
-    if (hrAccess) {
+    if (isUserAdmin) {
       const rows = await db.query.usersLogins.findMany({
         with: { role: true, ownership: true },
         columns: { passwordHash: false },
@@ -317,7 +294,7 @@ adminRouter.get('/users/my-team', requireAppAccess('hr'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/users/:id/reassign-owner', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.post('/users/:id/reassign-owner', requireFeatureAccess('admin', 'users', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const userId = c.req.param('id')!;
@@ -345,7 +322,7 @@ adminRouter.post(
       if (!password) return badRequest(c, 'password required');
       if (password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
       const id = c.req.param('id')!;
-      const passwordHash = await sha256hex(password);
+      const passwordHash = await hashPassword(password);
       await db.update(schema.usersLogins)
         .set({ passwordHash, passwordUpdatedAt: new Date(), failedAttempts: 0, lockedUntil: null })
         .where(eq(schema.usersLogins.id, id));
@@ -357,17 +334,14 @@ adminRouter.post(
 
 // ── DELEGATED RESET APPROVAL ──────────────────────────────────────────────────
 
-adminRouter.get('/pending-resets', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/pending-resets', requireFeatureAccess('admin', 'resets', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const actor = c.get('user')!!;
 
-    const hrAccess = await db.query.userAppAccess.findFirst({
-      where: and(
-        eq(schema.userAppAccess.userId, actor.id),
-        eq(schema.userAppAccess.appName, 'hr')
-      )
-    });
+    // This previously read user_app_access, a table with no rows in production,
+    // so the "is an admin" branch below was unreachable for every caller.
+    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
 
     let pendingResets = await db.query.passwordResetTokens.findMany({
       where: eq(schema.passwordResetTokens.status, 'pending'),
@@ -375,7 +349,7 @@ adminRouter.get('/pending-resets', requireAppAccess('hr'), async (c) => {
       orderBy: [desc(schema.passwordResetTokens.requestedAt)],
     });
 
-    if (hrAccess?.accessLevel !== 'admin') {
+    if (!isUserAdmin) {
       const ownerships = await db.query.userOwnership.findMany({
         where: eq(schema.userOwnership.ownerUserId, actor.id),
       });
@@ -397,7 +371,7 @@ adminRouter.get('/pending-resets', requireAppAccess('hr'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/pending-resets/:tokenId/approve', requireAppAccess('hr'), async (c) => {
+adminRouter.post('/pending-resets/:tokenId/approve', requireFeatureAccess('admin', 'resets', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const tokenId = c.req.param('tokenId')!;
@@ -414,14 +388,11 @@ adminRouter.post('/pending-resets/:tokenId/approve', requireAppAccess('hr'), asy
       return badRequest(c, 'Token has expired');
     }
 
-    const hrAccess = await db.query.userAppAccess.findFirst({
-      where: and(
-        eq(schema.userAppAccess.userId, actor.id),
-        eq(schema.userAppAccess.appName, 'hr')
-      )
-    });
+    // This previously read user_app_access, a table with no rows in production,
+    // so the "is an admin" branch below was unreachable for every caller.
+    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
 
-    if (hrAccess?.accessLevel !== 'admin') {
+    if (!isUserAdmin) {
       const ownership = await db.query.userOwnership.findFirst({
         where: and(
           eq(schema.userOwnership.userId, resetRecord.userId),
@@ -442,7 +413,7 @@ adminRouter.post('/pending-resets/:tokenId/approve', requireAppAccess('hr'), asy
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/pending-resets/:tokenId/reject', requireAppAccess('hr'), async (c) => {
+adminRouter.post('/pending-resets/:tokenId/reject', requireFeatureAccess('admin', 'resets', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const tokenId = c.req.param('tokenId')!;
@@ -453,14 +424,11 @@ adminRouter.post('/pending-resets/:tokenId/reject', requireAppAccess('hr'), asyn
     if (!resetRecord) return notFound(c);
     if (resetRecord.status !== 'pending') return badRequest(c, `Token is already '${resetRecord.status}'`);
 
-    const hrAccess = await db.query.userAppAccess.findFirst({
-      where: and(
-        eq(schema.userAppAccess.userId, actor.id),
-        eq(schema.userAppAccess.appName, 'hr')
-      )
-    });
+    // This previously read user_app_access, a table with no rows in production,
+    // so the "is an admin" branch below was unreachable for every caller.
+    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
 
-    if (hrAccess?.accessLevel !== 'admin') {
+    if (!isUserAdmin) {
       const ownership = await db.query.userOwnership.findFirst({
         where: and(
           eq(schema.userOwnership.userId, resetRecord.userId),
@@ -481,14 +449,14 @@ adminRouter.post('/pending-resets/:tokenId/reject', requireAppAccess('hr'), asyn
 
 // ── API KEYS ───────────────────────────────────────────────────────────────────
 
-adminRouter.get('/api-keys', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/api-keys', requireFeatureAccess('admin', 'api_keys', 'view'), async (c) => {
   try {
     const rows = await getDb(c.env).query.apiKeys.findMany({ with: { role: true } });
     return ok(c, rows.map(({ keyHash: _, ...r }) => r));
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/api-keys', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.post('/api-keys', requireFeatureAccess('admin', 'api_keys', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!;
     const { ownerName, roleId } = await c.req.json<{ ownerName: string; roleId: string }>();
@@ -502,7 +470,7 @@ adminRouter.post('/api-keys', requireAppAccess('hr', 'admin'), async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.delete('/api-keys/:id', requireAppAccess('hr', 'admin'), async (c) => {
+adminRouter.delete('/api-keys/:id', requireFeatureAccess('admin', 'api_keys', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user')!!; const id = c.req.param('id')!;
     await db.update(schema.apiKeys).set({ isActive: false }).where(eq(schema.apiKeys.id, id));
@@ -513,7 +481,7 @@ adminRouter.delete('/api-keys/:id', requireAppAccess('hr', 'admin'), async (c) =
 
 // ── AUDIT LOGS ─────────────────────────────────────────────────────────────────
 
-adminRouter.get('/audit-logs', requireAppAccess('hr'), async (c) => {
+adminRouter.get('/audit-logs', requireFeatureAccess('admin', 'audit_logs', 'view'), async (c) => {
   try {
     const { table_name, user_id, action } = c.req.query();
     const rows = await getDb(c.env).query.auditLogs.findMany({

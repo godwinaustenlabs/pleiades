@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Wallet, Receipt, CreditCard, ArrowUpRight, LogOut,
-  FileText, Home, Loader2, Lock
+  FileText, Home, Loader2, Lock, Book
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -11,19 +11,12 @@ import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
 import JournalEntryForm from '../components/JournalEntryForm';
+import DocumentsTab from '../components/DocumentsTab';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
-type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'tasks';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
+type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks';
 
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -79,8 +72,8 @@ function Finance() {
   const [showNestedForm, setShowNestedForm] = useState<string | null>(null); // key = which nested form to show
 
   // Granular Permissions
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
@@ -90,16 +83,6 @@ function Finance() {
     return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch (err) {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     if (user.isSuperadmin) return { canView: true, canEdit: true, canDelete: true };
@@ -115,6 +98,9 @@ function Finance() {
 
   const fetchData = () => {
     if (!permsLoaded) return;
+    // DocumentsTab loads its own data from /finance/documents; the generic
+    // `/finance/<tab>` fetch below would just 404 on /finance/docs.
+    if (tab === 'docs') { setLoading(false); return; }
     setLoading(true);
     let url = `${API}/finance/${tab}`;
     if (tab === 'journals') {
@@ -160,9 +146,6 @@ function Finance() {
     fetchWithAuth(`${API}/core/clients`, setClients);
   };
 
-  useEffect(() => {
-    if (isAuthenticated) fetchPermissions();
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permsLoaded) {
@@ -183,6 +166,7 @@ function Finance() {
       { id: 'trial-balance', label: 'Trial Balance', icon: FileText, feature: 'trial_balance' },
       { id: 'invoices', label: 'Invoices', icon: FileText, feature: 'invoices' },
       { id: 'fund-requests', label: 'Fund Requests', icon: ArrowUpRight, feature: 'fund_requests' },
+      { id: 'docs', label: 'Documents', icon: Book, feature: 'docs' },
       { id: 'tasks', label: 'Tasks', icon: Receipt, feature: 'tasks' },
     ] as const;
 
@@ -396,7 +380,7 @@ function Finance() {
           </div>
         )}
 
-        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && (
+        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && (
           <div className="space-y-4">
             {tab === 'journals' && (
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
@@ -431,7 +415,7 @@ function Finance() {
                 { key: 'amount', label: 'Amount', render: (v: any, row: any) => {
                     let lines = [];
                     if (row.lines) {
-                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch { /* non-fatal: leave prior state */ }
                     }
                     if (lines.length > 0) {
                       const total = lines.filter((l: any) => l.type === 'debit').reduce((acc: number, l: any) => acc + (l.amount || 0), 0);
@@ -443,7 +427,7 @@ function Finance() {
                 { key: 'debitAccountId', label: 'Debit Account', render: (v: any, row: any) => {
                     let lines = [];
                     if (row.lines) {
-                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch { /* non-fatal: leave prior state */ }
                     }
                     if (lines.length > 0) {
                       const drs = lines.filter((l: any) => l.type === 'debit');
@@ -455,7 +439,7 @@ function Finance() {
                 { key: 'creditAccountId', label: 'Credit Account', render: (v: any, row: any) => {
                     let lines = [];
                     if (row.lines) {
-                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch (e) {}
+                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch { /* non-fatal: leave prior state */ }
                     }
                     if (lines.length > 0) {
                       const crs = lines.filter((l: any) => l.type === 'credit');
@@ -464,7 +448,7 @@ function Finance() {
                     return accounts.find(a => a.id === v)?.accountName || v || '—';
                   }
                 },
-                { key: 'invoiceId', label: 'Invoice', render: (v: any) => { const inv = invoices.find((i: any) => i.id === v); return inv ? <span className="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">{inv.invoiceNumber}</span> : <span className="text-textSecondary text-xs">—</span>; } },
+                { key: 'invoiceId', label: 'Invoice', render: (v: any) => { const inv = invoices.find((i) => i.id === v); return inv ? <span className="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">{inv.invoiceNumber}</span> : <span className="text-textSecondary text-xs">—</span>; } },
               ] : tab === 'invoices' ? [
                 { key: 'invoiceNumber', label: 'Invoice #' },
                 { key: 'vendorName', label: 'Vendor' },
@@ -561,6 +545,18 @@ function Finance() {
               </div>
             </div>
           </div>
+        )}
+        {tab === 'docs' && (
+          <DocumentsTab
+            endpoint="/finance/documents"
+            uploadPrefix="finance-docs"
+            heading="Finance Documents"
+            description="Statements, audit reports, tax filings, and supporting records."
+            documentTypes={['Statement', 'Audit Report', 'Tax Filing', 'Invoice Record', 'Bank Record', 'Contract', 'Other']}
+            accentClass="text-emerald-400"
+            canEdit={getPerm('docs').canEdit}
+            canDelete={getPerm('docs').canDelete}
+          />
         )}
         {tab === 'tasks' && <TaskBoard department="Finance" canEdit={getPerm('tasks').canEdit} />}
       </main>

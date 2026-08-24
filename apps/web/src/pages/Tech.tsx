@@ -11,19 +11,11 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
+import { API, token } from '../lib/auth';
+import { usePermissions } from '../lib/usePermissions';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 type Tab = 'projects' | 'environments' | 'releases' | 'issues' | 'tasks' | 'deployments';
-
-interface UserPermission {
-  appName: string;
-  feature: string;
-  canView: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-}
 
 function Tech() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -40,8 +32,8 @@ function Tech() {
   const [stories, setStories] = useState<any[]>([]);
 
   // Granular Permissions
-  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
-  const [permsLoaded, setPermsLoaded] = useState(false);
+  // Grants come from the shared hook, which resolves them from the user's role.
+  const { grants: userPermissions, loaded: permsLoaded } = usePermissions();
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
@@ -51,16 +43,6 @@ function Tech() {
     return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
   };
 
-  const fetchPermissions = async () => {
-    try {
-      const res = await fetch(`${API}/permissions/user/${user.id}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const d = await res.json();
-      setUserPermissions(d.data || []);
-      setPermsLoaded(true);
-    } catch {
-      setPermsLoaded(true);
-    }
-  };
 
   const getPerm = (feature: string) => {
     if (user.isSuperadmin) return { canView: true, canEdit: true, canDelete: true };
@@ -95,9 +77,6 @@ function Tech() {
     fetch(`${API}/tech/stories`, auth).then(r => r.json()).then(d => setStories(d.data || [])).catch(() => { });
   };
 
-  useEffect(() => {
-    if (isAuthenticated) fetchPermissions();
-  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permsLoaded) {

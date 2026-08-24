@@ -4,9 +4,11 @@ import { sign } from 'hono/jwt';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { ok, badRequest, notFound, serverError } from '../utils/response';
+import { checkFeaturePermission } from '../middleware/rbac';
+import { ok, badRequest, notFound, forbidden, serverError } from '../utils/response';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
+import { hashPassword, verifyPassword } from '../utils/password';
 
 const authRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 
@@ -70,12 +72,10 @@ authRouter.post('/login', async (c) => {
       }, 429);
     }
 
-    const passwordHash = await sha256hex(password);
-    console.log('[DEBUG] Password hash calculated');
+    const { valid, needsUpgrade } = await verifyPassword(password, user.passwordHash);
 
-    if (user.passwordHash !== passwordHash) {
+    if (!valid) {
       // Increment failed attempts
-      console.log('[DEBUG] Password mismatch, incrementing attempts');
       const attempts = (user.failedAttempts ?? 0) + 1;
       const lockUntil = attempts >= MAX_FAILED_ATTEMPTS
         ? new Date(Date.now() + LOCKOUT_SECONDS * 1000)
@@ -86,10 +86,19 @@ authRouter.post('/login', async (c) => {
       return c.json({ success: false, error: 'Invalid credentials' }, 401);
     }
 
-    // Successful login: reset counters + record timestamp
-    console.log('[DEBUG] Successful login, updating record');
+    // Successful login: reset counters + record timestamp. This is also the only
+    // point at which the plaintext is available, so a legacy unsalted SHA-256
+    // hash is transparently upgraded to PBKDF2 here — no password reset needed.
+    const successUpdate: Record<string, unknown> = {
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+    };
+    if (needsUpgrade) {
+      successUpdate.passwordHash = await hashPassword(password);
+    }
     await db.update(schema.usersLogins)
-      .set({ failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() })
+      .set(successUpdate)
       .where(eq(schema.usersLogins.id, user.id));
 
     await logAudit(c.env, user.id, 'LOGIN', 'users_logins', user.id, { email });
@@ -114,15 +123,6 @@ authRouter.post('/login', async (c) => {
     }
     const token = await sign(payload, c.env.JWT_SECRET, 'HS256');
 
-    console.log('[DEBUG] Fetching app access records');
-    const appAccessRecords = await db.query.userAppAccess.findMany({
-      where: eq(schema.userAppAccess.userId, user.id)
-    });
-    const appAccess = appAccessRecords.reduce((acc, curr) => {
-      acc[curr.appName] = curr.accessLevel;
-      return acc;
-    }, {} as Record<string, string>);
-
     console.log('[DEBUG] Login successful');
     return ok(c, {
       token,
@@ -137,7 +137,6 @@ authRouter.post('/login', async (c) => {
         roleName: user.role?.name,
         employeeId: user.employeeId,
         isSuperadmin: user.isSuperadmin || false,
-        appAccess,
       },
     });
   } catch (err) {
@@ -160,20 +159,11 @@ authRouter.get('/whoami', authMiddleware, async (c) => {
 
   if (!userData) return c.json({ success: false, error: 'User not found' }, 404);
 
-  const appAccessRecords = await db.query.userAppAccess.findMany({
-    where: eq(schema.userAppAccess.userId, user.id)
-  });
-
-  const appAccess = appAccessRecords.reduce((acc, curr) => {
-    acc[curr.appName] = curr.accessLevel;
-    return acc;
-  }, {} as Record<string, string>);
-
   return ok(c, {
     ...user,
     username: userData.username,
     name: userData.name,
-    appAccess
+    roleId: userData.roleId,
   });
 });
 
@@ -219,7 +209,7 @@ authRouter.patch('/profile', authMiddleware, async (c) => {
     if (body.phone !== undefined) updateData.phone = body.phone.trim();
     if (body.password) {
       if (body.password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
-      updateData.passwordHash = await sha256hex(body.password);
+      updateData.passwordHash = await hashPassword(body.password);
       updateData.passwordUpdatedAt = new Date();
     }
 
@@ -244,20 +234,13 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
     if (!file) return badRequest(c, 'No file uploaded');
     if (!c.env.CRM_BUCKET) return badRequest(c, 'Storage bucket not configured');
 
-    // If targeting someone else, must be superadmin or have HR edit permission
+    // If targeting someone else, must be superadmin or hold hr/employees edit.
+    // This previously read the deprecated user_app_access table (empty in
+    // production) and then called an unimported `forbidden`, so the path threw a
+    // ReferenceError and 500'd for every non-superadmin.
     if (targetEmployeeId !== user.employeeId) {
-      if (!user.isSuperadmin) {
-        // Check for HR app access if not superadmin
-        const db = getDb(c.env);
-        const access = await db.query.userAppAccess.findFirst({
-          where: and(
-            eq(schema.userAppAccess.userId, user.id),
-            eq(schema.userAppAccess.appName, 'hr')
-          )
-        });
-        if (!access || (access.accessLevel !== 'edit' && access.accessLevel !== 'admin' && access.accessLevel !== 'owner')) {
-          return forbidden(c, 'You do not have permission to update other employee photos');
-        }
+      if (!(await checkFeaturePermission(c, 'hr', 'employees', 'edit'))) {
+        return forbidden(c, 'You do not have permission to update other employee photos');
       }
     }
 
@@ -389,7 +372,7 @@ authRouter.post('/complete-reset', async (c) => {
       return c.json({ success: false, error: 'Token has expired. Please request a new reset.' }, 400);
     }
 
-    const newHash = await sha256hex(newPassword);
+    const newHash = await hashPassword(newPassword);
     await db.update(schema.usersLogins)
       .set({ passwordHash: newHash, passwordUpdatedAt: new Date(), failedAttempts: 0, lockedUntil: null })
       .where(eq(schema.usersLogins.id, resetRecord.userId));

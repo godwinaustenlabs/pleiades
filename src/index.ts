@@ -48,6 +48,8 @@ export type Env = {
   MEMORY_KV_NAMESPACE?: KVNamespace;
   AI?: Ai;
   CRM_BUCKET?: R2Bucket;
+  /** Shared secret gating the internal `x-agent-actor` identity header. */
+  AGENT_INTERNAL_SECRET?: string;
   SLACK_BOT_OAUTH_TOKEN?: string;
   SLACK_SIGNING_SECRET?: string;
   SLACK_CLIENT_ID?: string;

@@ -48,21 +48,21 @@ function getJournalLines(journal: any) {
 
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
-import { ok, created, notFound, serverError } from '../utils/response';
+import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 
 const financeRouter = new Hono<{ Bindings: Env }>();
 financeRouter.use('*', authMiddleware);
 financeRouter.use('*', requireAppAccess('finance'));
 
 /* ── LEDGERS ── */
-financeRouter.get('/ledgers', async (c) => {
+financeRouter.get('/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.ledgers.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/ledgers', async (c) => {
+financeRouter.post('/ledgers', requireFeatureAccess('finance', 'ledgers', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('ldg');
@@ -70,13 +70,13 @@ financeRouter.post('/ledgers', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'ledgers', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/ledgers/:id', async (c) => {
+financeRouter.get('/ledgers/:id', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.ledgers.findFirst({ where: eq(schema.ledgers.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/ledgers/:id', async (c) => {
+financeRouter.patch('/ledgers/:id', requireFeatureAccess('finance', 'ledgers', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -85,7 +85,7 @@ financeRouter.patch('/ledgers/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'ledgers', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/ledgers/:id', async (c) => {
+financeRouter.delete('/ledgers/:id', requireFeatureAccess('finance', 'ledgers', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     // Check if any accounts are linked to this ledger
@@ -100,7 +100,7 @@ financeRouter.delete('/ledgers/:id', async (c) => {
 });
 
 /* ── ACCOUNTS ── */
-financeRouter.get('/accounts', async (c) => {
+financeRouter.get('/accounts', requireFeatureAccess('finance', 'accounts', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { startDate, endDate } = c.req.query();
@@ -169,7 +169,7 @@ financeRouter.get('/accounts', async (c) => {
   catch (err) { return serverError(c, err); }
 });
 
-financeRouter.post('/accounts', async (c) => {
+financeRouter.post('/accounts', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('acc');
@@ -178,13 +178,13 @@ financeRouter.post('/accounts', async (c) => {
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/accounts/:id', async (c) => {
+financeRouter.get('/accounts/:id', requireFeatureAccess('finance', 'accounts', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.accounts.findFirst({ where: eq(schema.accounts.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/accounts/:id', async (c) => {
+financeRouter.patch('/accounts/:id', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -193,7 +193,7 @@ financeRouter.patch('/accounts/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'accounts', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/accounts/:id', async (c) => {
+financeRouter.delete('/accounts/:id', requireFeatureAccess('finance', 'accounts', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     // Check if any journal entries reference this account
@@ -209,7 +209,7 @@ financeRouter.delete('/accounts/:id', async (c) => {
 
 
 /* ── FUND REQUESTS ── */
-financeRouter.get('/fund-requests', async (c) => {
+financeRouter.get('/fund-requests', requireFeatureAccess('finance', 'fund_requests', 'view'), async (c) => {
   try {
     const { status, committee_id } = c.req.query();
     const rows = await getDb(c.env).query.fundRequests.findMany({
@@ -221,7 +221,7 @@ financeRouter.get('/fund-requests', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/fund-requests', async (c) => {
+financeRouter.post('/fund-requests', requireFeatureAccess('finance', 'fund_requests', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('fr');
@@ -229,13 +229,13 @@ financeRouter.post('/fund-requests', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'fund_requests', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/fund-requests/:id', async (c) => {
+financeRouter.get('/fund-requests/:id', requireFeatureAccess('finance', 'fund_requests', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.fundRequests.findFirst({ where: eq(schema.fundRequests.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/fund-requests/:id', async (c) => {
+financeRouter.patch('/fund-requests/:id', requireFeatureAccess('finance', 'fund_requests', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -244,7 +244,7 @@ financeRouter.patch('/fund-requests/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'fund_requests', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/fund-requests/:id', async (c) => {
+financeRouter.delete('/fund-requests/:id', requireFeatureAccess('finance', 'fund_requests', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.fundRequests).where(eq(schema.fundRequests.id, id));
@@ -253,7 +253,7 @@ financeRouter.delete('/fund-requests/:id', async (c) => {
 });
 
 /* ── INVOICES ── */
-financeRouter.get('/invoices', async (c) => {
+financeRouter.get('/invoices', requireFeatureAccess('finance', 'invoices', 'view'), async (c) => {
   try {
     const { status, client_id } = c.req.query();
     const rows = await getDb(c.env).query.invoices.findMany({
@@ -265,7 +265,7 @@ financeRouter.get('/invoices', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/invoices', async (c) => {
+financeRouter.post('/invoices', requireFeatureAccess('finance', 'invoices', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('inv');
@@ -273,13 +273,13 @@ financeRouter.post('/invoices', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'invoices', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/invoices/:id', async (c) => {
+financeRouter.get('/invoices/:id', requireFeatureAccess('finance', 'invoices', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.invoices.findFirst({ where: eq(schema.invoices.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/invoices/:id', async (c) => {
+financeRouter.patch('/invoices/:id', requireFeatureAccess('finance', 'invoices', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -288,7 +288,7 @@ financeRouter.patch('/invoices/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'invoices', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/invoices/:id', async (c) => {
+financeRouter.delete('/invoices/:id', requireFeatureAccess('finance', 'invoices', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.invoices).where(eq(schema.invoices.id, id));
@@ -297,7 +297,7 @@ financeRouter.delete('/invoices/:id', async (c) => {
 });
 
 /* ── TRANSACTIONS ── */
-financeRouter.get('/transactions', async (c) => {
+financeRouter.get('/transactions', requireFeatureAccess('finance', 'transactions', 'view'), async (c) => {
   try {
     const { account_id, client_id } = c.req.query();
     const rows = await getDb(c.env).query.transactions.findMany({
@@ -309,7 +309,7 @@ financeRouter.get('/transactions', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/transactions', async (c) => {
+financeRouter.post('/transactions', requireFeatureAccess('finance', 'transactions', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('txn');
@@ -319,13 +319,13 @@ financeRouter.post('/transactions', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'transactions', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/transactions/:id', async (c) => {
+financeRouter.get('/transactions/:id', requireFeatureAccess('finance', 'transactions', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.transactions.findFirst({ where: eq(schema.transactions.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/transactions/:id', async (c) => {
+financeRouter.patch('/transactions/:id', requireFeatureAccess('finance', 'transactions', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -334,7 +334,7 @@ financeRouter.patch('/transactions/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'transactions', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/transactions/:id', async (c) => {
+financeRouter.delete('/transactions/:id', requireFeatureAccess('finance', 'transactions', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.transactions).where(eq(schema.transactions.id, id));
@@ -343,11 +343,11 @@ financeRouter.delete('/transactions/:id', async (c) => {
 });
 
 /* ── P&L REPORTS ── */
-financeRouter.get('/pl-reports', async (c) => {
+financeRouter.get('/pl-reports', requireFeatureAccess('finance', 'accounts', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.plReports.findMany()); }
   catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/pl-reports', async (c) => {
+financeRouter.post('/pl-reports', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('pl');
@@ -355,13 +355,13 @@ financeRouter.post('/pl-reports', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'pl_reports', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/pl-reports/:id', async (c) => {
+financeRouter.get('/pl-reports/:id', requireFeatureAccess('finance', 'accounts', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.plReports.findFirst({ where: eq(schema.plReports.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/pl-reports/:id', async (c) => {
+financeRouter.patch('/pl-reports/:id', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -370,7 +370,7 @@ financeRouter.patch('/pl-reports/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'pl_reports', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/pl-reports/:id', async (c) => {
+financeRouter.delete('/pl-reports/:id', requireFeatureAccess('finance', 'accounts', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     await db.delete(schema.plReports).where(eq(schema.plReports.id, id));
@@ -379,7 +379,7 @@ financeRouter.delete('/pl-reports/:id', async (c) => {
 });
 
 /* ── GENERAL JOURNALS ── */
-financeRouter.get('/journals', async (c) => {
+financeRouter.get('/journals', requireFeatureAccess('finance', 'journals', 'view'), async (c) => {
   try {
     const { ledger_id, startDate, endDate } = c.req.query();
     const filters = [];
@@ -393,7 +393,7 @@ financeRouter.get('/journals', async (c) => {
     return ok(c, rows);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.post('/journals', async (c) => {
+financeRouter.post('/journals', requireFeatureAccess('finance', 'journals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = generateId('jrn');
@@ -414,13 +414,13 @@ financeRouter.post('/journals', async (c) => {
     await logAudit(c.env, user.id, 'CREATE', 'general_journals', id, body); return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/journals/:id', async (c) => {
+financeRouter.get('/journals/:id', requireFeatureAccess('finance', 'journals', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.generalJournals.findFirst({ where: eq(schema.generalJournals.id, c.req.param('id')) });
     if (!row) return notFound(c); return ok(c, row);
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.patch('/journals/:id', async (c) => {
+financeRouter.patch('/journals/:id', requireFeatureAccess('finance', 'journals', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any);
     const body = await c.req.json(); const id = c.req.param('id');
@@ -441,7 +441,7 @@ financeRouter.patch('/journals/:id', async (c) => {
     await logAudit(c.env, user.id, 'UPDATE', 'general_journals', id, body); return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.delete('/journals/:id', async (c) => {
+financeRouter.delete('/journals/:id', requireFeatureAccess('finance', 'journals', 'delete'), async (c) => {
   try {
     const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
     // Journals have no dependents — safe to delete directly
@@ -451,7 +451,7 @@ financeRouter.delete('/journals/:id', async (c) => {
 });
 
 /* ── LEDGER VIEW ── */
-financeRouter.get('/ledger-view', async (c) => {
+financeRouter.get('/ledger-view', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {
   try {
     const { account_id, startDate, endDate } = c.req.query();
     if (!account_id) return c.json({ error: 'account_id required' }, 400);
@@ -560,7 +560,7 @@ financeRouter.get('/ledger-view', async (c) => {
 });
 
 /* ── TRIAL BALANCE ── */
-financeRouter.get('/trial-balance', async (c) => {
+financeRouter.get('/trial-balance', requireFeatureAccess('finance', 'trial_balance', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
     const { startDate, endDate } = c.req.query();
@@ -608,7 +608,7 @@ financeRouter.get('/trial-balance', async (c) => {
 });
 
 /* ── EXPORTS ── */
-financeRouter.get('/export/journals', async (c) => {
+financeRouter.get('/export/journals', requireFeatureAccess('finance', 'journals', 'view'), async (c) => {
   try {
     const { startDate, endDate } = c.req.query();
     const filters = [];
@@ -629,12 +629,66 @@ financeRouter.get('/export/journals', async (c) => {
     return c.text(header + csv, 200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="journals.csv"' });
   } catch (err) { return serverError(c, err); }
 });
-financeRouter.get('/export/ledgers', async (c) => {
+financeRouter.get('/export/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {
   try {
     const rows = await getDb(c.env).query.ledgers.findMany();
     const header = 'ID,Name,Description,Created At\n';
     const csv = rows.map(r => `${r.id},"${r.ledgerName}","${r.description}",${r.createdAt}`).join('\n');
     return c.text(header + csv, 200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="ledgers.csv"' });
+  } catch (err) { return serverError(c, err); }
+});
+
+/* ── DOCUMENTS ── */
+// Finance's document store. Shares the company_documents table with HR, scoped
+// by `department`, so both modules get a docs tab off one table.
+
+financeRouter.get('/documents', requireFeatureAccess('finance', 'docs', 'view'), async (c) => {
+  try {
+    const rows = await getDb(c.env).query.companyDocuments.findMany({
+      where: eq(schema.companyDocuments.department, 'finance'),
+      orderBy: (docs, { desc }) => [desc(docs.createdAt)],
+    });
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+financeRouter.post('/documents', requireFeatureAccess('finance', 'docs', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user' as any);
+    const body = await c.req.json();
+    if (!body?.title?.trim()) return badRequest(c, 'title is required');
+    if (!body?.url?.trim()) return badRequest(c, 'url is required');
+
+    const id = generateId('fdoc');
+    await db.insert(schema.companyDocuments).values({
+      id,
+      title: body.title,
+      documentType: body.documentType || 'Other',
+      url: body.url,
+      department: 'finance',   // never taken from the request body
+      uploadedBy: body.uploadedBy || null,
+      createdAt: new Date(),
+    });
+    await logAudit(c.env, user.id, 'CREATE', 'company_documents', id, { ...body, department: 'finance' });
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+financeRouter.delete('/documents/:id', requireFeatureAccess('finance', 'docs', 'delete'), async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user' as any);
+    const id = c.req.param('id')!;
+
+    // Scope the delete to finance so this route cannot remove another module's
+    // documents by id.
+    const doc = await db.query.companyDocuments.findFirst({
+      where: and(eq(schema.companyDocuments.id, id), eq(schema.companyDocuments.department, 'finance')),
+    });
+    if (!doc) return notFound(c, 'Document not found');
+
+    await db.delete(schema.companyDocuments).where(eq(schema.companyDocuments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'company_documents', id);
+    return ok(c, { id, deleted: true });
   } catch (err) { return serverError(c, err); }
 });
 

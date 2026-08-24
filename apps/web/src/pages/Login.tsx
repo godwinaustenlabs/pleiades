@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Shield, Key, AlertCircle, Loader2 } from 'lucide-react';
+import { Key, AlertCircle, Loader2 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { API } from '../lib/auth';
 
-const API = '/api';
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [identifier, setIdentifier] = useState('');
@@ -32,7 +32,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       localStorage.setItem('ga_token', data.data.token);
       localStorage.setItem('ga_user', JSON.stringify(data.data.user));
       onLogin();
-    } catch (err) {
+    } catch {
       setError('Network error. Please try again.');
       setLoading(false);
     }

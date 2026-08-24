@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Clock, Tags } from 'lucide-react';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 type Status = 'todo' | 'in_progress' | 'completed' | 'blocked';
 const STATUSES: { key: Status; label: string; color: string; bg: string }[] = [
@@ -115,8 +115,8 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
       if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to create task'); }
       setShowCreate(false);
       fetchTasks();
-    } catch (err: any) {
-      alert(err.message || 'An error occurred');
+    } catch (err) {
+      alert(errorMessage(err, 'An error occurred'));
     }
   };
 
@@ -130,8 +130,8 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
       if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to update task'); }
       setEditingTask(null);
       fetchTasks();
-    } catch (err: any) {
-      alert(err.message || 'An error occurred');
+    } catch (err) {
+      alert(errorMessage(err, 'An error occurred'));
     }
   };
 
@@ -396,7 +396,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
       const attRes = await fetch(`${API}/tasks/${initialData.id}/attachments`, { headers: { Authorization: `Bearer ${token()}` } });
       const attD = await attRes.json();
       setAttachments(attD.data || []);
-    } catch (err) {
+    } catch {
       alert('File upload failed');
     } finally {
       setUploading(false);

@@ -3,11 +3,13 @@ import { eq, and, or, desc, inArray } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
+import { requireAppAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 
 const dashboardRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 dashboardRouter.use('*', authMiddleware);
+dashboardRouter.use('*', requireAppAccess('dashboard'));
 
 /* ── GET /dashboard/me — Aggregated user dashboard ── */
 dashboardRouter.get('/me', async (c) => {

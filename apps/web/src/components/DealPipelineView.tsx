@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Target, Plus, Edit2, Trash2, GripVertical, DollarSign, Loader2 } from 'lucide-react';
+import { Target, Plus, Edit2, Trash2, DollarSign, Loader2 } from 'lucide-react';
 import EntityForm from './EntityForm';
+import { API, token } from '../lib/auth';
 
 interface DealStage {
   id: string;
@@ -32,8 +33,6 @@ interface DealPipelineViewProps {
   canDelete: boolean;
 }
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 
 export default function DealPipelineView({ canEdit, canDelete }: DealPipelineViewProps) {
   const [pipelines, setPipelines] = useState<DealPipeline[]>([]);

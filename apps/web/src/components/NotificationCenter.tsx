@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Bell, Send, Info, X, MessageSquare, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { token } from '../lib/auth';
 
 interface NotificationCenterProps {
   currentApp: string; // 'hr', 'finance', 'legal', etc.
@@ -20,7 +21,6 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
   const [sending, setSending] = useState(false);
 
   const API = '/api';
-  const token = () => localStorage.getItem('ga_token') || '';
 
   const APPS = [
     { id: 'hr', label: 'HR' },

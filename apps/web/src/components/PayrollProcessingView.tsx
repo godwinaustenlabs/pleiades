@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Play, Download, CheckCircle2, AlertCircle, FileText, Loader2 } from 'lucide-react';
+import { Play, Download, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { API, token } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
-const API = '/api';
-const token = () => localStorage.getItem('ga_token') || '';
 const fmt = (n: number) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
 interface PayrollProcessingViewProps {
@@ -41,8 +41,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
       );
       setPreviewData(previews);
       setStep(2);
-    } catch (err: any) {
-      setError(err.message || 'Failed to preview payroll');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to preview payroll'));
     } finally {
       setLoadingPreview(false);
     }
@@ -62,8 +62,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
       setResults(d.data?.results || []);
       setStep(3);
       onPayrollGenerated?.();
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate payroll');
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to generate payroll'));
     } finally {
       setProcessing(false);
     }

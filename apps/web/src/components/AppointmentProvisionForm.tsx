@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Shield, ChevronDown, ChevronRight, Check, Eye, Edit3, ShieldCheck, Minus } from 'lucide-react';
+import { X, Shield, Check } from 'lucide-react';
+import { token as authToken } from '../lib/auth';
+import { errorMessage } from '../lib/errors';
 
 interface AppointmentProvisionFormProps {
   onClose: () => void;
@@ -30,29 +32,24 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
     employeeId: initialData?.employeeId || '',
     committeeId: initialData?.committeeId || '',
     roleOrTitle: initialData?.roleOrTitle || '',
+    roleId: initialData?.roleId || '',
     termType: initialData?.termType || 'permanent',
     appointmentDate: initialData?.appointmentDate || new Date().toISOString().split('T')[0],
   });
 
-  const [appFeatures, setAppFeatures] = useState<Record<string, string[]>>({});
-  const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
+  // Access is granted by role, so this form picks a role and previews what it
+  // confers rather than editing per-feature permissions for one user.
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+  const [rolePreview, setRolePreview] = useState<Permission[]>([]);
 
   useEffect(() => {
-    const token = localStorage.getItem('ga_token');
+    const token = authToken();
     
-    // 1. Fetch App Features
-    fetch('/api/permissions/app-features', { headers: { Authorization: `Bearer ${token}` } })
+    // 1. Roles available to assign
+    fetch('/api/admin/roles', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(d => {
-        if (d.data) {
-          setAppFeatures(d.data);
-          // Expand all by default
-          const expanded: Record<string, boolean> = {};
-          Object.keys(d.data).forEach(app => expanded[app] = true);
-          setExpandedApps(expanded);
-        }
-      });
+      .then(d => { if (d.data) setRoles(d.data); })
+      .catch(() => {});
 
     // 2. Fetch current account if editing
     if (initialData?.accountId) {
@@ -65,63 +62,21 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
               email: d.data.email || '',
               username: d.data.username || '',
               name: d.data.name || '',
+              roleId: d.data.roleId || prev.roleId,
             }));
-          }
-        });
-
-      // 3. Fetch current permissions
-      fetch(`/api/permissions/user/${initialData.accountId}`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(d => {
-          if (d.data) {
-            setPermissions(d.data);
           }
         });
     }
   }, [initialData]);
 
-  const getLevel = (appName: string, feature: string): 'none' | 'view' | 'edit' | 'delete' => {
-    const p = permissions.find(p => p.appName === appName && p.feature === feature);
-    if (!p || !p.canView) return 'none';
-    if (p.canDelete) return 'delete';
-    if (p.canEdit) return 'edit';
-    return 'view';
-  };
-  
-  const updateLevel = (appName: string, feature: string, level: 'none' | 'view' | 'edit' | 'delete') => {
-    const canView = level !== 'none';
-    const canEdit = level === 'edit' || level === 'delete';
-    const canDelete = level === 'delete';
-    
-    setPermissions(prev => {
-      const idx = prev.findIndex(p => p.appName === appName && p.feature === feature);
-      if (idx > -1) {
-        const newPerms = [...prev];
-        newPerms[idx] = { ...newPerms[idx], canView, canEdit, canDelete };
-        return newPerms;
-      } else {
-        return [...prev, { appName, feature, canView, canEdit, canDelete }];
-      }
-    });
-  };
-  
-  const bulkSetAppLevel = (appName: string, level: 'none' | 'view' | 'edit' | 'delete') => {
-    const features = appFeatures[appName] || [];
-    const canView = level !== 'none';
-    const canEdit = level === 'edit' || level === 'delete';
-    const canDelete = level === 'delete';
-    
-    setPermissions(prev => {
-      let next = prev.filter(p => p.appName !== appName);
-      if (level !== 'none') {
-        const newPerms = features.map(f => ({
-          appName, feature: f, canView, canEdit, canDelete
-        }));
-        return [...next, ...newPerms];
-      }
-      return next;
-    });
-  };
+  // Show what the selected role actually grants, so the choice is legible.
+  useEffect(() => {
+    if (!formData.roleId) { setRolePreview([]); return; }
+    fetch(`/api/admin/roles/${formData.roleId}/permissions`, { headers: { Authorization: `Bearer ${authToken()}` } })
+      .then(r => r.json())
+      .then(d => setRolePreview(d.data || []))
+      .catch(() => setRolePreview([]));
+  }, [formData.roleId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,9 +92,9 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
     });
 
     try {
-      await onSubmit({ ...cleanedData, permissions });
-    } catch (err: any) {
-      setError(err.message || 'Failed to submit form');
+      await onSubmit(cleanedData);
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to submit form'));
       setLoading(false);
     }
   };
@@ -218,96 +173,50 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
 
               <div className="space-y-4 flex flex-col h-full overflow-hidden">
                 <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-bold text-textSecondary uppercase tracking-widest">Permissions Matrix</h3>
-                  <div className="flex gap-2">
-                    <span className="flex items-center gap-1 text-[9px] font-bold text-textSecondary bg-white/5 px-2 py-1 rounded-md border border-white/5"><Eye className="w-2.5 h-2.5" /> View</span>
-                    <span className="flex items-center gap-1 text-[9px] font-bold text-textSecondary bg-white/5 px-2 py-1 rounded-md border border-white/5"><Edit3 className="w-2.5 h-2.5" /> Edit</span>
-                    <span className="flex items-center gap-1 text-[9px] font-bold text-textSecondary bg-white/5 px-2 py-1 rounded-md border border-white/5"><ShieldCheck className="w-2.5 h-2.5" /> Manager</span>
+                  <h3 className="text-xs font-bold text-textSecondary uppercase tracking-widest">Role</h3>
+                </div>
+
+                <select
+                  value={formData.roleId}
+                  onChange={e => setFormData(prev => ({ ...prev, roleId: e.target.value }))}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-textPrimary focus:outline-none focus:border-primary/40 cursor-pointer"
+                >
+                  <option value="">No role — account has no access</option>
+                  {roles.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+
+                <div className="flex-1 bg-black/30 border border-white/10 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
+                  <div className="overflow-y-auto custom-scrollbar flex-1 divide-y divide-white/5">
+                    {rolePreview.length === 0 && (
+                      <div className="p-6 text-xs text-textSecondary italic">
+                        {formData.roleId ? 'This role grants no access.' : 'Select a role to see what it grants.'}
+                      </div>
+                    )}
+                    {rolePreview.map(p => {
+                      const level = p.canDelete ? 'Manager' : p.canEdit ? 'Editor' : 'Viewer';
+                      return (
+                        <div key={`${p.appName}/${p.feature}`} className="flex items-center justify-between p-3 pl-5">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-1.5 h-1.5 rounded-full ${
+                              p.canDelete ? 'bg-primary' : p.canEdit ? 'bg-amber-500' : 'bg-blue-500'
+                            }`} />
+                            <span className="text-xs font-medium text-textSecondary">
+                              <span className="uppercase font-black text-textPrimary">{p.appName}</span> / {p.feature}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-textSecondary">{level}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="flex-1 bg-black/30 border border-white/10 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
-                  <div className="overflow-y-auto custom-scrollbar flex-1">
-                    {Object.entries(appFeatures).map(([app, features]) => (
-                      <div key={app} className="border-b border-white/5 last:border-0">
-                        <div className="sticky top-0 z-10 flex items-center justify-between p-3.5 bg-surface/80 backdrop-blur-md border-b border-white/5 group hover:bg-white/5 transition-colors">
-                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpandedApps(prev => ({ ...prev, [app]: !prev[app] }))}>
-                            <div className={`p-1.5 rounded-lg transition-colors ${expandedApps[app] ? 'bg-primary/20 text-primary' : 'bg-white/5 text-textSecondary'}`}>
-                              {expandedApps[app] ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            </div>
-                            <span className="text-xs font-black text-textPrimary uppercase tracking-widest">{app}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-bold text-textSecondary uppercase tracking-widest mr-2">Set All:</span>
-                            {(['none', 'view', 'edit', 'delete'] as const).map(lvl => (
-                              <button
-                                key={lvl}
-                                type="button"
-                                onClick={() => bulkSetAppLevel(app, lvl)}
-                                className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter border transition-all ${
-                                  lvl === 'none' ? 'hover:bg-red-500/10 hover:text-red-400 border-transparent' :
-                                  lvl === 'view' ? 'hover:bg-blue-500/10 hover:text-blue-400 border-transparent' :
-                                  lvl === 'edit' ? 'hover:bg-amber-500/10 hover:text-amber-400 border-transparent' :
-                                  'hover:bg-primary/10 hover:text-primary border-transparent'
-                                }`}
-                              >
-                                {lvl}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {expandedApps[app] && (
-                          <div className="divide-y divide-white/5 animate-in slide-in-from-top-1 duration-200">
-                            {features.map(feat => {
-                              const level = getLevel(app, feat);
-                              return (
-                                <div key={feat} className="flex items-center justify-between p-3 pl-12 hover:bg-white/[0.03] transition-colors group">
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                                      level === 'none' ? 'bg-white/10' :
-                                      level === 'view' ? 'bg-blue-500' :
-                                      level === 'edit' ? 'bg-amber-500' :
-                                      'bg-primary'
-                                    }`} />
-                                    <span className="text-xs font-medium text-textSecondary group-hover:text-textPrimary transition-colors">{feat}</span>
-                                  </div>
-                                  
-                                  <div className="relative group/select">
-                                    <select 
-                                      value={level} 
-                                      onChange={e => updateLevel(app, feat, e.target.value as any)}
-                                      className={`appearance-none bg-black/40 border border-white/10 rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider focus:outline-none transition-all pr-8 cursor-pointer ${
-                                        level === 'none' ? 'text-textSecondary' :
-                                        level === 'view' ? 'text-blue-400 border-blue-500/30' :
-                                        level === 'edit' ? 'text-amber-400 border-amber-500/30' :
-                                        'text-primary border-primary/30'
-                                      }`}
-                                    >
-                                      <option value="none">Access: None</option>
-                                      <option value="view">Access: Viewer</option>
-                                      <option value="edit">Access: Editor</option>
-                                      <option value="delete">Access: Manager</option>
-                                    </select>
-                                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
-                                      {level === 'none' && <Minus className="w-3 h-3" />}
-                                      {level === 'view' && <Eye className="w-3 h-3 text-blue-400" />}
-                                      {level === 'edit' && <Edit3 className="w-3 h-3 text-amber-400" />}
-                                      {level === 'delete' && <ShieldCheck className="w-3 h-3 text-primary" />}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
                 <div className="p-3 bg-primary/5 rounded-xl border border-primary/10">
                   <p className="text-[10px] text-primary/80 leading-relaxed italic">
-                    Levels: <span className="font-bold">Viewer</span> (Read-only), <span className="font-bold">Editor</span> (Create/Update), <span className="font-bold">Manager</span> (Full control including Delete).
+                    Permissions belong to the role, not the person. Editing a role changes access for
+                    everyone who holds it — manage roles under Admin.
                   </p>
                 </div>
               </div>

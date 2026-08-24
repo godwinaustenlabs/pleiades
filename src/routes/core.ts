@@ -3,7 +3,7 @@ import { eq, and, like } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess, checkFeaturePermission } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -15,11 +15,35 @@ async function sha256hex(input: string): Promise<string> {
 }
 
 import { UserPayload } from '../middleware/auth';
+import { hashPassword } from '../utils/password';
 
 const coreRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 coreRouter.use('*', authMiddleware);
+// This router was previously gated on nothing but authentication, so ANY logged-in
+// user could create and delete employees, labs and clients. Reads stay open to
+// every role (the UI depends on them); writes are gated per feature below.
+coreRouter.use('*', requireAppAccess('core'));
 
 /* ── EMPLOYEES ── */
+/**
+ * Fields that must not be exposed on the general directory.
+ *
+ * `core/employees` is held by nearly every role because the UI needs a staff
+ * directory, but the underlying row also carries national ID, bank and tax
+ * details and salary. Those belong to HR, so they are stripped unless the caller
+ * can actually administer employee records.
+ */
+const SENSITIVE_EMPLOYEE_FIELDS = [
+  'cnic', 'bankDetails', 'taxInformation', 'baseSalary',
+  'dob', 'address', 'contactInfo', 'emergencyContact',
+] as const;
+
+function stripSensitiveEmployeeFields<T extends Record<string, any>>(row: T): Partial<T> {
+  const out: Record<string, any> = { ...row };
+  for (const f of SENSITIVE_EMPLOYEE_FIELDS) delete out[f];
+  return out as Partial<T>;
+}
+
 coreRouter.get('/employees', async (c) => {
   try {
     const db = getDb(c.env);
@@ -31,11 +55,13 @@ coreRouter.get('/employees', async (c) => {
         slack_id ? eq(schema.employees.slackId, slack_id) : undefined
       ),
     });
-    return ok(c, rows);
+
+    const canSeeSensitive = await checkFeaturePermission(c, 'hr', 'employees', 'view');
+    return ok(c, canSeeSensitive ? rows : rows.map(stripSensitiveEmployeeFields));
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/employees', async (c) => {
+coreRouter.post('/employees', requireFeatureAccess('core', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -56,13 +82,18 @@ coreRouter.post('/employees', async (c) => {
 coreRouter.get('/employees/:id', async (c) => {
   try {
     const db = getDb(c.env);
+    const user = c.get('user');
     const row = await db.query.employees.findFirst({ where: eq(schema.employees.id, c.req.param('id')) });
     if (!row) return notFound(c);
-    return ok(c, row);
+
+    // HR staff see everything; so does a user looking at their own record.
+    const canSeeSensitive =
+      (await checkFeaturePermission(c, 'hr', 'employees', 'view')) || user.employeeId === row.id;
+    return ok(c, canSeeSensitive ? row : stripSensitiveEmployeeFields(row));
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/employees/:id', async (c) => {
+coreRouter.patch('/employees/:id', requireFeatureAccess('core', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -82,7 +113,7 @@ coreRouter.patch('/employees/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/employees/:id', async (c) => {
+coreRouter.delete('/employees/:id', requireFeatureAccess('core', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -104,7 +135,7 @@ coreRouter.get('/labs', async (c) => {
   catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/labs', async (c) => {
+coreRouter.post('/labs', requireFeatureAccess('core', 'labs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -124,7 +155,7 @@ coreRouter.get('/labs/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/labs/:id', async (c) => {
+coreRouter.patch('/labs/:id', requireFeatureAccess('core', 'labs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -135,7 +166,7 @@ coreRouter.patch('/labs/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/labs/:id', async (c) => {
+coreRouter.delete('/labs/:id', requireFeatureAccess('core', 'labs', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -157,7 +188,7 @@ coreRouter.get('/clients', async (c) => {
   catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/clients', async (c) => {
+coreRouter.post('/clients', requireFeatureAccess('core', 'clients', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -177,7 +208,7 @@ coreRouter.get('/clients/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/clients/:id', async (c) => {
+coreRouter.patch('/clients/:id', requireFeatureAccess('core', 'clients', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -192,7 +223,7 @@ coreRouter.patch('/clients/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/clients/:id', async (c) => {
+coreRouter.delete('/clients/:id', requireFeatureAccess('core', 'clients', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -209,7 +240,7 @@ coreRouter.delete('/clients/:id', async (c) => {
 });
 
 /* ── CLIENT PORTAL LOGIN PROVISIONING ── */
-coreRouter.post('/clients/:id/provision-login', async (c) => {
+coreRouter.post('/clients/:id/provision-login', requireFeatureAccess('core', 'clients', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -223,7 +254,7 @@ coreRouter.post('/clients/:id/provision-login', async (c) => {
     const client = await db.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return notFound(c, 'Client not found');
 
-    const passwordHash = await sha256hex(password);
+    const passwordHash = await hashPassword(password);
     const now = new Date();
 
     // Check if login already exists for this client
@@ -288,7 +319,7 @@ coreRouter.get('/committees', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/committees', async (c) => {
+coreRouter.post('/committees', requireFeatureAccess('core', 'committees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -308,7 +339,7 @@ coreRouter.get('/committees/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/committees/:id', async (c) => {
+coreRouter.patch('/committees/:id', requireFeatureAccess('core', 'committees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -319,7 +350,7 @@ coreRouter.patch('/committees/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/committees/:id', async (c) => {
+coreRouter.delete('/committees/:id', requireFeatureAccess('core', 'committees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -345,7 +376,7 @@ coreRouter.get('/committees/:id/members', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/committees/:id/members', async (c) => {
+coreRouter.post('/committees/:id/members', requireFeatureAccess('core', 'committees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -357,7 +388,7 @@ coreRouter.post('/committees/:id/members', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/committees/:id/members/:employeeId', async (c) => {
+coreRouter.delete('/committees/:id/members/:employeeId', requireFeatureAccess('core', 'committees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -377,7 +408,7 @@ coreRouter.get('/monthly-reports', async (c) => {
   catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/monthly-reports', async (c) => {
+coreRouter.post('/monthly-reports', requireFeatureAccess('core', 'docs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -397,7 +428,7 @@ coreRouter.get('/monthly-reports/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/monthly-reports/:id', async (c) => {
+coreRouter.patch('/monthly-reports/:id', requireFeatureAccess('core', 'docs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -414,7 +445,7 @@ coreRouter.get('/docs', async (c) => {
   catch (err) { return serverError(c, err); }
 });
 
-coreRouter.post('/docs', async (c) => {
+coreRouter.post('/docs', requireFeatureAccess('core', 'docs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -434,7 +465,7 @@ coreRouter.get('/docs/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.patch('/docs/:id', async (c) => {
+coreRouter.patch('/docs/:id', requireFeatureAccess('core', 'docs', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -445,7 +476,7 @@ coreRouter.patch('/docs/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-coreRouter.delete('/docs/:id', async (c) => {
+coreRouter.delete('/docs/:id', requireFeatureAccess('core', 'docs', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);
@@ -457,7 +488,7 @@ coreRouter.delete('/docs/:id', async (c) => {
 });
 
 /* ── EMPLOYEE-LAB ASSIGNMENTS ── */
-coreRouter.post('/employee-lab', async (c) => {
+coreRouter.post('/employee-lab', requireFeatureAccess('core', 'employees', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user' as any);

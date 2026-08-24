@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, ChevronLeft, ChevronRight, X, Maximize2, Upload } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, ChevronLeft, ChevronRight, Maximize2, Upload } from 'lucide-react';
 import AssetPreviewModal from './AssetPreviewModal';
+import { token } from '../lib/auth';
 
 export interface Column {
   key: string;
@@ -83,7 +84,7 @@ export default function GAGrid({
     if (col.render) return col.render(value, record);
 
     switch (col.type) {
-      case 'badge':
+      case 'badge': {
         const tags = String(value || '').split(',').filter(Boolean).map(v => v.trim());
         return (
           <div className="flex flex-wrap gap-1 max-w-[200px]">
@@ -99,6 +100,7 @@ export default function GAGrid({
             )}
           </div>
         );
+      }
       case 'status':
         return (
           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -111,7 +113,7 @@ export default function GAGrid({
             {value}
           </span>
         );
-      case 'avatar':
+      case 'avatar': {
         const photoUrl = record.profilePhoto || record.photoUrl;
         const fullPhotoUrl = photoUrl ? (
           photoUrl.startsWith('http') || photoUrl.startsWith('/api') 
@@ -130,16 +132,17 @@ export default function GAGrid({
             <span className="text-sm font-bold text-white whitespace-nowrap">{value}</span>
           </div>
         );
+      }
       case 'currency':
         return <span className="font-mono text-sm">${Number(value).toLocaleString()}</span>;
       case 'date':
         return <span className="text-sm text-textSecondary">{value ? new Date(value).toLocaleDateString() : '—'}</span>;
       case 'image':
-      case 'file':
+      case 'file': {
         if (!value) return <span className="text-xs text-textSecondary italic">No File</span>;
         
         const authenticatedUrl = String(value).startsWith('/api/') 
-          ? `${value}?token=${localStorage.getItem('ga_token')}` 
+          ? `${value}?token=${token()}` 
           : value;
 
         if (isImage(value)) {
@@ -167,6 +170,7 @@ export default function GAGrid({
             <span className="text-[10px] font-black uppercase tracking-widest truncate max-w-[80px]">View</span>
           </button>
         );
+      }
       default:
         return <span className="text-sm">{value}</span>;
     }
