@@ -375,6 +375,81 @@ agentRouter.post('/knowledge/ingest', requireFeatureAccess('finance', 'agent_con
   }
 });
 
+/**
+ * POST /api/finance/agent/knowledge/upload?filename=…
+ *
+ * Raw body upload straight into the compliance bucket, then indexed in the same
+ * request. One step on purpose: a file that is in the bucket but not indexed is
+ * invisible to the agent while looking, to the person who uploaded it, like it
+ * worked.
+ */
+agentRouter.post('/knowledge/upload', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    if (!c.env.COMPLIANCE_BUCKET) return badRequest(c, 'No compliance bucket is bound to this Worker.');
+    if (!c.env.VECTORIZE) return badRequest(c, 'No Vectorize index is bound to this Worker.');
+
+    const raw = c.req.query('filename');
+    if (!raw) return badRequest(c, 'filename is required');
+
+    // The key is caller-supplied, so it is constrained the same way asset
+    // uploads are: no traversal, no control characters, nothing that could
+    // escape the bucket prefix.
+    const filename = decodeURIComponent(raw).replace(/\\/g, '/').split('/').pop() || '';
+    // eslint-disable-next-line no-control-regex
+    if (!filename || filename.length > 200 || /[\x00-\x1f]/.test(filename) || filename.includes('..')) {
+      return badRequest(c, 'That filename is not usable.');
+    }
+    if (!/\.(pdf|docx?|md|markdown|txt|html?|csv)$/i.test(filename)) {
+      return badRequest(c, 'Supported types: PDF, DOC/DOCX, MD, TXT, HTML, CSV.');
+    }
+
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) return badRequest(c, 'That file is empty.');
+    // 25MB, matching the asset upload cap: a Worker holds the whole body in
+    // memory to reach R2.
+    if (body.byteLength > 25 * 1024 * 1024) return badRequest(c, 'That file is larger than 25MB.');
+
+    await c.env.COMPLIANCE_BUCKET.put(filename, body, {
+      httpMetadata: { contentType: c.req.header('Content-Type') || 'application/octet-stream' },
+    });
+
+    const existing = await db.query.knowledgeDocuments.findFirst({
+      where: eq(schema.knowledgeDocuments.r2Key, filename),
+    });
+    const docId = existing?.id ?? generateId('kdoc');
+    const now = new Date();
+    if (!existing) {
+      await db.insert(schema.knowledgeDocuments).values({
+        id: docId, r2Key: filename, title: filename, status: 'pending', createdAt: now,
+      });
+    }
+
+    try {
+      const result = await ingestDocument(c.env, { r2Key: filename, title: filename, docId });
+      await db.update(schema.knowledgeDocuments).set({
+        chunkCount: result.chunks, characters: result.characters,
+        status: 'indexed', error: null, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      await logAudit(c.env, user.id, 'CREATE', 'knowledge_documents', docId, {
+        r2Key: filename, chunks: result.chunks, via: 'upload',
+      });
+      return ok(c, { ...result, title: filename, uploaded: true });
+    } catch (err) {
+      // The file is in the bucket either way; record why indexing failed so it
+      // is visible rather than silently absent from the agent's knowledge.
+      const message = err instanceof Error ? err.message : String(err);
+      await db.update(schema.knowledgeDocuments).set({
+        status: 'failed', error: message, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      return badRequest(c, `Uploaded, but could not index it: ${message}`);
+    }
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
 /** DELETE /api/finance/agent/knowledge/:id — drops its passages and the record. */
 agentRouter.delete('/knowledge/:id', requireFeatureAccess('finance', 'agent_config', 'delete'), async (c) => {
   try {

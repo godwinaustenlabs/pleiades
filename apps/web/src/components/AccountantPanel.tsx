@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Loader2, Save, Send, Settings2, Inbox, Check, X, AlertTriangle, Eye,
-  BookOpen, RefreshCw, Trash2, Search,
+  BookOpen, RefreshCw, Trash2, Search, Upload,
 } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
@@ -26,7 +26,7 @@ interface KnowledgeDoc {
 }
 interface BucketObject { key: string; size: number; uploaded: string }
 
-type Tab = 'chat' | 'settings' | 'knowledge' | 'approvals';
+type Tab = 'chat' | 'settings' | 'approvals';
 
 interface AccountantPanelProps {
   /** finance/agent edit — may drive the agent and decide approvals. */
@@ -60,6 +60,9 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
   const [ingesting, setIngesting] = useState<string | null>(null);
   const [probe, setProbe] = useState('');
   const [probeResult, setProbeResult] = useState<any>(null);
+  const [showKnowledge, setShowKnowledge] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -91,6 +94,33 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
     setUnindexed(data.unindexed || []);
     setKbReady({ vectorize: !!data.vectorizeConfigured, bucket: !!data.bucketConfigured });
   }, []);
+
+  async function upload(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setError(null); setNotice(null);
+    for (const file of list) {
+      setIngesting(file.name);
+      try {
+        const res = await fetch(
+          `${API}/finance/agent/knowledge/upload?filename=${encodeURIComponent(file.name)}`,
+          {
+            method: 'POST',
+            headers: { ...authHeaders(), 'Content-Type': file.type || 'application/octet-stream' },
+            body: file,
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || `Upload failed (${res.status})`);
+        setNotice(`${file.name} — indexed into ${body.data.chunks} passages.`);
+      } catch (e) {
+        setError(errorMessage(e));
+      } finally {
+        setIngesting(null);
+      }
+    }
+    await loadKnowledge();
+  }
 
   async function ingest(r2Key: string) {
     setIngesting(r2Key); setError(null); setNotice(null);
@@ -239,7 +269,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
       {notice && <div className="border border-primary/40 bg-primary/10 text-primary text-xs px-3 py-2 rounded">{notice}</div>}
 
       <div className="flex gap-1 border-b border-border">
-        {([['chat', 'Chat', Send], ['settings', 'Compliance settings', Settings2], ['knowledge', `Knowledge${docs.length ? ` (${docs.length})` : ''}`, BookOpen], ['approvals', `Approvals${approvals.length ? ` (${approvals.length})` : ''}`, Inbox]] as const).map(([id, label, Icon]) => (
+        {([['chat', 'Chat', Send], ['settings', 'Compliance settings', Settings2], ['approvals', `Approvals${approvals.length ? ` (${approvals.length})` : ''}`, Inbox]] as const).map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setTab(id as Tab)}
@@ -254,6 +284,117 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
 
       {tab === 'chat' && (
         <div className="space-y-3">
+          {/* What the agent knows, and how to give it more — kept next to the
+              conversation, because "why doesn't it know this?" is a question you
+              ask mid-chat, not in a settings screen. */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); if (canEditConfig) upload(e.dataTransfer.files); }}
+            className={`border rounded-lg transition-colors ${dragging ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <div className="flex items-center gap-2 px-3 py-2">
+              <BookOpen className="w-3.5 h-3.5 text-textSecondary shrink-0" />
+              <button
+                onClick={() => setShowKnowledge((v) => !v)}
+                className="text-[10px] font-black uppercase tracking-wider hover:text-primary"
+              >
+                Knowledge base
+              </button>
+              <span className="text-[10px] text-textSecondary truncate">
+                {!kbReady.vectorize || !kbReady.bucket
+                  ? 'not configured'
+                  : docs.length === 0
+                    ? 'no documents — the agent answers from settings alone'
+                    : `${docs.length} document${docs.length === 1 ? '' : 's'}, ${docs.reduce((n, d) => n + d.chunkCount, 0)} passages`}
+              </span>
+              <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                {ingesting && (
+                  <span className="flex items-center gap-1 text-[10px] text-textSecondary">
+                    <Loader2 className="w-3 h-3 animate-spin" /> indexing {ingesting}
+                  </span>
+                )}
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.md,.markdown,.txt,.html,.htm,.csv"
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ''; }}
+                />
+                <button
+                  onClick={() => fileInput.current?.click()}
+                  disabled={!canEditConfig || !!ingesting}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+                >
+                  <Upload className="w-3 h-3" /> Add document
+                </button>
+              </div>
+            </div>
+
+            {showKnowledge && (
+              <div className="border-t border-border divide-y divide-border">
+                {docs.length === 0 && unindexed.length === 0 && (
+                  <div className="px-3 py-4 text-[11px] text-textSecondary">
+                    Drop a file here, or use Add document. PDF, DOCX, MD, TXT, HTML and CSV are
+                    converted, split on headings and indexed automatically.
+                  </div>
+                )}
+                {docs.map((d) => (
+                  <div key={d.id} className="px-3 py-2 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold truncate">{d.title}</div>
+                      <div className="text-[10px] text-textSecondary truncate">
+                        {d.status === 'indexed' ? `${d.chunkCount} passages` : d.status === 'failed' ? d.error : 'pending'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => ingest(d.r2Key)} disabled={!canEditConfig || !!ingesting} title="Re-index" className="p-1 rounded border border-border disabled:opacity-40">
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                      <button onClick={() => removeDoc(d.id)} disabled={!canEditConfig} title="Remove" className="p-1 rounded border border-border text-red-500 disabled:opacity-40">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {unindexed.map((o) => (
+                  <div key={o.key} className="px-3 py-2 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold truncate">{o.key}</div>
+                      <div className="text-[10px] text-amber-500">in the bucket, not indexed</div>
+                    </div>
+                    <button onClick={() => ingest(o.key)} disabled={!canEditConfig || !!ingesting} className="px-2 py-1 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0">
+                      Index
+                    </button>
+                  </div>
+                ))}
+                <div className="px-3 py-2 flex gap-2">
+                  <input
+                    value={probe}
+                    onChange={(e) => setProbe(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && runProbe()}
+                    placeholder="Search what the agent can see…"
+                    className="flex-1 border border-border rounded px-2 py-1 text-[11px] bg-transparent"
+                  />
+                  <button onClick={runProbe} className="px-2 rounded border border-border"><Search className="w-3 h-3" /></button>
+                </div>
+                {probeResult?.passages?.length > 0 && (
+                  <div className="px-3 py-2 space-y-1.5">
+                    {probeResult.passages.slice(0, 3).map((p: any, i: number) => (
+                      <div key={i} className="text-[10px]">
+                        <span className="font-black uppercase tracking-wider text-primary">
+                          {p.title} › {p.section}
+                        </span>
+                        <div className="text-textSecondary line-clamp-2">{p.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="border border-border rounded-lg p-4 min-h-[45vh] max-h-[60vh] overflow-y-auto space-y-4">
             {messages.length === 0 && (
               <div className="text-xs text-textSecondary py-10 text-center space-y-2">
@@ -380,129 +521,6 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {tab === 'knowledge' && (
-        <div className="space-y-4">
-          <p className="text-xs text-textSecondary max-w-3xl">
-            Reference documents the agent can cite for <strong>procedure, format and
-            interpretation</strong>. They are not a source of rates — every number comes from the
-            compliance settings. If a document states a figure that contradicts a configured value,
-            the agent reports the contradiction rather than choosing.
-          </p>
-
-          {(!kbReady.vectorize || !kbReady.bucket) && (
-            <div className="border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-3 py-2 rounded">
-              {!kbReady.vectorize && 'No Vectorize index is bound. '}
-              {!kbReady.bucket && 'No compliance bucket is bound. '}
-              Search will return nothing until this is configured.
-            </div>
-          )}
-
-          {unindexed.length > 0 && (
-            <div className="border border-border rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-surfaceAlt text-[11px] font-black uppercase tracking-wider">
-                In the bucket, not yet indexed
-              </div>
-              <div className="divide-y divide-border">
-                {unindexed.map((o) => (
-                  <div key={o.key} className="px-3 py-2 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold truncate">{o.key}</div>
-                      <div className="text-[10px] text-textSecondary">
-                        {Math.round(o.size / 1024)} KB · uploaded {new Date(o.uploaded).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => ingest(o.key)}
-                      disabled={!canEditConfig || ingesting === o.key}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0"
-                    >
-                      {ingesting === o.key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                      {ingesting === o.key ? 'Indexing' : 'Index'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="border border-border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-surfaceAlt text-[11px] font-black uppercase tracking-wider">Indexed</div>
-            <div className="divide-y divide-border">
-              {docs.length === 0 && (
-                <div className="px-3 py-8 text-center text-xs text-textSecondary">
-                  Nothing indexed yet. Upload a document to the compliance bucket and index it here.
-                </div>
-              )}
-              {docs.map((d) => (
-                <div key={d.id} className="px-3 py-2.5 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold truncate">{d.title}</div>
-                    <div className="text-[10px] text-textSecondary truncate">{d.r2Key}</div>
-                    {d.status === 'indexed' && (
-                      <div className="text-[10px] text-textSecondary mt-0.5">{d.chunkCount} passages</div>
-                    )}
-                    {d.status === 'failed' && (
-                      <div className="text-[10px] text-red-500 mt-0.5">{d.error}</div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => ingest(d.r2Key)}
-                      disabled={!canEditConfig || ingesting === d.r2Key}
-                      title="Re-index"
-                      className="p-1.5 rounded border border-border disabled:opacity-40"
-                    >
-                      {ingesting === d.r2Key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      onClick={() => removeDoc(d.id)}
-                      disabled={!canEditConfig}
-                      title="Remove"
-                      className="p-1.5 rounded border border-border text-red-500 disabled:opacity-40"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="border border-border rounded-lg p-3 space-y-2">
-            <div className="text-[11px] font-black uppercase tracking-wider">Try a search</div>
-            <p className="text-[10px] text-textSecondary">
-              Exactly what the agent sees when it calls knowledge_search — useful for checking a
-              document actually indexed usefully.
-            </p>
-            <div className="flex gap-2">
-              <input
-                value={probe}
-                onChange={(e) => setProbe(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && runProbe()}
-                placeholder="e.g. what must a withholding statement contain?"
-                className="flex-1 border border-border rounded px-2 py-1.5 text-xs bg-transparent"
-              />
-              <button onClick={runProbe} className="px-3 rounded border border-border text-[10px] font-black uppercase tracking-wider">
-                <Search className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            {probeResult && (
-              <div className="space-y-2 pt-1">
-                <div className="text-[10px] text-textSecondary italic">{probeResult.note}</div>
-                {probeResult.passages?.map((p: any, i: number) => (
-                  <div key={i} className="border border-border rounded p-2">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-primary">
-                      {p.title} › {p.section} · {Math.round(p.score * 100)}%
-                    </div>
-                    <div className="text-[11px] mt-1 line-clamp-4 whitespace-pre-wrap">{p.text}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
 

@@ -338,3 +338,54 @@ ${'More filler to make this a real section. '.repeat(20)}`;
 		expect(res.status).toBe(400);
 	});
 });
+
+describe('knowledge upload', () => {
+	const upload = async (filename: string, body: BodyInit, type = 'text/markdown') => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		return SELF.fetch(
+			`https://test.local/api/finance/agent/knowledge/upload?filename=${encodeURIComponent(filename)}`,
+			{ method: 'POST', headers: { 'Content-Type': type, Authorization: `Bearer ${await tokenFor('ceo')}` }, body },
+		);
+	};
+
+	it('refuses a filename that tries to escape the bucket', async () => {
+		const res = await upload('../../etc/passwd.md', 'x'.repeat(500));
+		// The traversal is stripped to a bare filename, so this is rejected on
+		// extension or stored flat — never written outside the bucket root.
+		expect([400, 200]).toContain(res.status);
+		if (res.status === 200) {
+			const { data } = await res.json() as any;
+			expect(data.title).not.toContain('..');
+		}
+	});
+
+	it('refuses a type it cannot convert', async () => {
+		const res = await upload('payload.exe', 'x'.repeat(500), 'application/octet-stream');
+		expect(res.status).toBe(400);
+		expect((await res.json() as any).error).toMatch(/Supported types/);
+	});
+
+	it('refuses an empty file', async () => {
+		const res = await upload('empty.md', new ArrayBuffer(0));
+		expect(res.status).toBe(400);
+	});
+
+	it('refuses a document with too little text to index', async () => {
+		// An almost-empty file would otherwise produce a knowledge base that looks
+		// populated and answers nothing.
+		const res = await upload('thin.md', '# Title\n\nToo short.');
+		expect(res.status).toBe(400);
+		expect((await res.json() as any).error).toMatch(/almost no text|could not index/i);
+	});
+
+	it('keeps uploading behind agent_config edit', async () => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		const res = await SELF.fetch(
+			'https://test.local/api/finance/agent/knowledge/upload?filename=x.md',
+			{ method: 'POST', headers: { Authorization: `Bearer ${await tokenFor('crm')}` }, body: 'x'.repeat(500) },
+		);
+		expect(res.status).toBe(403);
+	});
+});
