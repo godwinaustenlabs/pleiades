@@ -195,7 +195,9 @@ crmRouter.post('/committees/:id/documents/upload', requireFeatureAccess('crm', '
     const committeeId = c.req.param('id');
     const { filename } = await c.req.json<{ filename: string }>();
     if (!filename) return badRequest(c, 'filename required');
-    const r2Key = `crm/${committeeId}/${Date.now()}_${filename}`;
+    // Must start with a prefix ALLOWED_UPLOAD_PREFIXES declares, or the upload
+    // this URL points at is rejected with a 400. `crm/` was not one of them.
+    const r2Key = `crm-docs/${committeeId}/${Date.now()}_${filename}`;
     return ok(c, { r2Key, uploadUrl: `/api/assets/upload/${r2Key}` });
   } catch (err) { return serverError(c, err); }
 });

@@ -478,6 +478,19 @@ describe('asset download authorization', () => {
 		expect(res.status).not.toBe(403);
 	});
 
+	it('hands out upload keys the upload allowlist accepts', async () => {
+		// This endpoint returned a `crm/...` key, which /api/assets/upload/ then
+		// rejected — the URL it produced could never be used.
+		const res = await SELF.fetch('https://test.local/api/crm/committees/com_x/documents/upload', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenFor('ceo')}` },
+			body: JSON.stringify({ filename: 'brief.pdf' }),
+		});
+		expect(res.status).toBe(200);
+		const { data } = await res.json() as any;
+		expect(data.r2Key.startsWith('crm-docs/')).toBe(true);
+	});
+
 	it('refuses a prefix no rule covers, rather than serving it', async () => {
 		const res = await get('ceo', 'unknown-prefix/secret.pdf');
 		expect(res.status).toBe(403);

@@ -27,23 +27,23 @@ the hash column (so no issued key could ever authenticate), and
 
 ### Action required
 
-1. **Rotate the passwords of all existing users.** `data_only.sql` and
-   `old_db_dump.sql` were committed to git (commit `15114b1`) and contain 7
-   unsalted SHA-256 password hashes and 9 real email addresses. Those hashes are
-   crackable offline by anyone with repository access. The PBKDF2 migration
-   protects new and re-entered passwords, but it cannot protect a password whose
-   old hash has already leaked.
+1. ~~**Rotate the passwords of all existing users.**~~ **Done, 25 Aug 2026.**
+   All nine staff accounts were reset to freshly generated passwords hashed with
+   PBKDF2, so the unsalted SHA-256 digests committed in `data_only.sql` and
+   `old_db_dump.sql` (commit `15114b1`) no longer authenticate anything. The one
+   client-portal login was not rotated: it belongs to an external party with no
+   distribution channel, and its legacy hash upgrades on next login.
 
-2. **Decide whether to rewrite git history.** The dumps are now removed from the
-   working tree and gitignored, but they remain in history. Purging them
-   (`git filter-repo` or BFG) rewrites commits and requires a coordinated
-   force-push — a shared-history operation, so it is left as a deliberate
-   decision rather than done automatically. Rotating the passwords (step 1)
-   removes most of the impact either way.
+2. **Decide whether to rewrite git history.** *(Still open.)* The dumps are
+   removed from the working tree and gitignored, but they remain in history.
+   Rotation neutralised the hashes, so what is left is nine real email
+   addresses. Purging them (`git filter-repo` or BFG) rewrites commits and needs
+   a coordinated force-push, so it stays a deliberate decision.
 
-3. **Set `AGENT_INTERNAL_SECRET` in every environment.** Already set in
-   production and in local `.dev.vars`. The Slack agent fails closed without it,
-   so any new environment needs it too.
+3. ~~**Set `AGENT_INTERNAL_SECRET` in every environment.**~~ **Done.** Present
+   in production and in local `.dev.vars`. The Slack agent fails closed without
+   it. See CLAUDE.md for the full five-secret inventory — production secrets and
+   `.dev.vars` are kept in step by name.
 
 ### Notes for future work
 
