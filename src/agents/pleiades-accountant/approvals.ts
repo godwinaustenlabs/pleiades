@@ -3,6 +3,7 @@ import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
 import { generateId } from '../../utils/id';
 import { logAudit } from '../../utils/audit';
+import { recordAction } from './journal';
 
 /**
  * Human-in-the-loop approvals.
@@ -104,6 +105,25 @@ export async function consumeApproval(
     action: 'consumed',
     toolName,
   });
+
+  // Journal it here rather than trusting the agent to remember. Everything that
+  // reaches this point is, by definition, consequential enough to have needed a
+  // human's permission — so the record of it must not depend on the model
+  // choosing to call record_action afterwards. The agent still adds the
+  // reasoning; this guarantees the fact.
+  try {
+    await recordAction(ctx.env, {
+      actionType: toolName,
+      subject: row.summary,
+      summary: `Executed after approval ${approvalId}.`,
+      entities: { approvalId, payload },
+      actorUserId: ctx.actorUserId,
+      source: 'approval_gate',
+    });
+  } catch (err) {
+    console.error('[approvals] journal write failed:', err);
+  }
+
   return { ok: true };
 }
 

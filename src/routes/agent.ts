@@ -10,6 +10,7 @@ import { chunk } from '../utils/batch';
 import { decideApproval, listPending } from '../agents/pleiades-accountant/approvals';
 import { accountantKey, type AccountantTurn } from '../agents/pleiades-accountant/agent';
 import { ingestDocument, removeDocument, searchKnowledge } from '../agents/pleiades-accountant/knowledge';
+import { recallActions } from '../agents/pleiades-accountant/journal';
 import { generateId } from '../utils/id';
 import {
   loadConfig,
@@ -471,6 +472,28 @@ agentRouter.get('/knowledge/search', requireFeatureAccess('finance', 'agent', 'v
     const q = c.req.query('q');
     if (!q) return badRequest(c, 'q is required');
     return ok(c, await searchKnowledge(c.env, q, { topK: Number(c.req.query('topK')) || 5 }));
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * GET /api/finance/agent/journal
+ *
+ * What the agent has done, and why. Exposed to people as well as to the agent:
+ * the reason a nil return was nil is exactly the question an accountant asks
+ * months later, and it should not be necessary to interrogate the agent to
+ * find out.
+ */
+agentRouter.get('/journal', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
+  try {
+    const result = await recallActions(c.env, {
+      query: c.req.query('q') || undefined,
+      actionType: c.req.query('type') || undefined,
+      periodLabel: c.req.query('period') || undefined,
+      limit: Number(c.req.query('limit')) || 25,
+    });
+    return ok(c, result);
   } catch (err) {
     return serverError(c, err);
   }

@@ -4,6 +4,7 @@ import { buildStatutoryComponents } from './compliance';
 import { loadConfig, missingRequired } from './config';
 import { requestApproval, consumeApproval } from './approvals';
 import { searchKnowledge } from './knowledge';
+import { recordAction, recallActions } from './journal';
 
 /** Calls the Worker's own API as the acting user. */
 export type ApiCaller = (method: string, path: string, body?: unknown) => Promise<string>;
@@ -106,6 +107,79 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
             text: p.text,
           })),
           authority: result.note,
+        });
+      },
+    },
+
+    {
+      name: 'record_action',
+      description:
+        'Writes what you did and WHY into your working journal, so a later conversation can ' +
+        'recover the reasoning. Record anything consequential or anything a person would later ' +
+        'ask you to justify — a statement produced (including a nil one, with the reason it was ' +
+        'nil), a structure set, an entry posted, or a refusal and what blocked it. Consequential ' +
+        'approved actions are journalled for you automatically; this is for the reasoning behind ' +
+        'them, and for everything else.',
+      schema: z.object({
+        action_type: z
+          .string()
+          .describe('e.g. statement_generated, payroll_generated, account_created, refused'),
+        subject: z.string().describe('What was acted on, in human terms'),
+        summary: z.string().describe('What you did'),
+        rationale: z.string().optional().describe('Why — including why a figure was nil'),
+        period_label: z.string().optional().describe("e.g. '2026-08' or 'TY2027'"),
+        outcome: z.enum(['completed', 'refused', 'blocked']).optional(),
+        entities: z.record(z.any()).optional().describe('Related record ids'),
+      }),
+      func: async (a: any) => {
+        const res = await recordAction(ctx.env, {
+          actionType: a.action_type,
+          subject: a.subject,
+          summary: a.summary,
+          rationale: a.rationale,
+          periodLabel: a.period_label,
+          outcome: a.outcome,
+          entities: a.entities,
+          actorUserId: ctx.actorUserId,
+          source: 'agent',
+        });
+        return JSON.stringify({
+          recorded: true,
+          id: res.id,
+          recallable: res.embedded,
+          note: res.embedded
+            ? 'Recorded and indexed for recall.'
+            : 'Recorded. Semantic recall is unavailable, but it is in the dated journal.',
+        });
+      },
+    },
+    {
+      name: 'recall_actions',
+      description:
+        'Looks up what you did before and why. Give a query to search by meaning, or filters ' +
+        '(action_type, period_label) for an exact answer. Check this before repeating work or ' +
+        'when asked why something was done a particular way — the reasoning is recorded, so do ' +
+        'not reconstruct it from memory.',
+      schema: z.object({
+        query: z.string().optional().describe('What you are trying to remember'),
+        action_type: z.string().optional(),
+        period_label: z.string().optional().describe("e.g. '2026-08'"),
+        limit: z.number().optional(),
+      }),
+      func: async (a: any) => {
+        const res = await recallActions(ctx.env, {
+          query: a.query,
+          actionType: a.action_type,
+          periodLabel: a.period_label,
+          limit: a.limit,
+        });
+        return JSON.stringify({
+          mode: res.mode,
+          entries: res.entries,
+          note:
+            res.entries.length === 0
+              ? 'Nothing recorded matches. Say so rather than assuming it was not done.'
+              : 'These are your own past actions and reasons, not the compliance manual.',
         });
       },
     },

@@ -24,6 +24,28 @@ CREATE TABLE agent_conversations (
 	started_at INTEGER NOT NULL,
 	operator TEXT NOT NULL                  -- users_logins.id of the person talking
 );
+CREATE TABLE agent_journal (
+	id TEXT PRIMARY KEY,
+	-- What kind of thing happened, so the timeline can be filtered without
+	-- relying on the prose: account_created | payroll_generated |
+	-- statement_generated | journal_posted | salary_structure_set | …
+	action_type TEXT NOT NULL,
+	subject TEXT NOT NULL,          -- the thing acted on, in human terms
+	summary TEXT NOT NULL,          -- what was done
+	rationale TEXT,                 -- why, including why a figure was nil
+	-- Related record ids as JSON, so an entry can be traced back to the payroll
+	-- run or journal entry it describes.
+	entities TEXT,
+	period_label TEXT,              -- '2026-08' | 'TY2027', when it applies to one
+	outcome TEXT NOT NULL DEFAULT 'completed', -- completed | refused | blocked
+	actor_user_id TEXT NOT NULL,    -- who the agent was acting as
+	conversation_id TEXT,
+	-- Written automatically by the approval gate, or by the agent itself.
+	source TEXT NOT NULL DEFAULT 'agent', -- agent | approval_gate
+	vector_id TEXT,                 -- id in Vectorize, once embedded
+	occurred_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE api_keys (
 	id TEXT PRIMARY KEY,
 	key_hash TEXT NOT NULL UNIQUE,
@@ -230,6 +252,12 @@ CREATE INDEX agent_approvals_requester_idx
 	ON agent_approvals (requested_by, created_at);
 CREATE INDEX agent_approvals_status_idx
 	ON agent_approvals (status, expires_at);
+CREATE INDEX agent_journal_occurred_idx
+	ON agent_journal (occurred_at DESC);
+CREATE INDEX agent_journal_period_idx
+	ON agent_journal (period_label);
+CREATE INDEX agent_journal_type_idx
+	ON agent_journal (action_type, occurred_at DESC);
 CREATE INDEX compliance_config_group_idx
 	ON compliance_config (group_name, sort_order);
 CREATE UNIQUE INDEX compliance_config_key_from_unique

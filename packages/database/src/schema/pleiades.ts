@@ -197,3 +197,37 @@ export const knowledgeDocuments = sqliteTable('knowledge_documents', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+/**
+ * The agent's working journal — what it did and why.
+ *
+ * Written to D1 first and embedded into Vectorize second, because the two
+ * answer different questions. "Have I handled something like this before?" is
+ * semantic and comes from the index; "what did you file in August, and why was
+ * it nil?" is exact, and an auditor asking it will not accept a similarity
+ * score. If embedding fails the row still stands: a journal that silently drops
+ * entries is worse than none, because it looks complete.
+ *
+ * `rationale` is the point. A nil return with no explanation is
+ * indistinguishable, months later, from one nobody got round to.
+ */
+export const agentJournal = sqliteTable('agent_journal', {
+  id: text('id').primaryKey(),
+  /** account_created | payroll_generated | statement_generated | … */
+  actionType: text('action_type').notNull(),
+  subject: text('subject').notNull(),
+  summary: text('summary').notNull(),
+  rationale: text('rationale'),
+  /** Related record ids as JSON, so an entry traces back to what it describes. */
+  entities: text('entities'),
+  periodLabel: text('period_label'),
+  /** completed | refused | blocked */
+  outcome: text('outcome').notNull().default('completed'),
+  actorUserId: text('actor_user_id').notNull(),
+  conversationId: text('conversation_id'),
+  /** agent (it chose to record) | approval_gate (recorded for it) */
+  source: text('source').notNull().default('agent'),
+  vectorId: text('vector_id'),
+  occurredAt: integer('occurred_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+

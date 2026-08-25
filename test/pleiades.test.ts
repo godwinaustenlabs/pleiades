@@ -389,3 +389,77 @@ describe('knowledge upload', () => {
 		expect(res.status).toBe(403);
 	});
 });
+
+describe('agent journal', () => {
+	it('records an action with its reasoning', async () => {
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		await recordAction(env as any, {
+			actionType: 'statement_generated',
+			subject: 'Monthly sales tax return',
+			summary: 'Produced a nil sales tax return for 2026-08.',
+			// The whole point: months later, this is the difference between a
+			// deliberate nil and one nobody got round to.
+			rationale: 'No taxable supplies in the period. Filed nil to preserve the filing record.',
+			periodLabel: '2026-08',
+			actorUserId: 'u_ceo',
+		});
+
+		const { entries } = await recallActions(env as any, { periodLabel: '2026-08' });
+		expect(entries.length).toBeGreaterThan(0);
+		expect(entries[0].rationale).toMatch(/no taxable supplies/i);
+		expect(entries[0].occurredAt).toBeTruthy();
+	});
+
+	it('answers an exact filter exactly, not by similarity', async () => {
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		await recordAction(env as any, {
+			actionType: 'payroll_generated', subject: 'July payroll',
+			summary: 'Ran payroll for 2026-07.', periodLabel: '2026-07', actorUserId: 'u_ceo',
+		});
+
+		const res = await recallActions(env as any, { actionType: 'payroll_generated' });
+		expect(res.mode).toBe('chronological');
+		expect(res.entries.every((e) => e.actionType === 'payroll_generated')).toBe(true);
+	});
+
+	it('returns newest first', async () => {
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		await recordAction(env as any, {
+			actionType: 'journal_posted', subject: 'Older', summary: 'a',
+			actorUserId: 'u_ceo', occurredAt: new Date('2026-01-01'),
+		});
+		await recordAction(env as any, {
+			actionType: 'journal_posted', subject: 'Newer', summary: 'b',
+			actorUserId: 'u_ceo', occurredAt: new Date('2026-06-01'),
+		});
+		const { entries } = await recallActions(env as any, { actionType: 'journal_posted' });
+		expect(entries[0].subject).toBe('Newer');
+	});
+
+	it('keeps the record even when it cannot be embedded', async () => {
+		// A journal that silently drops entries is worse than none: it looks
+		// complete. Losing recall is a degradation; losing the row is a hole.
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const res = await recordAction({ ...env, VECTORIZE: undefined } as any, {
+			actionType: 'refused', subject: 'Withholding figure',
+			summary: 'Refused to compute.', rationale: 'Slab table not configured.',
+			outcome: 'refused', actorUserId: 'u_ceo',
+		});
+		expect(res.embedded).toBe(false);
+		const { entries } = await recallActions(env as any, { actionType: 'refused' });
+		expect(entries.some((e) => e.rationale?.includes('Slab table'))).toBe(true);
+	});
+
+	it('exposes the journal to people, not only to the agent', async () => {
+		const { authedGet } = await import('./helpers');
+		const res = await authedGet('ceo', '/api/finance/agent/journal?type=payroll_generated');
+		expect(res.status).toBe(200);
+		const { data } = await res.json() as any;
+		expect(Array.isArray(data.entries)).toBe(true);
+	});
+
+	it('keeps the journal behind the agent grant', async () => {
+		const { authedGet } = await import('./helpers');
+		expect((await authedGet('crm', '/api/finance/agent/journal')).status).toBe(403);
+	});
+});
