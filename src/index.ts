@@ -22,7 +22,7 @@ import assetsRouter from './routes/assets';
 import notificationsRouter from './routes/notifications';
 import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
-import slackAgentRouter from './agents/slack-agent';
+import slackAgentRouter from './agents/slack';
 
 /**
  * The Worker's environment.
@@ -61,36 +61,36 @@ export type Env = {
   /**
    * Gates the internal `x-agent-actor` identity header. It never leaves the
    * Worker, which is what makes that header unforgeable from outside.
-   * Used in: src/middleware/auth.ts, src/agents/slack-agent.ts.
+   * Used in: src/middleware/auth.ts, src/agents/slack/index.ts.
    */
   AGENT_INTERNAL_SECRET?: string;
   /**
    * Slack's app signing secret. Verifies the HMAC over the raw request body
    * before any Slack payload is trusted.
-   * Used in: src/agents/lib/slack.ts.
+   * Used in: src/agents/slack/lib/slack.ts.
    */
   SLACK_SIGNING_SECRET?: string;
   /**
    * Slack bot OAuth token, for posting messages back into Slack.
-   * Used in: src/agents/slack-agent.ts, src/utils/slack.ts.
+   * Used in: src/agents/slack/index.ts, src/utils/slack.ts.
    */
   SLACK_BOT_OAUTH_TOKEN?: string;
   /**
    * AI Gateway auth token, paired with CF_ACCOUNT_ID and CF_GATEWAY_NAME.
-   * Used in: src/agents/slack-agent.ts.
+   * Used in: src/agents/slack/index.ts.
    */
   CF_AIG_TOKEN?: string;
 
   // ── Plaintext config (wrangler.jsonc `vars`) ───────────────────────────────
-  /** AI Gateway account and gateway name — src/agents/slack-agent.ts. */
+  /** AI Gateway account and gateway name — src/agents/slack/index.ts. */
   CF_ACCOUNT_ID?: string;
   CF_GATEWAY_NAME?: string;
-  /** Model and provider for the agent pipeline — src/agents/slack-agent.ts. */
+  /** Model and provider for the agent pipeline — src/agents/slack/index.ts. */
   LLM_MODEL?: string;
   LLM_PROVIDER?: string;
-  /** Agent identifier passed to the pipeline — src/agents/slack-agent.ts. */
+  /** Agent identifier passed to the pipeline — src/agents/slack/index.ts. */
   AGENT_ID?: string;
-  /** Extra agent logging — src/agents/slack-agent.ts. */
+  /** Extra agent logging — src/agents/slack/index.ts. */
   VERBOSE?: string;
 };
 

@@ -74,7 +74,7 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
   // was trusted outright — any unauthenticated caller could send
   // `x-slack-id: <someone>` and assume that employee's full RBAC identity.
   // Slack identity is now resolved server-side only AFTER the request signature
-  // has been verified (src/agents/lib/slack.ts), and the resolved
+  // has been verified (src/agents/slack/lib/slack.ts), and the resolved
   // users_logins.id is passed here alongside a shared secret.
   //
   // The secret is what makes this safe: it never leaves the Worker, so the

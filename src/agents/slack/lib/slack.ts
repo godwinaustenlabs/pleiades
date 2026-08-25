@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
-import { Env } from '../../index';
+import { Env } from '../../../index';
 
 /** Slack rejects/retries requests older than this; we mirror it to stop replays. */
 const MAX_REQUEST_AGE_SECONDS = 60 * 5;

@@ -14,19 +14,19 @@ JWT_SECRET=<random 32+ char string>
 
 # Gates the internal `x-agent-actor` identity header. Never leaves the Worker —
 # that is what makes the header unforgeable from outside (SECURITY.md #1).
-# Read by: src/middleware/auth.ts, src/agents/slack-agent.ts
+# Read by: src/middleware/auth.ts, src/agents/slack/index.ts
 AGENT_INTERNAL_SECRET=<random 32+ char string>
 
 # Slack app signing secret. Verifies the HMAC over the raw request body before
 # any Slack payload is trusted, with a 5-minute replay window (SECURITY.md #2).
-# Read by: src/agents/lib/slack.ts
+# Read by: src/agents/slack/lib/slack.ts
 SLACK_SIGNING_SECRET=<Slack app > Basic Information > Signing Secret>
 
 # Slack bot OAuth token (xoxb-...), for posting messages back into Slack.
-# Read by: src/agents/slack-agent.ts, src/utils/slack.ts
+# Read by: src/agents/slack/index.ts, src/utils/slack.ts
 SLACK_BOT_OAUTH_TOKEN=xoxb-<Slack app > OAuth & Permissions>
 
 # Cloudflare AI Gateway auth token. Pairs with the CF_ACCOUNT_ID and
 # CF_GATEWAY_NAME vars in wrangler.jsonc.
-# Read by: src/agents/slack-agent.ts
+# Read by: src/agents/slack/index.ts
 CF_AIG_TOKEN=<Cloudflare dashboard > AI Gateway > token>

@@ -73,7 +73,7 @@ Anything not matching `/api/*` falls through to the `ASSETS` binding and is serv
 `authMiddleware` resolves an identity from three sources, in order, and sets `c.get('user')` as a `UserPayload`:
 
 1. `x-api-key` header → agent identity from the `api_keys` table (`type: 'agent'`, never superadmin).
-2. `x-agent-actor` + `x-agent-secret` headers → the `users_logins` row named by the actor id, but only when the secret matches the `AGENT_INTERNAL_SECRET` Worker binding. Present-but-invalid always denies and never falls through to another source. This replaced `x-slack-id`, which named a Slack user and was trusted outright — see SECURITY.md #1. Slack identity is resolved server-side only *after* the request signature is verified (`src/agents/lib/slack.ts`), and the resolved user id is what gets passed here.
+2. `x-agent-actor` + `x-agent-secret` headers → the `users_logins` row named by the actor id, but only when the secret matches the `AGENT_INTERNAL_SECRET` Worker binding. Present-but-invalid always denies and never falls through to another source. This replaced `x-slack-id`, which named a Slack user and was trusted outright — see SECURITY.md #1. Slack identity is resolved server-side only *after* the request signature is verified (`src/agents/slack/lib/slack.ts`), and the resolved user id is what gets passed here.
 3. `Authorization: Bearer <jwt>` → falls back to the `auth_token` cookie, then a `?token=` query param (the query-param path exists so `<img>`/download URLs can authenticate).
 
 `/api/portal` is a **separate auth world**: it has its own `clientAuth` using JWTs with `type: 'client'` and does not use `authMiddleware`.
@@ -215,10 +215,10 @@ differ silently:
 | Secret | What it does | Read by |
 |---|---|---|
 | `JWT_SECRET` | Signs/verifies staff and client-portal JWTs | `middleware/auth.ts`, `routes/auth.ts`, `routes/portal.ts` |
-| `AGENT_INTERNAL_SECRET` | Gates the internal `x-agent-actor` header; never leaves the Worker | `middleware/auth.ts`, `agents/slack-agent.ts` |
-| `SLACK_SIGNING_SECRET` | Verifies Slack's HMAC over the raw body | `agents/lib/slack.ts` |
-| `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack-agent.ts`, `utils/slack.ts` |
-| `CF_AIG_TOKEN` | AI Gateway auth, with the `CF_*` vars | `agents/slack-agent.ts` |
+| `AGENT_INTERNAL_SECRET` | Gates the internal `x-agent-actor` header; never leaves the Worker | `middleware/auth.ts`, `agents/slack/index.ts` |
+| `SLACK_SIGNING_SECRET` | Verifies Slack's HMAC over the raw body | `agents/slack/lib/slack.ts` |
+| `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack/index.ts`, `utils/slack.ts` |
+| `CF_AIG_TOKEN` | AI Gateway auth, with the `CF_*` vars | `agents/slack/index.ts` |
 
 `.dev.vars.example` is the committed template listing all five with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
