@@ -24,37 +24,74 @@ import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
 import slackAgentRouter from './agents/slack-agent';
 
+/**
+ * The Worker's environment.
+ *
+ * Every entry below is read somewhere in this codebase — the file/line is named
+ * on each. Anything not read has been removed rather than left declared, since
+ * a declared-but-unused binding reads as a configured integration that does not
+ * exist (this type previously carried WhatsApp, Groq and Slack OAuth entries
+ * for features that were never built).
+ *
+ * Plaintext config lives in `wrangler.jsonc` under `vars`. Anything sensitive is
+ * a Worker secret (`wrangler secret put NAME`) and is mirrored by name — never
+ * by value — in `.dev.vars` for local development.
+ */
 export type Env = {
   [x: string]: any;
+
+  // ── Bindings (wrangler.jsonc) ──────────────────────────────────────────────
+  /** D1 `office-db`. The only database. */
   DB: D1Database;
-  JWT_SECRET: string;
-  API_KEY_SECRET: string;
+  /** Static assets: the built SPA in apps/web/dist, with SPA fallback. */
   ASSETS: Fetcher;
-  LLM_MODEL?: string;
-  LLM_PROVIDER?: string;
-  CLIENT_ID?: string;
-  AGENT_ID?: string;
-  GROQ_API_KEY?: string;
-  SYSTEM_PROMPT?: string;
-  VERBOSE?: string;
-  CF_ACCOUNT_ID?: string;
-  CF_GATEWAY_NAME?: string;
-  CF_AIG_TOKEN?: string;
-  WA_VERIFY_TOKEN?: string;
-  WA_PHONE_NUMBER_ID?: string;
-  WA_ACCESS_TOKEN?: string;
-  DASHBOARD_PASSWORD?: string;
+  /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
+  CRM_BUCKET?: R2Bucket;
+  /** Workers AI. Bound for the agent pipeline. */
+  AI?: Ai;
   CLIENTS_KV_NAMESPACE?: KVNamespace;
   MEMORY_KV_NAMESPACE?: KVNamespace;
-  AI?: Ai;
-  CRM_BUCKET?: R2Bucket;
-  /** Shared secret gating the internal `x-agent-actor` identity header. */
+
+  // ── Secrets (wrangler secret put / .dev.vars) ──────────────────────────────
+  /**
+   * Signs and verifies staff and client-portal JWTs.
+   * Used in: src/middleware/auth.ts, src/routes/auth.ts, src/routes/portal.ts.
+   */
+  JWT_SECRET: string;
+  /**
+   * Gates the internal `x-agent-actor` identity header. It never leaves the
+   * Worker, which is what makes that header unforgeable from outside.
+   * Used in: src/middleware/auth.ts, src/agents/slack-agent.ts.
+   */
   AGENT_INTERNAL_SECRET?: string;
-  SLACK_BOT_OAUTH_TOKEN?: string;
+  /**
+   * Slack's app signing secret. Verifies the HMAC over the raw request body
+   * before any Slack payload is trusted.
+   * Used in: src/agents/lib/slack.ts.
+   */
   SLACK_SIGNING_SECRET?: string;
-  SLACK_CLIENT_ID?: string;
-  SLACK_CLIENT_SECRET?: string;
-  SLACK_VERIFICATION_TOKEN?: string;
+  /**
+   * Slack bot OAuth token, for posting messages back into Slack.
+   * Used in: src/agents/slack-agent.ts, src/utils/slack.ts.
+   */
+  SLACK_BOT_OAUTH_TOKEN?: string;
+  /**
+   * AI Gateway auth token, paired with CF_ACCOUNT_ID and CF_GATEWAY_NAME.
+   * Used in: src/agents/slack-agent.ts.
+   */
+  CF_AIG_TOKEN?: string;
+
+  // ── Plaintext config (wrangler.jsonc `vars`) ───────────────────────────────
+  /** AI Gateway account and gateway name — src/agents/slack-agent.ts. */
+  CF_ACCOUNT_ID?: string;
+  CF_GATEWAY_NAME?: string;
+  /** Model and provider for the agent pipeline — src/agents/slack-agent.ts. */
+  LLM_MODEL?: string;
+  LLM_PROVIDER?: string;
+  /** Agent identifier passed to the pipeline — src/agents/slack-agent.ts. */
+  AGENT_ID?: string;
+  /** Extra agent logging — src/agents/slack-agent.ts. */
+  VERBOSE?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();

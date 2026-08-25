@@ -9,7 +9,6 @@ export default defineConfig({
 				// Secrets normally supplied via .dev.vars / wrangler secret.
 				bindings: {
 					JWT_SECRET: 'test-jwt-secret',
-					API_KEY_SECRET: 'test-api-key-secret',
 					AGENT_INTERNAL_SECRET: 'test-agent-internal-secret',
 					SLACK_SIGNING_SECRET: 'test-slack-signing-secret',
 				},

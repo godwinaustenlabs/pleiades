@@ -159,7 +159,7 @@ router.post('/things', async (c) => {
 
 ### Database (`packages/database`)
 
-`role_app_permissions` is the authorization table (see Authorization above).
+`user_app_permissions` is the authorization table (see Authorization above).
 
 Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@ganova/database` (path-mapped in the root `tsconfig.json`).
 
@@ -203,14 +203,36 @@ Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_
 
 ### Bindings and secrets
 
-`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `CLIENTS_KV_NAMESPACE`, `MEMORY_KV_NAMESPACE`, `AI`, and `CRM_BUCKET` (R2, `office-crm-docs`, used by `/api/assets` for uploads/downloads). Local secrets live in `.dev.vars` (`JWT_SECRET`, `API_KEY_SECRET`, `DASHBOARD_PASSWORD`); the full env surface is the `Env` type in `src/index.ts`. Slack (`SLACK_*`) and WhatsApp (`WA_*`) values are secrets, not vars.
+`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `CLIENTS_KV_NAMESPACE`,
+`MEMORY_KV_NAMESPACE`, `AI`, and `CRM_BUCKET` (R2, `office-crm-docs`, used by
+`/api/assets` for uploads/downloads).
+
+There are exactly **five secrets**, and the same five exist both in production
+(`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
+step — a secret in one and not the other means local and deployed behaviour
+differ silently:
+
+| Secret | What it does | Read by |
+|---|---|---|
+| `JWT_SECRET` | Signs/verifies staff and client-portal JWTs | `middleware/auth.ts`, `routes/auth.ts`, `routes/portal.ts` |
+| `AGENT_INTERNAL_SECRET` | Gates the internal `x-agent-actor` header; never leaves the Worker | `middleware/auth.ts`, `agents/slack-agent.ts` |
+| `SLACK_SIGNING_SECRET` | Verifies Slack's HMAC over the raw body | `agents/lib/slack.ts` |
+| `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack-agent.ts`, `utils/slack.ts` |
+| `CF_AIG_TOKEN` | AI Gateway auth, with the `CF_*` vars | `agents/slack-agent.ts` |
+
+`.dev.vars.example` is the committed template listing all five with a note on
+where each is obtained; `.dev.vars` itself is gitignored.
+
+Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`
+(`CF_ACCOUNT_ID`, `CF_GATEWAY_NAME`, `LLM_MODEL`, `AGENT_ID`, `VERBOSE`). The
+full surface is the `Env` type in `src/index.ts`, where every entry names the
+file that reads it — do not declare a binding nothing reads.
 
 ## Gotchas
 
 - **Do not run `npm run format` across the repo.** `.prettierrc`/`.editorconfig` specify tabs, but the existing TypeScript sources are 2-space indented; a blanket format reflows the whole codebase. Match the indentation of the file you are editing.
 - The Vite dev proxy targets `127.0.0.1:8788` while `wrangler dev` defaults to `8787`. If `/api` calls 502 in dev, start the worker on 8788 (`npx wrangler dev --port 8788`).
 - `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it.
-- `scratch/` holds one-off seed scripts and SQL patches, and the root `*.sql` dumps are historical snapshots — neither is part of the build.
 - **The Drizzle schema has drifted from production before.** `role_hierarchy` and `role_permissions` were defined in `schema/auth.ts` for a long time but never existed in the D1 database, so every route touching them returned a 500 that nobody noticed. If you add a table, confirm the migration actually ran against `office-db` (`SELECT name FROM sqlite_master`).
 - `test/schema.sql` is the **production** DDL, pulled from `sqlite_master`, precisely so the test database cannot drift from the real one. Regenerate it rather than hand-editing.
 
