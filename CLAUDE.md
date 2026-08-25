@@ -59,14 +59,18 @@ table, not `meta/_journal.json`.
 
 ### Request flow
 
-`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack`. Each router applies its own middleware at the top of its file:
+`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, `agent`, plus `agents/slack`. Each router applies its own middleware at the top of its file:
 
 ```ts
 hrRouter.use('*', authMiddleware);
 hrRouter.use('*', requireAppAccess('hr'));
 ```
 
-Anything not matching `/api/*` falls through to the `ASSETS` binding and is served as the SPA.
+Anything not matching `/api/*` falls through to the `ASSETS` binding and is
+served as the SPA. That fallback lives in `app.notFound()` in `src/index.ts`: an
+unmatched `/api` path returns JSON 404, anything else returns `index.html` so the
+client router can resolve it. Without it every deep link and refresh away from
+`/` returns 404 — which is exactly what happened until 25 Aug 2026.
 
 ### Auth (`src/middleware/auth.ts`)
 
@@ -187,6 +191,28 @@ still holds several such prefixes, listed as legacy entries in `READ_RULES`.
 Do not add new ones.
 
 `universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
+
+### Agents (`src/agents`)
+
+One directory per agent, no loose files. Both are Agents-SDK Durable Objects
+exported from `src/index.ts` and bound in `wrangler.jsonc`.
+
+- `slack/` — the Slack assistant, one instance per Slack conversation.
+- `pleiades/` — the accountant. One instance per conversation;
+  `compliance.ts` turns operator configuration into payroll components,
+  `tools.ts` is the HR + accounting surface, `approvals.ts` is the
+  human-in-the-loop gate, `access.ts` decides who may drive it.
+
+Three rules hold for any agent added here:
+
+1. **No direct database access.** Tools call the Worker's own API over the
+   origin with `x-agent-actor`, so every call passes the same middleware chain a
+   browser request does and an agent can never exceed the person it acts for.
+   Never add a `query_d1`-style arbitrary-SQL tool — see SECURITY.md.
+2. **Consequential actions are gated in code**, via `agent_approvals`, not by
+   asking the model nicely in a prompt.
+3. **Compliance figures come from `compliance_config`**, injected into the
+   prompt each turn. No rate belongs in code or prompt text.
 
 ### Frontend (`apps/web`)
 
