@@ -7,6 +7,7 @@ import {
   PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import AssetPreviewModal from '../components/AssetPreviewModal';
+import { previewTypeFor, type PreviewKind } from '../lib/preview';
 import TaskBoard from '../components/TaskBoard';
 import EntityForm from '../components/EntityForm';
 import NotificationCenter from '../components/NotificationCenter';
@@ -41,7 +42,7 @@ export default function CRM() {
   const [showEntityForm, setShowEntityForm] = useState<'planner' | 'document' | null>(null);
   const [editingPlanner, setEditingPlanner] = useState<any>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewType, setPreviewType] = useState<'image' | 'pdf'>('image');
+  const [previewType, setPreviewType] = useState<PreviewKind>('image');
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
@@ -637,8 +638,7 @@ export default function CRM() {
                         onClick={() => {
                           const baseUrl = doc.r2Key.startsWith('/api/assets/download/') ? '' : '/api/assets/download/';
                           const url = `${baseUrl}${doc.r2Key}?token=${token()}`;
-                          const isPdf = /\.(pdf)(\?|$)/i.test(doc.r2Key);
-                          setPreviewType(isPdf ? 'pdf' : 'image');
+                          setPreviewType(previewTypeFor(doc.r2Key, doc.mimeType));
                           setPreviewUrl(url);
                         }}
                         className="mt-4 block w-full text-center py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all"

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, FileText, Loader2 } from 'lucide-react';
+import { filenameOf, type PreviewKind } from '../lib/preview';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -10,7 +11,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@5.4.296/build/pdf.
 interface AssetPreviewModalProps {
   url: string | null;
   onClose: () => void;
-  type?: 'image' | 'pdf';
+  /**
+   * How to render the asset. Use `previewTypeFor()` rather than guessing:
+   * every call site used to pass `isPdf ? 'pdf' : 'image'`, so a .md or .docx
+   * was fed to an <img> tag and displayed as nothing.
+   */
+  type?: PreviewKind;
 }
 
 export default function AssetPreviewModal({ url, onClose, type = 'image' }: AssetPreviewModalProps) {
@@ -18,6 +24,34 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(1);
+  const [text, setText] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
+  // An image that fails to decode falls back to the download card rather than
+  // leaving a broken-image icon on screen.
+  const [imageBroken, setImageBroken] = useState(false);
+
+  useEffect(() => {
+    setImageBroken(false);
+    if (!url || type !== 'text') {
+      setText(null);
+      setTextError(null);
+      return;
+    }
+    let cancelled = false;
+    setText(null);
+    setTextError(null);
+    fetch(url)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`Could not load file (${r.status})`))))
+      .then((t) => {
+        if (!cancelled) setText(t);
+      })
+      .catch((e) => {
+        if (!cancelled) setTextError(e instanceof Error ? e.message : 'Could not load file');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url, type]);
 
   if (!url) return null;
 
@@ -36,7 +70,8 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
     if (!url) return;
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'asset.pdf';
+    // Was hard-coded to 'asset.pdf', so every download arrived misnamed.
+    link.download = filenameOf(url);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -100,8 +135,51 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
               </div>
             )}
           </div>
+        ) : type === 'text' ? (
+          <div className="w-full h-full flex flex-col items-center pt-16 pb-4">
+            <div className="flex items-center gap-3 mb-3 text-white/80 text-xs font-black uppercase tracking-widest">
+              <FileText className="w-4 h-4" />
+              {filenameOf(url)}
+              <button onClick={handleDownload} className="ml-2 p-1 hover:text-white" title="Download">
+                <Download className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto w-full max-w-4xl bg-white text-black rounded-xl shadow-2xl p-6">
+              {textError ? (
+                <div className="text-red-600 text-sm">{textError}</div>
+              ) : text === null ? (
+                <div className="flex items-center gap-2 text-sm text-black/60">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed font-mono">{text}</pre>
+              )}
+            </div>
+          </div>
+        ) : type === 'image' && !imageBroken ? (
+          <img
+            src={url}
+            alt="Preview"
+            onError={() => setImageBroken(true)}
+            className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+          />
         ) : (
-          <img src={url} alt="Preview" className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain" />
+          // Anything the browser cannot render inline — .docx, .pages, .zip and
+          // friends. Offer the file rather than a blank frame.
+          <div className="flex flex-col items-center gap-4 bg-white text-black rounded-2xl shadow-2xl px-10 py-12 max-w-md text-center">
+            <FileText className="w-10 h-10 text-black/40" />
+            <div className="text-sm font-bold break-all">{filenameOf(url)}</div>
+            <p className="text-xs text-black/60">
+              This file type cannot be previewed in the browser. Download it to open in the
+              appropriate application.
+            </p>
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-black uppercase tracking-widest"
+            >
+              <Download className="w-4 h-4" /> Download
+            </button>
+          </div>
         )}
       </div>
     </div>

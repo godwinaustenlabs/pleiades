@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Plus, Trash2, Loader2, Eye, Book } from 'lucide-react';
 import AssetPreviewModal from './AssetPreviewModal';
+import { previewTypeFor } from '../lib/preview';
 import { API, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
@@ -276,7 +277,7 @@ export default function DocumentsTab({
 				<AssetPreviewModal
 					url={previewUrl}
 					onClose={() => setPreviewUrl(null)}
-					type={/\.pdf(\?|$)/i.test(previewUrl) ? 'pdf' : 'image'}
+					type={previewTypeFor(previewUrl)}
 				/>
 			)}
 		</div>

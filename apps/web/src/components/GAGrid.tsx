@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, ChevronLeft, ChevronRight, Maximize2, Upload } from 'lucide-react';
 import AssetPreviewModal from './AssetPreviewModal';
+import { previewTypeFor } from '../lib/preview';
 import { token } from '../lib/auth';
 
 export interface Column {
@@ -427,7 +428,7 @@ export default function GAGrid({
       <AssetPreviewModal 
         url={previewUrl} 
         onClose={() => setPreviewUrl(null)} 
-        type={previewUrl && /\.(pdf)(\?|$)/i.test(previewUrl) ? 'pdf' : 'image'} 
+        type={previewTypeFor(previewUrl)} 
       />
     </div>
   );

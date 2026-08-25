@@ -3,6 +3,7 @@ import { User, FileText, Banknote, Calendar, Briefcase, TrendingUp, X, Settings,
 import SalarySchemaWizard from './SalarySchemaWizard';
 import PaySlip from './PaySlip';
 import AssetPreviewModal from './AssetPreviewModal';
+import { previewTypeFor } from '../lib/preview';
 import { API, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
@@ -529,7 +530,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
       <AssetPreviewModal
         url={previewUrl}
         onClose={() => setPreviewUrl(null)}
-        type={previewUrl && /\.(pdf)(\?|$)/i.test(previewUrl) ? 'pdf' : 'image'}
+        type={previewTypeFor(previewUrl)}
       />
     )}
   </>);
