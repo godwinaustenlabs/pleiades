@@ -49,6 +49,7 @@ function getJournalLines(journal: any) {
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
+import agentRouter from './agent';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -56,6 +57,11 @@ import { ok, created, notFound, badRequest, serverError } from '../utils/respons
 const financeRouter = new Hono<{ Bindings: Env }>();
 financeRouter.use('*', authMiddleware);
 financeRouter.use('*', requireAppAccess('finance'));
+
+// The Pleiades accountant is part of Accounting, so it hangs off this router
+// and inherits its auth and app gate. Routes inside declare the extra trust
+// they need: `agent` to drive it, `agent_config` to change the rates it quotes.
+financeRouter.route('/agent', agentRouter);
 
 /* ── LEDGERS ── */
 financeRouter.get('/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {

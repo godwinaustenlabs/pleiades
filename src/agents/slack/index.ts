@@ -6,7 +6,7 @@ import {
   postToSlack,
 } from './lib/slack';
 import { conversationKey, type SlackTurn } from './agent';
-import { mayUseAccountant } from '../pleiades/access';
+import { mayUseAccountant } from '../pleiades-accountant/access';
 
 export { SlackAgent } from './agent';
 

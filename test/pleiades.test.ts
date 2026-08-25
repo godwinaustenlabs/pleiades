@@ -98,8 +98,8 @@ describe('compliance calculators', () => {
 	// The heart of it: these must refuse rather than approximate.
 
 	it('refuses salary withholding when no slab table is configured', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
 		const result = calcSalaryWithholding(await loadConfig(env as any), 2_400_000);
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.missingKeys).toContain('salary_withholding_slabs');
@@ -111,8 +111,8 @@ describe('compliance calculators', () => {
 			{ from: 600000, to: 1200000, rate_pct: 5 },
 			{ from: 1200000, to: null, rate_pct: 15, base_tax: 30000 },
 		]));
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcSalaryWithholding(await loadConfig(env as any), 1_000_000);
 		expect(r.ok).toBe(true);
 		// 5% of the 400,000 above the bracket floor.
@@ -124,16 +124,16 @@ describe('compliance calculators', () => {
 			{ from: 0, to: 600000, rate_pct: 0 },
 			{ from: 600000, to: 1200000, rate_pct: 5 },
 		]));
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcSalaryWithholding(await loadConfig(env as any), 5_000_000);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.reason).toMatch(/stops at/);
 	});
 
 	it('refuses EOBI until the notified wage base is set', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcEobi } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 12);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.missingKeys).toContain('eobi_notified_min_wage');
@@ -141,8 +141,8 @@ describe('compliance calculators', () => {
 
 	it('assesses EOBI on the notified wage, not actual salary', async () => {
 		await setVar('eobi_notified_min_wage', '37000');
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcEobi } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 12);
 		expect(r.ok).toBe(true);
 		if (r.ok) {
@@ -152,8 +152,8 @@ describe('compliance calculators', () => {
 	});
 
 	it('does not apply EOBI below the employee threshold', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcEobi } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 3);
 		expect(r.ok).toBe(true);
 		if (r.ok) {
@@ -163,8 +163,8 @@ describe('compliance calculators', () => {
 	});
 
 	it('always refuses PESSI/SESSI while unconfigured', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades/config');
-		const { calcPessiSessi } = await import('../src/agents/pleiades/compliance');
+		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
+		const { calcPessiSessi } = await import('../src/agents/pleiades-accountant/compliance');
 		const r = calcPessiSessi(await loadConfig(env as any), 100000);
 		expect(r.ok).toBe(false);
 	});
@@ -172,7 +172,7 @@ describe('compliance calculators', () => {
 
 describe('compliance context injected into the prompt', () => {
 	it('names unset required settings instead of omitting them', async () => {
-		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades/config');
+		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades-accountant/config');
 		const prompt = renderComplianceContext(await loadConfig(env as any));
 		// A silently absent rate invites the model to supply one from memory.
 		expect(prompt).toContain('NOT CONFIGURED');
@@ -181,7 +181,7 @@ describe('compliance context injected into the prompt', () => {
 	});
 
 	it('carries the operator-configured values', async () => {
-		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades/config');
+		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades-accountant/config');
 		const prompt = renderComplianceContext(await loadConfig(env as any));
 		expect(prompt).toContain('0.25%');
 		expect(prompt).toContain('29%');
@@ -199,17 +199,25 @@ describe('agent access and approvals', () => {
 		});
 	};
 
-	it('keeps the agent behind its own grant', async () => {
+	it('keeps the agent behind a finance grant', async () => {
 		const { authedGet } = await import('./helpers');
-		// u_crm holds crm, not agent: reaching the accountant is a separate
-		// privilege from holding an officeOS account.
-		expect((await authedGet('crm', '/api/agent/config')).status).toBe(403);
-		expect((await authedGet('crm', '/api/agent/approvals')).status).toBe(403);
+		// u_crm holds crm, not finance: the accountant is a capability of
+		// Accounting, so it is unreachable without finance access at all.
+		expect((await authedGet('crm', '/api/finance/agent/config')).status).toBe(403);
+		expect((await authedGet('crm', '/api/finance/agent/approvals')).status).toBe(403);
+	});
+
+	it('separates driving the agent from editing its rates', async () => {
+		// u_tasks holds only <app>/tasks. Finance access alone is not enough:
+		// `agent` and `agent_config` are distinct features precisely so asking a
+		// question and rewriting the law behind every figure are different acts.
+		const { authedGet } = await import('./helpers');
+		expect((await authedGet('tasksOnly', '/api/finance/agent/config')).status).toBe(403);
 	});
 
 	it('lets a superadmin read the configuration', async () => {
 		const { authedGet } = await import('./helpers');
-		const res = await authedGet('ceo', '/api/agent/config');
+		const res = await authedGet('ceo', '/api/finance/agent/config');
 		expect(res.status).toBe(200);
 		const { data } = await res.json() as any;
 		expect(data.total).toBe(48);
@@ -217,7 +225,7 @@ describe('agent access and approvals', () => {
 	});
 
 	it('rejects a value that is not of its declared type', async () => {
-		const res = await call('PUT', 'ceo', '/api/agent/config', {
+		const res = await call('PUT', 'ceo', '/api/finance/agent/config', {
 			values: { company_tax_standard_pct: 'twenty-nine' },
 		});
 		expect(res.status).toBe(400);
@@ -226,12 +234,12 @@ describe('agent access and approvals', () => {
 	});
 
 	it('rejects a percentage outside 0-100', async () => {
-		const res = await call('PUT', 'ceo', '/api/agent/config', { values: { wwf_pct: '250' } });
+		const res = await call('PUT', 'ceo', '/api/finance/agent/config', { values: { wwf_pct: '250' } });
 		expect(res.status).toBe(400);
 	});
 
 	it('accepts a valid change and reports what is still unset', async () => {
-		const res = await call('PUT', 'ceo', '/api/agent/config', { values: { eobi_notified_min_wage: '37000' } });
+		const res = await call('PUT', 'ceo', '/api/finance/agent/config', { values: { eobi_notified_min_wage: '37000' } });
 		expect(res.status).toBe(200);
 		const { data } = await res.json() as any;
 		expect(data.updated).toBe(1);
@@ -239,12 +247,12 @@ describe('agent access and approvals', () => {
 	});
 
 	it('will not decide an approval that does not exist', async () => {
-		const res = await call('POST', 'ceo', '/api/agent/approvals/apr_nope', { decision: 'approved' });
+		const res = await call('POST', 'ceo', '/api/finance/agent/approvals/apr_nope', { decision: 'approved' });
 		expect(res.status).toBe(400);
 	});
 
 	it('requires a real decision value', async () => {
-		const res = await call('POST', 'ceo', '/api/agent/approvals/apr_x', { decision: 'maybe' });
+		const res = await call('POST', 'ceo', '/api/finance/agent/approvals/apr_x', { decision: 'maybe' });
 		expect(res.status).toBe(400);
 	});
 });

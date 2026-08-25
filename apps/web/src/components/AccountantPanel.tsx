@@ -1,13 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, Loader2, Save, Send, ShieldAlert, Calculator,
-  Settings2, Inbox, Check, X, AlertTriangle, Eye,
+  Loader2, Save, Send, Settings2, Inbox, Check, X, AlertTriangle, Eye,
 } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
-import { usePermissions } from '../lib/usePermissions';
 import { errorMessage } from '../lib/errors';
-import MarkdownView from '../components/MarkdownView';
+import MarkdownView from './MarkdownView';
 
 interface ConfigVar {
   key: string;
@@ -25,15 +22,23 @@ interface ChatMessage { role: 'user' | 'assistant'; text: string }
 
 type Tab = 'chat' | 'settings' | 'approvals';
 
+interface AccountantPanelProps {
+  /** finance/agent edit — may drive the agent and decide approvals. */
+  canDrive: boolean;
+  /** finance/agent_config edit — may change the rates it quotes. */
+  canEditConfig: boolean;
+}
+
 /**
- * The Accounting department's entry to the Pleiades accountant.
+ * The Pleiades accountant, as a tab inside Accounting.
  *
- * Three things in one place, because they are the same job: tell the agent what
+ * Three things in one place because they are the same job: tell the agent what
  * the law currently is (settings), ask it to do something (chat), and decide
- * the things it refuses to decide alone (approvals).
+ * what it refuses to decide alone (approvals). It lives here rather than in an
+ * app of its own — the people who use it are the people already working these
+ * ledgers, and the settings belong next to the accounts they govern.
  */
-export default function Accountant() {
-  const { can, loaded: permsLoaded } = usePermissions();
+export default function AccountantPanel({ canDrive, canEditConfig }: AccountantPanelProps) {
   const [tab, setTab] = useState<Tab>('chat');
 
   const [groups, setGroups] = useState<ConfigGroup[]>([]);
@@ -51,11 +56,8 @@ export default function Accountant() {
   const [notice, setNotice] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const canEditConfig = can('agent', 'config', 'edit');
-  const canDrive = can('agent', 'reports', 'edit');
-
   const loadConfig = useCallback(async () => {
-    const res = await fetch(`${API}/agent/config`, { headers: authHeaders() });
+    const res = await fetch(`${API}/finance/agent/config`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`Could not load settings (${res.status})`);
     const { data } = await res.json();
     setGroups(data.groups || []);
@@ -63,7 +65,7 @@ export default function Accountant() {
   }, []);
 
   const loadApprovals = useCallback(async () => {
-    const res = await fetch(`${API}/agent/approvals`, { headers: authHeaders() });
+    const res = await fetch(`${API}/finance/agent/approvals`, { headers: authHeaders() });
     if (!res.ok) return;
     const { data } = await res.json();
     setApprovals(data || []);
@@ -82,7 +84,7 @@ export default function Accountant() {
   async function saveConfig() {
     setSaving(true); setError(null); setNotice(null);
     try {
-      const res = await fetch(`${API}/agent/config`, {
+      const res = await fetch(`${API}/finance/agent/config`, {
         method: 'PUT',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ values: edits }),
@@ -106,7 +108,7 @@ export default function Accountant() {
     setMessages((m) => [...m, { role: 'user', text }]);
     setSending(true);
     try {
-      const res = await fetch(`${API}/agent/chat`, {
+      const res = await fetch(`${API}/finance/agent/chat`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
@@ -123,7 +125,7 @@ export default function Accountant() {
 
   async function decide(id: string, decision: 'approved' | 'rejected') {
     try {
-      const res = await fetch(`${API}/agent/approvals/${id}`, {
+      const res = await fetch(`${API}/finance/agent/approvals/${id}`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision }),
@@ -140,7 +142,7 @@ export default function Accountant() {
 
   async function showPreview() {
     try {
-      const res = await fetch(`${API}/agent/config/preview`, { headers: authHeaders() });
+      const res = await fetch(`${API}/finance/agent/config/preview`, { headers: authHeaders() });
       const { data } = await res.json();
       setPreview(data.prompt);
     } catch (e) { setError(errorMessage(e)); }
@@ -151,7 +153,7 @@ export default function Accountant() {
     setEdits((e) => ({ ...e, [k]: val === '' ? null : val }));
   const dirty = Object.keys(edits).length > 0;
 
-  if (!permsLoaded || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-textSecondary text-xs">
         <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading…
@@ -159,33 +161,11 @@ export default function Accountant() {
     );
   }
 
-  if (!can('agent', 'reports') && !can('agent', 'config')) {
-    return (
-      <div className="p-8 max-w-lg mx-auto text-center space-y-3">
-        <ShieldAlert className="w-8 h-8 mx-auto text-textSecondary" />
-        <div className="text-sm font-black uppercase tracking-wider">Not available</div>
-        <p className="text-xs text-textSecondary">
-          The accountant agent requires the agent app. Ask an administrator to grant it in Access.
-        </p>
-        <Link to="/" className="inline-block text-[10px] font-black uppercase tracking-wider text-primary hover:underline">
-          Back to apps
-        </Link>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
-      <div className="flex items-center gap-3">
-        <Link to="/" className="text-textSecondary hover:text-text"><ArrowLeft className="w-4 h-4" /></Link>
-        <Calculator className="w-5 h-5 text-primary" />
-        <div className="flex-1">
-          <h1 className="text-lg font-black uppercase tracking-wider leading-none">Pleiades Accountant</h1>
-          <p className="text-[10px] text-textSecondary uppercase tracking-wider mt-1">
-            Drafts for review — it does not file anything
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <p className="text-[10px] text-textSecondary uppercase tracking-wider">
+        Drafts for review — the accountant does not file anything
+      </p>
 
       {missing.length > 0 && (
         <div className="flex items-start gap-2 border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-3 py-2 rounded">

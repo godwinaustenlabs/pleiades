@@ -34,13 +34,14 @@ export async function mayUseAccountant(
   }
   if (account.isSuperadmin) return { allowed: true };
 
-  // `agent/reports` at edit: driving the agent can change the books once an
-  // approval is granted, so it is not a read-level capability.
+  // `finance/agent` at edit: driving the agent can change the books once an
+  // approval is granted, so it is not a read-level capability. It lives under
+  // finance because the accountant is a capability of Accounting, not an app.
   const grant = await db.query.userAppPermissions.findFirst({
     where: and(
       eq(schema.userAppPermissions.userId, userId),
-      eq(schema.userAppPermissions.appName, 'agent'),
-      eq(schema.userAppPermissions.feature, 'reports'),
+      eq(schema.userAppPermissions.appName, 'finance'),
+      eq(schema.userAppPermissions.feature, 'agent'),
     ),
   });
 
@@ -49,7 +50,7 @@ export async function mayUseAccountant(
       allowed: false,
       reason:
         "You don't have access to the accountant agent. Ask an administrator to grant you " +
-        'agent / reports (edit) in the Access settings.',
+        'finance / agent (edit) in the Access settings.',
     };
   }
 

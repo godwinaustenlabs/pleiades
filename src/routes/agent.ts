@@ -2,25 +2,32 @@ import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../index';
-import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
+import { UserPayload } from '../middleware/auth';
+import { requireFeatureAccess } from '../middleware/rbac';
 import { logAudit } from '../utils/audit';
 import { ok, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
-import { decideApproval, listPending } from '../agents/pleiades/approvals';
-import { accountantKey, type AccountantTurn } from '../agents/pleiades/agent';
+import { decideApproval, listPending } from '../agents/pleiades-accountant/approvals';
+import { accountantKey, type AccountantTurn } from '../agents/pleiades-accountant/agent';
 import {
   loadConfig,
   missingRequired,
   renderComplianceContext,
   GROUP_LABELS,
   GROUP_ORDER,
-} from '../agents/pleiades/config';
+} from '../agents/pleiades-accountant/config';
 
+/**
+ * The Pleiades accountant, mounted inside the finance router at
+ * /api/finance/agent.
+ *
+ * It is a capability of the Accounting department, not an application of its
+ * own — the people who use it are the people who already work the ledgers.
+ * Mounting it here means authMiddleware and requireAppAccess('finance') are
+ * already applied by the parent, so this file only expresses the *extra* trust
+ * each route needs beyond having finance access at all.
+ */
 const agentRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
-
-agentRouter.use('*', authMiddleware);
-agentRouter.use('*', requireAppAccess('agent'));
 
 /**
  * Validates a value against its declared type.
@@ -82,7 +89,7 @@ function validate(valueType: string, raw: string | null): { ok: true; value: str
  * Every compliance variable, grouped for the settings UI, plus which required
  * ones are still unset.
  */
-agentRouter.get('/config', requireFeatureAccess('agent', 'config', 'view'), async (c) => {
+agentRouter.get('/config', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
   try {
     const vars = await loadConfig(c.env);
     return ok(c, {
@@ -107,7 +114,7 @@ agentRouter.get('/config', requireFeatureAccess('agent', 'config', 'view'), asyn
  * for a *new* window (a Finance Act change) is a different operation — see
  * POST /config/supersede — because editing in place would rewrite the past.
  */
-agentRouter.put('/config', requireFeatureAccess('agent', 'config', 'edit'), async (c) => {
+agentRouter.put('/config', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
@@ -169,7 +176,7 @@ agentRouter.put('/config', requireFeatureAccess('agent', 'config', 'edit'), asyn
  * Worth exposing: the operator should be able to see what the agent will read,
  * rather than trusting that their settings landed.
  */
-agentRouter.get('/config/preview', requireFeatureAccess('agent', 'config', 'view'), async (c) => {
+agentRouter.get('/config/preview', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
   try {
     const vars = await loadConfig(c.env);
     return ok(c, { prompt: renderComplianceContext(vars) });
@@ -184,7 +191,7 @@ agentRouter.get('/config/preview', requireFeatureAccess('agent', 'config', 'view
  * What the agent is waiting on. These are the "crucial decisions" — opening an
  * account, linking a ledger, running payroll — that it refuses to take alone.
  */
-agentRouter.get('/approvals', requireFeatureAccess('agent', 'reports', 'view'), async (c) => {
+agentRouter.get('/approvals', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
   try {
     return ok(c, await listPending(c.env));
   } catch (err) {
@@ -199,7 +206,7 @@ agentRouter.get('/approvals', requireFeatureAccess('agent', 'reports', 'view'), 
  * Gated on edit, not view: approving is authorising a change to the books, and
  * must be a deliberate act by someone entitled to make it.
  */
-agentRouter.post('/approvals/:id', requireFeatureAccess('agent', 'reports', 'edit'), async (c) => {
+agentRouter.post('/approvals/:id', requireFeatureAccess('finance', 'agent', 'edit'), async (c) => {
   try {
     const user = c.get('user');
     const { decision } = await c.req.json<{ decision: 'approved' | 'rejected' }>();
@@ -226,7 +233,7 @@ agentRouter.post('/approvals/:id', requireFeatureAccess('agent', 'reports', 'edi
  * Worker's own middleware with that identity, so the agent is bounded by what
  * the person could do themselves — it cannot be used to borrow authority.
  */
-agentRouter.post('/chat', requireFeatureAccess('agent', 'reports', 'edit'), async (c) => {
+agentRouter.post('/chat', requireFeatureAccess('finance', 'agent', 'edit'), async (c) => {
   try {
     const user = c.get('user');
     const { message, thread } = await c.req.json<{ message: string; thread?: string }>();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Wallet, Receipt, CreditCard, ArrowUpRight, LogOut,
-  FileText, Home, Loader2, Lock, Book
+  FileText, Home, Loader2, Lock, Book, Calculator
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -12,11 +12,12 @@ import NotificationCenter from '../components/NotificationCenter';
 import MobileTabMenu from '../components/MobileTabMenu';
 import JournalEntryForm from '../components/JournalEntryForm';
 import DocumentsTab from '../components/DocumentsTab';
+import AccountantPanel from '../components/AccountantPanel';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
 
-type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks';
+type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'agent';
 
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -100,7 +101,8 @@ function Finance() {
     if (!permsLoaded) return;
     // DocumentsTab loads its own data from /finance/documents; the generic
     // `/finance/<tab>` fetch below would just 404 on /finance/docs.
-    if (tab === 'docs') { setLoading(false); return; }
+    // Both render their own data; the generic finance fetch below does not apply.
+    if (tab === 'docs' || tab === 'agent') { setLoading(false); return; }
     setLoading(true);
     let url = `${API}/finance/${tab}`;
     if (tab === 'journals') {
@@ -168,6 +170,7 @@ function Finance() {
       { id: 'fund-requests', label: 'Fund Requests', icon: ArrowUpRight, feature: 'fund_requests' },
       { id: 'docs', label: 'Documents', icon: Book, feature: 'docs' },
       { id: 'tasks', label: 'Tasks', icon: Receipt, feature: 'tasks' },
+      { id: 'agent', label: 'Accountant', icon: Calculator, feature: 'agent' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -559,6 +562,13 @@ function Finance() {
           />
         )}
         {tab === 'tasks' && <TaskBoard department="Finance" canEdit={getPerm('tasks').canEdit} />}
+
+        {tab === 'agent' && (
+          <AccountantPanel
+            canDrive={user.isSuperadmin || getPerm('agent').canEdit}
+            canEditConfig={user.isSuperadmin || getPerm('agent_config').canEdit}
+          />
+        )}
       </main>
 
 
