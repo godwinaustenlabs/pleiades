@@ -6,11 +6,13 @@
  * as nothing at all — the file was there and downloadable, it just silently
  * showed blank.
  */
-export type PreviewKind = 'image' | 'pdf' | 'text' | 'file';
+export type PreviewKind = 'image' | 'pdf' | 'markdown' | 'text' | 'file';
 
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg'];
-/** Renderable as plain text. Markdown is shown as source, not formatted. */
-const TEXT_EXT = ['md', 'markdown', 'txt', 'csv', 'log', 'json', 'yml', 'yaml'];
+/** Rendered as formatted markdown. */
+const MARKDOWN_EXT = ['md', 'markdown', 'mdown', 'mkd'];
+/** Renderable as plain text, shown as-is. */
+const TEXT_EXT = ['txt', 'csv', 'log', 'json', 'yml', 'yaml'];
 
 /** The extension of a key or URL, ignoring any query string. */
 export function extensionOf(source: string): string {
@@ -39,12 +41,19 @@ export function filenameOf(source: string): string {
 export function previewTypeFor(source: string | null | undefined, mimeType?: string | null): PreviewKind {
 	if (!source) return 'file';
 
+	const ext = extensionOf(source);
+	// The extension decides markdown before the MIME type does: uploads are
+	// stored with whatever Content-Type the browser guessed, and a .md file is
+	// commonly labelled text/plain (or application/octet-stream), which would
+	// otherwise demote it to an unformatted dump.
+	if (MARKDOWN_EXT.includes(ext)) return 'markdown';
+
 	const mime = (mimeType || '').toLowerCase();
 	if (mime.startsWith('image/')) return 'image';
 	if (mime === 'application/pdf') return 'pdf';
+	if (mime === 'text/markdown' || mime === 'text/x-markdown') return 'markdown';
 	if (mime.startsWith('text/')) return 'text';
 
-	const ext = extensionOf(source);
 	if (ext === 'pdf') return 'pdf';
 	if (IMAGE_EXT.includes(ext)) return 'image';
 	if (TEXT_EXT.includes(ext)) return 'text';

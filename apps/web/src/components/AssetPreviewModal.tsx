@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, FileText, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, FileText, Loader2, Code2, BookOpen } from 'lucide-react';
 import { filenameOf, type PreviewKind } from '../lib/preview';
+import MarkdownView from './MarkdownView';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -29,10 +30,14 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
   // An image that fails to decode falls back to the download card rather than
   // leaving a broken-image icon on screen.
   const [imageBroken, setImageBroken] = useState(false);
+  // Markdown renders formatted by default; the toggle shows the raw source,
+  // which matters for documents where the markup itself is the content.
+  const [showSource, setShowSource] = useState(false);
 
   useEffect(() => {
     setImageBroken(false);
-    if (!url || type !== 'text') {
+    setShowSource(false);
+    if (!url || (type !== 'text' && type !== 'markdown')) {
       setText(null);
       setTextError(null);
       return;
@@ -135,22 +140,34 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
               </div>
             )}
           </div>
-        ) : type === 'text' ? (
+        ) : type === 'text' || type === 'markdown' ? (
           <div className="w-full h-full flex flex-col items-center pt-16 pb-4">
             <div className="flex items-center gap-3 mb-3 text-white/80 text-xs font-black uppercase tracking-widest">
               <FileText className="w-4 h-4" />
-              {filenameOf(url)}
-              <button onClick={handleDownload} className="ml-2 p-1 hover:text-white" title="Download">
+              <span className="truncate max-w-[50vw]">{filenameOf(url)}</span>
+              {type === 'markdown' && (
+                <button
+                  onClick={() => setShowSource((v) => !v)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                  title={showSource ? 'Show formatted' : 'Show source'}
+                >
+                  {showSource ? <BookOpen className="w-3.5 h-3.5" /> : <Code2 className="w-3.5 h-3.5" />}
+                  {showSource ? 'Formatted' : 'Source'}
+                </button>
+              )}
+              <button onClick={handleDownload} className="p-1 hover:text-white" title="Download">
                 <Download className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-auto w-full max-w-4xl bg-white text-black rounded-xl shadow-2xl p-6">
+            <div className="flex-1 overflow-auto w-full max-w-4xl bg-white text-black rounded-xl shadow-2xl px-8 py-7">
               {textError ? (
                 <div className="text-red-600 text-sm">{textError}</div>
               ) : text === null ? (
                 <div className="flex items-center gap-2 text-sm text-black/60">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </div>
+              ) : type === 'markdown' && !showSource ? (
+                <MarkdownView source={text} />
               ) : (
                 <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed font-mono">{text}</pre>
               )}
