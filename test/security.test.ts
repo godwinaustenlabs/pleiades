@@ -444,6 +444,7 @@ describe('asset download authorization', () => {
 		['upload_institutional_asset/brief.docx', 'crm'],
 		['new_documents/policy.pdf', 'ceo'],
 		['update_template/nda.docx', 'ceo'],
+		['new_template/draft.pages', 'ceo'],
 		['new_sop/onboarding.pdf', 'ceo'],
 	])('serves legacy object %s to a holder of its module grant', async (key, user) => {
 		const res = await authedGet(user as any, `/api/assets/download/${key}`);

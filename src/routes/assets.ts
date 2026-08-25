@@ -140,6 +140,7 @@ const READ_RULES: { prefix: string; grants: [string, string][] }[] = [
   { prefix: 'upload_institutional_asset/', grants: [['crm', 'documents']] },
   { prefix: 'new_documents/', grants: [['core', 'docs'], ['ops', 'docs']] },
   { prefix: 'update_template/', grants: [['legal', 'templates']] },
+  { prefix: 'new_template/', grants: [['legal', 'templates']] },
   { prefix: 'new_sop/', grants: [['legal', 'sops']] },
   { prefix: 'update_clients/', grants: ANY_AUTHENTICATED },
   { prefix: 'invoices/', grants: [['finance', 'invoices'], ['finance', 'docs']] },
