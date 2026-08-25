@@ -6,7 +6,8 @@ import { UserPayload } from './auth';
 import { Env } from '../index';
 
 export type AppModule =
-  | 'hr' | 'finance' | 'legal' | 'ops' | 'acquisition' | 'tech' | 'crm' | 'dashboard' | 'core' | 'admin';
+  | 'hr' | 'finance' | 'legal' | 'ops' | 'acquisition' | 'tech' | 'crm' | 'dashboard' | 'core' | 'admin'
+  | 'agent';
 
 export type PermissionLevel = 'view' | 'edit' | 'delete';
 
@@ -42,6 +43,10 @@ export const APP_FEATURES: Record<string, string[]> = {
   crm: ['tickets', 'documents', 'planner', 'tasks'],
   dashboard: ['overview', 'notes', 'tasks'],
   core: ['employees', 'labs', 'clients', 'committees', 'docs'],
+  // The Pleiades accountant. `config` is the compliance settings the operator
+  // owns; every rate the agent quotes comes from there, so editing it is a
+  // higher-trust action than reading a report.
+  agent: ['config', 'reports'],
   // `roles` was an admin feature until 0025 removed roles from the model.
   admin: ['permissions', 'users', 'api_keys', 'audit_logs', 'resets'],
 };

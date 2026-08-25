@@ -1,5 +1,24 @@
 -- Production DDL, pulled from sqlite_master, so the test database cannot
 -- drift from the real one. Regenerate it rather than hand-editing.
+CREATE TABLE agent_approvals (
+	id TEXT PRIMARY KEY,
+	tool_name TEXT NOT NULL,
+	-- The exact arguments approved. Compared on execution, so an approval for
+	-- one payload can never be replayed against a different one.
+	payload TEXT NOT NULL,
+	payload_hash TEXT NOT NULL,
+	summary TEXT NOT NULL,          -- what the operator is being asked to allow
+	-- pending | approved | rejected | consumed | expired
+	status TEXT NOT NULL DEFAULT 'pending',
+	requested_by TEXT NOT NULL,     -- users_logins.id the agent was acting as
+	decided_by TEXT,                -- users_logins.id who approved or rejected
+	decided_at INTEGER,
+	consumed_at INTEGER,
+	-- Approvals are short-lived: an hour-old "yes" to opening an account should
+	-- not authorise it tomorrow.
+	expires_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE agent_conversations (
 	id TEXT PRIMARY KEY,
 	started_at INTEGER NOT NULL,
@@ -35,15 +54,6 @@ CREATE TABLE `audit_logs` (
 	`details` text,
 	`timestamp` integer NOT NULL
 );
-CREATE TABLE calc_config (
-	id TEXT PRIMARY KEY,
-	calc_name TEXT NOT NULL,                -- 'salary_withholding_slabs', 'eobi_contribution', ...
-	effective_from TEXT NOT NULL,           -- ISO date the rule takes effect
-	effective_to TEXT,                      -- NULL = still current
-	config_json TEXT NOT NULL,              -- the rate table itself
-	verification TEXT NOT NULL DEFAULT 'unverified', -- verified | needs_verification | unverified
-	source_note TEXT
-);
 CREATE TABLE `committee_members` (
 	`committee_id` text NOT NULL,
 	`employee_id` text NOT NULL,
@@ -76,6 +86,24 @@ CREATE TABLE `company_documents` (
 	`uploaded_by` text,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`uploaded_by`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action
+);
+CREATE TABLE compliance_config (
+	id TEXT PRIMARY KEY,
+	config_key TEXT NOT NULL,
+	group_name TEXT NOT NULL,
+	label TEXT NOT NULL,
+	description TEXT,
+	-- percent | currency | number | date | text | boolean | json
+	value_type TEXT NOT NULL,
+	unit TEXT,
+	value TEXT,
+	required INTEGER NOT NULL DEFAULT 1,
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	effective_from TEXT NOT NULL,
+	effective_to TEXT,
+	updated_by TEXT,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
 );
 CREATE TABLE compliance_events (
 	id TEXT PRIMARY KEY,
@@ -184,8 +212,14 @@ CREATE TABLE "users_logins" (
 	is_superadmin INTEGER DEFAULT 0,
 	phone TEXT
 );
-CREATE INDEX calc_config_name_effective_idx
-	ON calc_config (calc_name, effective_from);
+CREATE INDEX agent_approvals_requester_idx
+	ON agent_approvals (requested_by, created_at);
+CREATE INDEX agent_approvals_status_idx
+	ON agent_approvals (status, expires_at);
+CREATE INDEX compliance_config_group_idx
+	ON compliance_config (group_name, sort_order);
+CREATE UNIQUE INDEX compliance_config_key_from_unique
+	ON compliance_config (config_key, effective_from);
 CREATE INDEX compliance_events_due_status_idx
 	ON compliance_events (due_date, status);
 CREATE INDEX conversation_turns_conversation_idx

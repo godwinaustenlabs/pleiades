@@ -22,6 +22,7 @@ import assetsRouter from './routes/assets';
 import notificationsRouter from './routes/notifications';
 import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
+import agentRouter from './routes/agent';
 import slackAgentRouter from './agents/slack';
 
 // Durable Object classes must be exported from the Worker entry point for
@@ -141,6 +142,7 @@ app.route('/api/ops', opsRouter);
 app.route('/api/admin', adminRouter);
 
 // Agents
+app.route('/api/agent', agentRouter);
 app.route('/api/agents/slack', slackAgentRouter(app));
 
 // CRM — Committee CRM system (crm gate)

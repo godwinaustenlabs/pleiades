@@ -103,26 +103,73 @@ export const notificationsLog = sqliteTable('notifications_log', {
 });
 
 /**
- * Versioned rate tables — every tax rate, slab and threshold the calculators
- * use, with an effective_from/effective_to window.
+ * Compliance configuration, owned by the operator.
  *
- * A Finance Act change is a new row, never an edit: a document generated last
- * year must remain explainable by the rate that applied when it was generated.
+ * Replaces the earlier calc_config, which stored each rule as an opaque JSON
+ * blob — fine for a migration to seed, impossible for a person to edit in a
+ * form. These figures are not ours to decide: rates, the EOBI wage base, the
+ * tax-year boundary and the company's own registration details change with each
+ * Finance Act and provincial notification, and the operator is who knows them.
  *
- * `verification` is an addition to the spec's DDL. Several figures in the
- * spec's own quick-reference are explicitly unconfirmed (PESSI/SESSI rates, the
- * minimum-tax threshold, the intermediate salary slabs), and a calculator has
- * to be able to tell settled law from a figure that still needs checking. Rows
- * whose config carries `blocking: true` must make their calc_* tool refuse
- * rather than return a number.
+ * Every row is one typed, labelled, grouped variable rendered as a field in the
+ * agent settings UI. The configured values are injected into the agent's system
+ * prompt at request time (see src/agents/pleiades/config.ts), so nothing
+ * compliance-related is hardcoded in code or prompt.
+ *
+ * `value` is NULL until the operator sets it. A NULL on a required row is what
+ * makes the agent refuse to produce a dependent figure instead of guessing.
+ *
+ * (config_key, effective_from) is unique: a rate change is a new row with a
+ * later effective_from, never an edit, so a document generated in the past
+ * remains explainable by the rate that applied when it was made.
  */
-export const calcConfig = sqliteTable('calc_config', {
+export const complianceConfig = sqliteTable('compliance_config', {
   id: text('id').primaryKey(),
-  calcName: text('calc_name').notNull(),
+  configKey: text('config_key').notNull(),
+  /** UI grouping: company | tax_year | income_tax | eobi | secp | … */
+  groupName: text('group_name').notNull(),
+  label: text('label').notNull(),
+  description: text('description'),
+  /** percent | currency | number | date | text | boolean | json */
+  valueType: text('value_type').notNull(),
+  unit: text('unit'),
+  /** NULL means the operator has not configured it yet. */
+  value: text('value'),
+  required: integer('required').notNull().default(1),
+  sortOrder: integer('sort_order').notNull().default(0),
   effectiveFrom: text('effective_from').notNull(),
   effectiveTo: text('effective_to'),
-  configJson: text('config_json').notNull(),
-  /** verified | needs_verification | unverified */
-  verification: text('verification').notNull().default('unverified'),
-  sourceNote: text('source_note'),
+  updatedBy: text('updated_by'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+/**
+ * Human-in-the-loop approvals for consequential agent actions.
+ *
+ * Opening an account, linking a ledger, running payroll, posting a journal:
+ * these must not happen because a model decided they should. The gate is this
+ * table rather than a line in the prompt, because a prompt instruction is text
+ * and can be argued with by other text — including text the agent read out of
+ * an invoice description.
+ *
+ * `payloadHash` is re-checked at execution, so an approval for one payload can
+ * never be replayed against a different one, and the row is consumed on first
+ * use so a token cannot be reused.
+ */
+export const agentApprovals = sqliteTable('agent_approvals', {
+  id: text('id').primaryKey(),
+  toolName: text('tool_name').notNull(),
+  payload: text('payload').notNull(),
+  payloadHash: text('payload_hash').notNull(),
+  summary: text('summary').notNull(),
+  /** pending | approved | rejected | consumed | expired */
+  status: text('status').notNull().default('pending'),
+  requestedBy: text('requested_by').notNull(),
+  decidedBy: text('decided_by'),
+  decidedAt: integer('decided_at', { mode: 'timestamp' }),
+  consumedAt: integer('consumed_at', { mode: 'timestamp' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
