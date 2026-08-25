@@ -3,6 +3,7 @@ import { Env } from '../../index';
 import { buildStatutoryComponents } from './compliance';
 import { loadConfig, missingRequired } from './config';
 import { requestApproval, consumeApproval } from './approvals';
+import { searchKnowledge } from './knowledge';
 
 /** Calls the Worker's own API as the acting user. */
 export type ApiCaller = (method: string, path: string, body?: unknown) => Promise<string>;
@@ -81,6 +82,30 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
           note: missing.length
             ? 'Some required settings are unset. Anything depending on them cannot be computed — say so instead.'
             : 'All required settings are configured.',
+        });
+      },
+    },
+
+    {
+      name: 'knowledge_search',
+      description:
+        'Searches the indexed compliance documents for rules, procedures, formats and worked ' +
+        'examples. Use it to understand HOW something must be done or reported. It is NOT a source ' +
+        'of rates — every number comes from get_compliance_config. If a passage states a figure ' +
+        'that contradicts the configured value, report the discrepancy rather than choosing.',
+      schema: z.object({
+        query: z.string().describe('What you need to understand'),
+        top_k: z.number().optional().describe('How many passages, default 5'),
+      }),
+      func: async (a: any) => {
+        const result = await searchKnowledge(ctx.env, a.query, { topK: a.top_k });
+        return JSON.stringify({
+          passages: result.passages.map((p) => ({
+            source: `${p.title} › ${p.section}`,
+            relevance: Math.round(p.score * 100) / 100,
+            text: p.text,
+          })),
+          authority: result.note,
         });
       },
     },

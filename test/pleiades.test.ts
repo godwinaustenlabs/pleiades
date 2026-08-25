@@ -273,3 +273,68 @@ describe('SPA routing', () => {
 		expect((await res.json() as any).success).toBe(false);
 	});
 });
+
+describe('knowledge base', () => {
+	it('chunks markdown on headings rather than fixed width', async () => {
+		const { chunkMarkdown } = await import('../src/agents/pleiades-accountant/knowledge');
+		const doc = `# Manual
+
+## Salary withholding
+Deposited by the 15th of the following month and reported on the monthly statement.
+${'Filler sentence to give this section some body. '.repeat(20)}
+
+## EOBI
+Assessed on the notified minimum wage, not actual salary.
+${'More filler to make this a real section. '.repeat(20)}`;
+
+		const chunks = chunkMarkdown(doc);
+		expect(chunks.length).toBeGreaterThanOrEqual(2);
+		// Each chunk knows the section it came from, so a citation can name it.
+		expect(chunks.some((c) => c.section.includes('Salary withholding'))).toBe(true);
+		expect(chunks.some((c) => c.section.includes('EOBI'))).toBe(true);
+		// A section boundary must not be swallowed into a neighbouring chunk.
+		const eobi = chunks.find((c) => c.section.includes('EOBI'))!;
+		expect(eobi.text).not.toContain('Salary withholding');
+	});
+
+	it('drops fragments too small to be worth retrieving', async () => {
+		const { chunkMarkdown } = await import('../src/agents/pleiades-accountant/knowledge');
+		expect(chunkMarkdown('# A\n\n## B\n\n## C')).toHaveLength(0);
+	});
+
+	it('degrades to a stated refusal when no index is bound', async () => {
+		// An absent binding must behave like an unset rate: say so, do not guess.
+		const { searchKnowledge } = await import('../src/agents/pleiades-accountant/knowledge');
+		const res = await searchKnowledge({ ...env, VECTORIZE: undefined } as any, 'anything');
+		expect(res.passages).toHaveLength(0);
+		expect(res.note).toMatch(/no knowledge base is configured/i);
+		expect(res.note).toMatch(/compliance settings/i);
+	});
+
+	it('gates the knowledge base behind agent_config', async () => {
+		const { authedGet } = await import('./helpers');
+		expect((await authedGet('crm', '/api/finance/agent/knowledge')).status).toBe(403);
+	});
+
+	it('reports whether the index and bucket are actually bound', async () => {
+		const { authedGet } = await import('./helpers');
+		const res = await authedGet('ceo', '/api/finance/agent/knowledge');
+		expect(res.status).toBe(200);
+		const { data } = await res.json() as any;
+		// The UI needs to distinguish an empty knowledge base from an unconfigured
+		// one; they look identical to the agent otherwise.
+		expect(typeof data.vectorizeConfigured).toBe('boolean');
+		expect(typeof data.bucketConfigured).toBe('boolean');
+	});
+
+	it('refuses to ingest without a key', async () => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		const res = await SELF.fetch('https://test.local/api/finance/agent/knowledge/ingest', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenFor('ceo')}` },
+			body: JSON.stringify({}),
+		});
+		expect(res.status).toBe(400);
+	});
+});

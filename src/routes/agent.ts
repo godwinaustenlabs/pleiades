@@ -9,6 +9,8 @@ import { ok, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
 import { decideApproval, listPending } from '../agents/pleiades-accountant/approvals';
 import { accountantKey, type AccountantTurn } from '../agents/pleiades-accountant/agent';
+import { ingestDocument, removeDocument, searchKnowledge } from '../agents/pleiades-accountant/knowledge';
+import { generateId } from '../utils/id';
 import {
   loadConfig,
   missingRequired,
@@ -274,6 +276,126 @@ agentRouter.post('/chat', requireFeatureAccess('finance', 'agent', 'edit'), asyn
       thread: thread || 'default',
     });
     return ok(c, await res.json());
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+// ── Knowledge base ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/finance/agent/knowledge
+ *
+ * What is in the knowledge base, and what is sitting in the bucket waiting to be
+ * indexed. Both, because an un-indexed file and an indexed one look identical
+ * from the outside otherwise.
+ */
+agentRouter.get('/knowledge', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const indexed = await db.query.knowledgeDocuments.findMany();
+
+    let inBucket: { key: string; size: number; uploaded: string }[] = [];
+    if (c.env.COMPLIANCE_BUCKET) {
+      const listing = await c.env.COMPLIANCE_BUCKET.list({ limit: 200 });
+      inBucket = listing.objects.map((o) => ({
+        key: o.key,
+        size: o.size,
+        uploaded: o.uploaded.toISOString(),
+      }));
+    }
+
+    const indexedKeys = new Set(indexed.map((d) => d.r2Key));
+    return ok(c, {
+      documents: indexed,
+      unindexed: inBucket.filter((o) => !indexedKeys.has(o.key)),
+      vectorizeConfigured: !!c.env.VECTORIZE,
+      bucketConfigured: !!c.env.COMPLIANCE_BUCKET,
+    });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/finance/agent/knowledge/ingest
+ * Body: { r2Key, title? }
+ *
+ * Indexing decides what the agent will cite as procedure, so it sits behind
+ * agent_config edit alongside the rates.
+ */
+agentRouter.post('/knowledge/ingest', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const { r2Key, title } = await c.req.json<{ r2Key: string; title?: string }>();
+    if (!r2Key) return badRequest(c, 'r2Key is required');
+    if (!c.env.VECTORIZE) return badRequest(c, 'No Vectorize index is bound to this Worker.');
+
+    const existing = await db.query.knowledgeDocuments.findFirst({
+      where: eq(schema.knowledgeDocuments.r2Key, r2Key),
+    });
+    const docId = existing?.id ?? generateId('kdoc');
+    const docTitle = title || existing?.title || r2Key.split('/').pop() || r2Key;
+    const now = new Date();
+
+    if (!existing) {
+      await db.insert(schema.knowledgeDocuments).values({
+        id: docId, r2Key, title: docTitle, status: 'pending', createdAt: now,
+      });
+    }
+
+    try {
+      const result = await ingestDocument(c.env, { r2Key, title: docTitle, docId });
+      await db.update(schema.knowledgeDocuments).set({
+        title: docTitle,
+        chunkCount: result.chunks,
+        characters: result.characters,
+        status: 'indexed',
+        error: null,
+        ingestedBy: user.id,
+        ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+
+      await logAudit(c.env, user.id, 'CREATE', 'knowledge_documents', docId, {
+        r2Key, chunks: result.chunks,
+      });
+      return ok(c, { ...result, title: docTitle });
+    } catch (err) {
+      // Record the failure rather than only returning it: a knowledge base that
+      // failed to ingest looks exactly like an empty one from the agent's side.
+      const message = err instanceof Error ? err.message : String(err);
+      await db.update(schema.knowledgeDocuments).set({
+        status: 'failed', error: message, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      return badRequest(c, message);
+    }
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/** DELETE /api/finance/agent/knowledge/:id — drops its passages and the record. */
+agentRouter.delete('/knowledge/:id', requireFeatureAccess('finance', 'agent_config', 'delete'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id')!;
+    await removeDocument(c.env, id);
+    await db.delete(schema.knowledgeDocuments).where(eq(schema.knowledgeDocuments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'knowledge_documents', id);
+    return ok(c, { id, removed: true });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/** GET /api/finance/agent/knowledge/search?q= — try a query as the agent would. */
+agentRouter.get('/knowledge/search', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
+  try {
+    const q = c.req.query('q');
+    if (!q) return badRequest(c, 'q is required');
+    return ok(c, await searchKnowledge(c.env, q, { topK: Number(c.req.query('topK')) || 5 }));
   } catch (err) {
     return serverError(c, err);
   }

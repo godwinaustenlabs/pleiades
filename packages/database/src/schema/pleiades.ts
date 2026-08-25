@@ -173,3 +173,27 @@ export const agentApprovals = sqliteTable('agent_approvals', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+/**
+ * Documents indexed into the knowledge base.
+ *
+ * Vectorize holds the passages; this holds what a person needs to see. Without
+ * it the index is opaque — there is no way to tell an empty knowledge base from
+ * one that silently failed to ingest a scanned PDF, and those look identical
+ * from the agent's side.
+ */
+export const knowledgeDocuments = sqliteTable('knowledge_documents', {
+  id: text('id').primaryKey(),
+  r2Key: text('r2_key').notNull().unique(),
+  title: text('title').notNull(),
+  /** compliance (the manual) | history (past conversations and deliverables) */
+  namespace: text('namespace').notNull().default('compliance'),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  characters: integer('characters').notNull().default(0),
+  /** pending | indexed | failed */
+  status: text('status').notNull().default('pending'),
+  error: text('error'),
+  ingestedBy: text('ingested_by'),
+  ingestedAt: integer('ingested_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+

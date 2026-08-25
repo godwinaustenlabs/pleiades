@@ -52,6 +52,14 @@ export type Env = {
   ASSETS: Fetcher;
   /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
   CRM_BUCKET?: R2Bucket;
+  /** Source documents for the accountant's knowledge base. */
+  COMPLIANCE_BUCKET?: R2Bucket;
+  /**
+   * Vectorize index over those documents. Optional on purpose: an absent
+   * binding degrades to "no knowledge base configured", the same way an unset
+   * rate produces a refusal rather than a guess.
+   */
+  VECTORIZE?: VectorizeIndex;
   /** Workers AI. Bound for the agent pipeline. */
   AI?: Ai;
   /** The Slack agent Durable Object — one instance per Slack conversation. */

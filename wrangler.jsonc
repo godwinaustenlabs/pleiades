@@ -81,6 +81,21 @@
 		{
 			"binding": "CRM_BUCKET",
 			"bucket_name": "office-crm-docs"
+		},
+		{
+			// Source documents for the accountant's knowledge base. Kept apart
+			// from CRM_BUCKET so a compliance manual can never be served through
+			// /api/assets, which is reachable by anyone with the right grant.
+			"binding": "COMPLIANCE_BUCKET",
+			"bucket_name": "office-compliance-docs"
+		}
+	],
+	// Retrieval over those documents. Rates never come from here — see
+	// src/agents/pleiades-accountant/knowledge.ts.
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "pleiades-compliance"
 		}
 	]
 }

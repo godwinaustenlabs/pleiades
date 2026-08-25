@@ -156,6 +156,20 @@ CREATE TABLE generated_documents (
 	vector_id TEXT,                         -- id of the summary embedding in Vectorize
 	created_at INTEGER NOT NULL
 );
+CREATE TABLE knowledge_documents (
+	id TEXT PRIMARY KEY,
+	r2_key TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL,
+	namespace TEXT NOT NULL DEFAULT 'compliance',
+	chunk_count INTEGER NOT NULL DEFAULT 0,
+	characters INTEGER NOT NULL DEFAULT 0,
+	-- pending | indexed | failed
+	status TEXT NOT NULL DEFAULT 'pending',
+	error TEXT,
+	ingested_by TEXT,
+	ingested_at INTEGER,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE notifications_log (
 	id TEXT PRIMARY KEY,
 	channel TEXT NOT NULL,                  -- 'email' | 'slack'
@@ -228,6 +242,8 @@ CREATE INDEX generated_documents_period_type_idx
 	ON generated_documents (period_label, doc_type);
 CREATE UNIQUE INDEX generated_documents_type_period_version_unique
 	ON generated_documents (doc_type, period_label, version);
+CREATE INDEX knowledge_documents_status_idx
+	ON knowledge_documents (status, created_at);
 CREATE UNIQUE INDEX user_app_permissions_user_app_feature_unique
 	ON user_app_permissions (user_id, app_name, feature);
 CREATE INDEX user_app_permissions_user_idx
