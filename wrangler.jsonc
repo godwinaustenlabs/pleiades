@@ -33,6 +33,10 @@
 			{
 				"name": "SLACK_AGENT",
 				"class_name": "SlackAgent"
+			},
+			{
+				"name": "PLEIADES_AGENT",
+				"class_name": "PleiadesAgent"
 			}
 		]
 	},
@@ -43,6 +47,12 @@
 			"tag": "v1",
 			"new_sqlite_classes": [
 				"SlackAgent"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"PleiadesAgent"
 			]
 		}
 	],

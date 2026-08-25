@@ -187,3 +187,81 @@ describe('compliance context injected into the prompt', () => {
 		expect(prompt).toContain('29%');
 	});
 });
+
+describe('agent access and approvals', () => {
+	const call = async (method: string, user: any, path: string, body: unknown) => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		return SELF.fetch(`https://test.local${path}`, {
+			method,
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenFor(user)}` },
+			body: JSON.stringify(body),
+		});
+	};
+
+	it('keeps the agent behind its own grant', async () => {
+		const { authedGet } = await import('./helpers');
+		// u_crm holds crm, not agent: reaching the accountant is a separate
+		// privilege from holding an officeOS account.
+		expect((await authedGet('crm', '/api/agent/config')).status).toBe(403);
+		expect((await authedGet('crm', '/api/agent/approvals')).status).toBe(403);
+	});
+
+	it('lets a superadmin read the configuration', async () => {
+		const { authedGet } = await import('./helpers');
+		const res = await authedGet('ceo', '/api/agent/config');
+		expect(res.status).toBe(200);
+		const { data } = await res.json() as any;
+		expect(data.total).toBe(48);
+		expect(data.groups.length).toBeGreaterThan(0);
+	});
+
+	it('rejects a value that is not of its declared type', async () => {
+		const res = await call('PUT', 'ceo', '/api/agent/config', {
+			values: { company_tax_standard_pct: 'twenty-nine' },
+		});
+		expect(res.status).toBe(400);
+		// A malformed rate reaching the table is a figure the agent reads as fact.
+		expect((await res.json() as any).error).toMatch(/must be a number/);
+	});
+
+	it('rejects a percentage outside 0-100', async () => {
+		const res = await call('PUT', 'ceo', '/api/agent/config', { values: { wwf_pct: '250' } });
+		expect(res.status).toBe(400);
+	});
+
+	it('accepts a valid change and reports what is still unset', async () => {
+		const res = await call('PUT', 'ceo', '/api/agent/config', { values: { eobi_notified_min_wage: '37000' } });
+		expect(res.status).toBe(200);
+		const { data } = await res.json() as any;
+		expect(data.updated).toBe(1);
+		expect(typeof data.missingRequired).toBe('number');
+	});
+
+	it('will not decide an approval that does not exist', async () => {
+		const res = await call('POST', 'ceo', '/api/agent/approvals/apr_nope', { decision: 'approved' });
+		expect(res.status).toBe(400);
+	});
+
+	it('requires a real decision value', async () => {
+		const res = await call('POST', 'ceo', '/api/agent/approvals/apr_x', { decision: 'maybe' });
+		expect(res.status).toBe(400);
+	});
+});
+
+describe('SPA routing', () => {
+	// Every client route 404'd: the catch-all answered JSON for non-API paths
+	// too, so a refresh anywhere other than / broke.
+	it.each(['/hr', '/admin', '/accountant', '/finance'])('serves the app at %s', async (path) => {
+		const { SELF } = await import('cloudflare:test');
+		const res = await SELF.fetch(`https://test.local${path}`);
+		expect(res.status).toBe(200);
+	});
+
+	it('still returns JSON 404 for an unmatched API path', async () => {
+		const { SELF } = await import('cloudflare:test');
+		const res = await SELF.fetch('https://test.local/api/nope');
+		expect(res.status).toBe(404);
+		expect((await res.json() as any).success).toBe(false);
+	});
+});

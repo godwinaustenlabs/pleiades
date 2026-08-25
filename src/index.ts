@@ -28,6 +28,7 @@ import slackAgentRouter from './agents/slack';
 // Durable Object classes must be exported from the Worker entry point for
 // wrangler to bind them. One export per agent.
 export { SlackAgent } from './agents/slack';
+export { PleiadesAgent } from './agents/pleiades/agent';
 
 /**
  * The Worker's environment.
@@ -56,6 +57,8 @@ export type Env = {
   AI?: Ai;
   /** The Slack agent Durable Object — one instance per Slack conversation. */
   SLACK_AGENT: DurableObjectNamespace;
+  /** The accountant agent Durable Object — one instance per conversation. */
+  PLEIADES_AGENT: DurableObjectNamespace;
   CLIENTS_KV_NAMESPACE?: KVNamespace;
   MEMORY_KV_NAMESPACE?: KVNamespace;
 
@@ -163,7 +166,22 @@ app.route('/api/messages', messagesRouter);
 
 // ── 404 Catch-all ────────────────────────────────
 app.notFound(async (c) => {
-  return c.json({ success: false, error: 'Route not found' }, 404);
+  const path = new URL(c.req.url).pathname;
+
+  // An unmatched /api path is a genuine 404 and should say so in JSON.
+  if (path.startsWith('/api/')) {
+    return c.json({ success: false, error: 'Route not found' }, 404);
+  }
+
+  // Everything else is a client route. Serving index.html here is what makes
+  // deep links and refreshes work: /hr, /admin and /accountant match no file,
+  // so without this they fell through to the JSON 404 above and every reload
+  // away from `/` broke.
+  const spa = await c.env.ASSETS.fetch(new Request(new URL('/', c.req.url), c.req.raw));
+  return new Response(spa.body, {
+    status: 200,
+    headers: spa.headers,
+  });
 });
 
 // ── Error Handler ───────────────────────────────────────────────

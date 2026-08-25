@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, LayoutDashboard, Lock, Loader2, UserCog } from 'lucide-react';
+import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, LayoutDashboard, Lock, Loader2, UserCog, Calculator } from 'lucide-react';
 import Logo from '../components/Logo';
 import { Link } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
@@ -7,6 +7,15 @@ import { usePermissions } from '../lib/usePermissions';
 
 
 const ALL_APPS = [
+  {
+    id: 'agent',
+    name: 'Pleiades Accountant',
+    description: 'Compliance drafts, payroll schemas and bookkeeping — for review, never filed.',
+    icon: Calculator,
+    color: 'hover:border-primary/50 hover:bg-primary/5',
+    iconColor: 'text-primary bg-primary/20',
+    url: '/accountant',
+  },
   {
     id: 'admin',
     name: 'Access',

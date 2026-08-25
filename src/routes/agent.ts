@@ -8,6 +8,7 @@ import { logAudit } from '../utils/audit';
 import { ok, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
 import { decideApproval, listPending } from '../agents/pleiades/approvals';
+import { accountantKey, type AccountantTurn } from '../agents/pleiades/agent';
 import {
   loadConfig,
   missingRequired,
@@ -208,6 +209,64 @@ agentRouter.post('/approvals/:id', requireFeatureAccess('agent', 'reports', 'edi
     const result = await decideApproval(c.env, c.req.param('id')!, user.id, decision);
     if (!result.ok) return badRequest(c, result.reason);
     return ok(c, { id: c.req.param('id'), decision });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/agent/chat
+ * Body: { message, thread? }
+ *
+ * The Accounting-department entry to the agent. Gated on `agent/reports` edit
+ * rather than view: a turn can request approvals and, once approved, change the
+ * books, so reading reports and driving the agent are different privileges.
+ *
+ * The turn runs as the caller. Every tool it invokes travels back through this
+ * Worker's own middleware with that identity, so the agent is bounded by what
+ * the person could do themselves — it cannot be used to borrow authority.
+ */
+agentRouter.post('/chat', requireFeatureAccess('agent', 'reports', 'edit'), async (c) => {
+  try {
+    const user = c.get('user');
+    const { message, thread } = await c.req.json<{ message: string; thread?: string }>();
+    if (!message || !message.trim()) return badRequest(c, 'message is required');
+
+    const db = getDb(c.env);
+    const account = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, user.id),
+      with: { employee: true },
+      columns: { name: true, email: true },
+    });
+    const operatorName =
+      (account as any)?.employee?.name || account?.name || account?.email || 'the operator';
+
+    const turn: AccountantTurn = {
+      actorUserId: user.id,
+      operatorName,
+      prompt: message.trim(),
+      origin: new URL(c.req.url).origin,
+      conversationId: thread ? `conv_${user.id}_${thread}` : undefined,
+    };
+
+    const id = c.env.PLEIADES_AGENT.idFromName(accountantKey(user.id, thread));
+    const stub = c.env.PLEIADES_AGENT.get(id);
+    const res = await stub.fetch('https://pleiades.internal/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(turn),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text();
+      console.error('[pleiades] turn failed:', res.status, detail);
+      return serverError(c, new Error('The agent could not complete that turn.'));
+    }
+
+    await logAudit(c.env, user.id, 'CREATE', 'conversation_turns', 'chat', {
+      thread: thread || 'default',
+    });
+    return ok(c, await res.json());
   } catch (err) {
     return serverError(c, err);
   }

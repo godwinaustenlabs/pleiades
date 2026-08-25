@@ -6,6 +6,7 @@ import {
   postToSlack,
 } from './lib/slack';
 import { conversationKey, type SlackTurn } from './agent';
+import { mayUseAccountant } from '../pleiades/access';
 
 export { SlackAgent } from './agent';
 
@@ -110,6 +111,17 @@ const createSlackAgentRouter = (_app: Hono<{ Bindings: Env }>) => {
         },
         200,
       );
+    }
+
+    // The accountant is a separate, higher-trust capability. A Slack message
+    // never passes through Hono middleware carrying the actor's identity, so the
+    // entry check happens here explicitly rather than being assumed.
+    const wantsAccountant = /\b(accountant|payroll|withholding|eobi|ledger|journal|tax|filing|invoice)\b/i.test(prompt);
+    if (wantsAccountant) {
+      const access = await mayUseAccountant(env, actor.userId);
+      if (!access.allowed) {
+        return c.json({ response_type: 'ephemeral', text: access.reason }, 200);
+      }
     }
 
     const turn: SlackTurn = {
