@@ -25,6 +25,27 @@
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application"
 	},
+	// The Slack agent runs as a Durable Object via the Agents SDK: one instance
+	// per Slack conversation, so turns in a thread are serialised and the
+	// conversation keeps its own durable SQLite state.
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SLACK_AGENT",
+				"class_name": "SlackAgent"
+			}
+		]
+	},
+	// SQLite-backed Durable Objects must be declared here or the class has no
+	// storage and `this.sql` throws at runtime.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"SlackAgent"
+			]
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",

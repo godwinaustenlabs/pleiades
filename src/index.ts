@@ -24,6 +24,10 @@ import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
 import slackAgentRouter from './agents/slack';
 
+// Durable Object classes must be exported from the Worker entry point for
+// wrangler to bind them. One export per agent.
+export { SlackAgent } from './agents/slack';
+
 /**
  * The Worker's environment.
  *
@@ -49,6 +53,8 @@ export type Env = {
   CRM_BUCKET?: R2Bucket;
   /** Workers AI. Bound for the agent pipeline. */
   AI?: Ai;
+  /** The Slack agent Durable Object — one instance per Slack conversation. */
+  SLACK_AGENT: DurableObjectNamespace;
   CLIENTS_KV_NAMESPACE?: KVNamespace;
   MEMORY_KV_NAMESPACE?: KVNamespace;
 

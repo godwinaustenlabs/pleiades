@@ -602,3 +602,36 @@ describe('per-user granular permissions', () => {
 		expect(res.status).toBe(403);
 	});
 });
+
+describe('Slack agent as a Durable Object', () => {
+	// The agent moved from a request handler to an Agents-SDK Durable Object,
+	// one instance per Slack conversation. These pin the wiring: the binding
+	// exists, the class is reachable, and conversations map to distinct
+	// instances — none of which the signature tests above would catch.
+
+	it('exposes the SLACK_AGENT binding', () => {
+		expect(env.SLACK_AGENT).toBeDefined();
+		expect(typeof env.SLACK_AGENT.idFromName).toBe('function');
+	});
+
+	it('routes a request into the agent class', async () => {
+		const id = env.SLACK_AGENT.idFromName('C123:root');
+		const stub = env.SLACK_AGENT.get(id);
+		// GET is refused by onRequest — proof the class is wired and running,
+		// without invoking the LLM pipeline a POST would start.
+		const res = await stub.fetch('https://slack-agent.internal/turn');
+		expect(res.status).toBe(405);
+	});
+
+	it('gives a thread its own instance, separate from the channel', () => {
+		const root = env.SLACK_AGENT.idFromName('C123:root');
+		const thread = env.SLACK_AGENT.idFromName('C123:1700000000.1');
+		expect(root.toString()).not.toBe(thread.toString());
+	});
+
+	it('keeps one conversation on one instance across turns', () => {
+		const a = env.SLACK_AGENT.idFromName('C123:1700000000.1');
+		const b = env.SLACK_AGENT.idFromName('C123:1700000000.1');
+		expect(a.toString()).toBe(b.toString());
+	});
+});
