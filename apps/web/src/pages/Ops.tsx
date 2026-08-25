@@ -444,7 +444,7 @@ function Ops() {
                 ], required: true
               },
               { key: 'opsLeadId', label: 'Ops Lead', type: 'select' as const, options: employees.map(e => ({ value: e.id, label: e.name })) },
-              { key: 'labPhoto', label: 'Lab Photo', type: 'file' as const },
+              { key: 'labPhoto', label: 'Lab Photo', type: 'file' as const, pathPrefix: 'entity-photos' },
             ] : tab === 'committees' ? [
               { key: 'committeeName', label: 'Committee Name', type: 'text' as const, required: true },
               {
@@ -489,7 +489,7 @@ function Ops() {
                   { value: 'green', label: 'Green (On Track)' }, { value: 'amber', label: 'Amber (At Risk)' }, { value: 'red', label: 'Red (Breached)' },
                 ]
               },
-              { key: 'clientPhoto', label: 'Client Logo/Photo', type: 'file' as const },
+              { key: 'clientPhoto', label: 'Client Logo/Photo', type: 'file' as const, pathPrefix: 'entity-photos' },
             ] : tab === 'reports' ? [
               { key: 'reportName', label: 'Report Name', type: 'text' as const, required: true },
               { key: 'reportNo', label: 'Report Number', type: 'text' as const },
@@ -513,7 +513,7 @@ function Ops() {
               { key: 'hrNotes', label: 'HR Notes', type: 'textarea' as const },
               { key: 'legalNotes', label: 'Legal Notes', type: 'textarea' as const },
               { key: 'opsNotes', label: 'Ops Notes', type: 'textarea' as const },
-              { key: 'reportDoc', label: 'Report Document', type: 'file' as const },
+              { key: 'reportDoc', label: 'Report Document', type: 'file' as const, pathPrefix: 'ops-docs' },
               { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committeesList.map(c => ({ value: c.id, label: c.committeeName })) },
             ] : tab === 'docs' ? [
               { key: 'docTitle', label: 'Document Title', type: 'text' as const, required: true },
@@ -530,7 +530,7 @@ function Ops() {
               { key: 'tags', label: 'Tags (comma separated)', type: 'text' as const },
               { key: 'committeeId', label: 'Associated Committee', type: 'select' as const, options: committeesList.map(c => ({ value: c.id, label: c.committeeName })) },
               { key: 'clientId', label: 'Associated Client', type: 'select' as const, options: clientsList.map(c => ({ value: c.id, label: c.clientName })) },
-              { key: 'attachment', label: 'Document File', type: 'file' as const },
+              { key: 'attachment', label: 'Document File', type: 'file' as const, pathPrefix: 'ops-docs' },
             ] : [
               { key: 'title', label: 'Task Title', type: 'text' as const, required: true },
               {

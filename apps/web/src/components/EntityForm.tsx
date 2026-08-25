@@ -11,6 +11,15 @@ export interface Field {
   required?: boolean;
   initialValue?: any;
   action?: { label: string; onClick: () => void };
+  /**
+   * R2 key prefix for a `file` field. Required, and must be one of the
+   * prefixes ALLOWED_UPLOAD_PREFIXES declares in src/routes/assets.ts.
+   *
+   * This used to be optional, falling back to the form's *title* slugified
+   * ("Upload Institutional Asset" -> `upload_institutional_asset/`). That put
+   * objects in the bucket under a prefix nobody had chosen and no server rule
+   * knew about, which is how several modules' files ended up unreadable.
+   */
   pathPrefix?: string;
 }
 
@@ -164,8 +173,12 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
     setError('');
     try {
       const token = authToken();
-      const prefix = pathPrefix || title.toLowerCase().replace(/\s+/g, '_');
-      const r2Key = `${prefix}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      if (!pathPrefix) {
+        // Deriving one from the form title is what created unreadable orphan
+        // prefixes before; fail loudly instead of inventing a new one.
+        throw new Error('This upload field is misconfigured (no pathPrefix). Please report it.');
+      }
+      const r2Key = `${pathPrefix}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const res = await fetch(`/api/assets/upload/${r2Key}`, {
         method: 'PUT',
         headers: {

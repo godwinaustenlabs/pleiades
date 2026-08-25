@@ -386,7 +386,7 @@ function Acquisition() {
               { key: 'leadScore', label: 'Lead Score (0–100)', type: 'number' as const },
             ] : tab === 'content' ? [
               { key: 'contentTitle', label: 'Document Name', type: 'text' as const, required: true },
-              { key: 'owner', label: 'Upload Document', type: 'file' as const },
+              { key: 'owner', label: 'Upload Document', type: 'file' as const, pathPrefix: 'acquisition-docs' },
               {
                 key: 'channel', label: 'Category', type: 'select' as const, options: [
                   { value: 'guide', label: 'Guide' }, { value: 'template', label: 'Template' },

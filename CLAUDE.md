@@ -172,8 +172,19 @@ deletes are scoped to it so one module cannot remove another's files by id. The 
 component, `apps/web/src/components/DocumentsTab.tsx`, parameterised by endpoint. Adding
 a docs tab to another module means: a `docs` entry in that app's `APP_FEATURES`, three
 routes filtered to the department, a migration granting `<app>/docs`, and mounting
-`<DocumentsTab endpoint="/<app>/documents" … />`. Files themselves live in R2 behind
-`/api/assets`.
+`<DocumentsTab endpoint="/<app>/documents" … />`. Files themselves live in R2 behind `/api/assets`.
+
+R2 keys are governed by two lists in `src/routes/assets.ts` that must be kept in
+step: `ALLOWED_UPLOAD_PREFIXES` (where a caller may write) and `READ_RULES`
+(which grant each prefix requires to read). Adding an upload location means
+adding to both — a prefix with no read rule is refused, so the files upload
+successfully and then cannot be opened.
+
+Upload prefixes must be passed explicitly (`pathPrefix` on a `file` field in
+`EntityForm`). They were once derived from the *form's title*, so
+"Upload Institutional Asset" wrote to `upload_institutional_asset/`; the bucket
+still holds several such prefixes, listed as legacy entries in `READ_RULES`.
+Do not add new ones.
 
 `universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
 

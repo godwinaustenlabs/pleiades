@@ -15,8 +15,9 @@ const assetsRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } 
  */
 /** Prefixes a caller may write to. Anything else is rejected outright. */
 const ALLOWED_UPLOAD_PREFIXES = [
-  'avatars/', 'profiles/', 'company-docs/', 'finance-docs/',
-  'crm-docs/', 'employee-docs/', 'task-attachments/',
+  'avatars/', 'profiles/', 'entity-photos/',
+  'company-docs/', 'finance-docs/', 'crm-docs/', 'employee-docs/',
+  'ops-docs/', 'legal-docs/', 'acquisition-docs/', 'task-attachments/',
 ];
 
 /** 25 MB — a Worker request body has to be held in memory to reach R2. */
@@ -97,10 +98,22 @@ assetsRouter.put('/upload/*', authMiddleware, async (c) => {
  * feature in ANY app the caller holds — matching how those routes are gated
  * per department elsewhere rather than inventing a stricter rule here.
  */
+/**
+ * Readable by any signed-in user. Used for logos and entity photographs, which
+ * are shown beside records the caller can already see and carry nothing
+ * sensitive — the alternative is a broken image for anyone lacking one specific
+ * module grant.
+ */
+const ANY_AUTHENTICATED: [string, string][] = [];
+
 const READ_RULES: { prefix: string; grants: [string, string][] }[] = [
+  // ── Current prefixes ───────────────────────────────────────────────────────
   { prefix: 'employee-docs/', grants: [['hr', 'employees']] },
   { prefix: 'finance-docs/', grants: [['finance', 'docs']] },
   { prefix: 'crm-docs/', grants: [['crm', 'documents']] },
+  { prefix: 'ops-docs/', grants: [['ops', 'docs'], ['core', 'docs']] },
+  { prefix: 'legal-docs/', grants: [['legal', 'templates'], ['legal', 'sops'], ['legal', 'agreements']] },
+  { prefix: 'acquisition-docs/', grants: [['acquisition', 'content'], ['acquisition', 'campaigns']] },
   {
     prefix: 'company-docs/',
     grants: [['hr', 'employees'], ['finance', 'docs'], ['ops', 'docs'], ['core', 'docs']],
@@ -112,7 +125,46 @@ const READ_RULES: { prefix: string; grants: [string, string][] }[] = [
       ['acquisition', 'tasks'], ['ops', 'tasks'], ['crm', 'tasks'], ['dashboard', 'tasks'],
     ],
   },
+  // Logos and entity photographs. These are decoration rendered in grids and
+  // headers next to records the caller can already see; gating them on a
+  // specific module's grant only produces broken images.
+  { prefix: 'entity-photos/', grants: ANY_AUTHENTICATED },
+
+  // ── Legacy prefixes ────────────────────────────────────────────────────────
+  // Upload keys used to be derived from the *title of the form* doing the
+  // upload ("Upload Institutional Asset" -> `upload_institutional_asset/`), so
+  // the set of prefixes in the bucket was never a fixed list. These are the
+  // ones that actually have objects behind them. Nothing writes here any more
+  // (see ALLOWED_UPLOAD_PREFIXES), but the files must stay readable, so each is
+  // mapped to the grant its module requires rather than being waved through.
+  { prefix: 'upload_institutional_asset/', grants: [['crm', 'documents']] },
+  { prefix: 'new_documents/', grants: [['core', 'docs'], ['ops', 'docs']] },
+  { prefix: 'update_template/', grants: [['legal', 'templates']] },
+  { prefix: 'new_sop/', grants: [['legal', 'sops']] },
+  { prefix: 'update_clients/', grants: ANY_AUTHENTICATED },
+  { prefix: 'invoices/', grants: [['finance', 'invoices'], ['finance', 'docs']] },
+  {
+    prefix: 'tasks/',
+    grants: [
+      ['hr', 'tasks'], ['finance', 'tasks'], ['legal', 'tasks'], ['tech', 'tasks'],
+      ['acquisition', 'tasks'], ['ops', 'tasks'], ['crm', 'tasks'], ['dashboard', 'tasks'],
+    ],
+  },
 ];
+
+/**
+ * Percent-decodes an object key, mirroring the upload route.
+ *
+ * A malformed sequence would throw out of decodeURIComponent, so the raw key is
+ * used in that case rather than failing the request.
+ */
+function decodeKey(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
 
 /** Publicly readable: these are rendered in <img> tags with no credentials. */
 const PUBLIC_PREFIXES = ['avatars/', 'profiles/'];
@@ -123,6 +175,9 @@ async function mayReadKey(c: Parameters<typeof checkFeaturePermission>[0], key: 
   const rule = READ_RULES.find((r) => key.startsWith(r.prefix));
   // An unrecognised prefix cannot be reasoned about, so it is not served.
   if (!rule) return false;
+  // An empty grant list means "any authenticated caller" — the caller has
+  // already been authenticated by the middleware above to get here.
+  if (rule.grants.length === 0) return true;
   for (const [app, feature] of rule.grants) {
     if (await checkFeaturePermission(c, app, feature, 'view')) return true;
   }
@@ -131,7 +186,9 @@ async function mayReadKey(c: Parameters<typeof checkFeaturePermission>[0], key: 
 
 assetsRouter.get('/*', async (c, next) => {
   const path = c.req.path;
-  const key = path.includes('/download/') ? path.substring(path.indexOf('/download/') + '/download/'.length) : '';
+  const key = path.includes('/download/')
+    ? decodeKey(path.substring(path.indexOf('/download/') + '/download/'.length))
+    : '';
   if (!isPublicKey(key)) {
     return authMiddleware(c, next);
   }
@@ -143,8 +200,12 @@ assetsRouter.get('/*', async (c, next) => {
     return notFound(c);
   }
 
-  const key = path.substring(path.indexOf('/download/') + '/download/'.length);
-  
+  // The upload route decodes the key before storing it, so an object whose name
+  // contains a space is stored with a real space. Without the matching decode
+  // here the lookup asks R2 for the literal "%20" and misses — which is why
+  // every file with a space in its name 404'd.
+  const key = decodeKey(path.substring(path.indexOf('/download/') + '/download/'.length));
+
   try {
     const r2 = c.env.CRM_BUCKET;
     if (!r2) {

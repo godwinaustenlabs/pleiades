@@ -372,7 +372,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
 
     setUploading(true);
     try {
-      const r2Key = `tasks/${initialData.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const r2Key = `task-attachments/${initialData.id}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
       const res = await fetch(`/api/assets/upload/${r2Key}`, {
         method: 'PUT',
         headers: { 'Content-Type': file.type, Authorization: `Bearer ${token()}` },

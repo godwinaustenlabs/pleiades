@@ -603,7 +603,7 @@ function Finance() {
               { key: 'clientId', label: 'Client', type: 'select' as const, options: clients.map(c => ({ value: c.id, label: c.clientName })) },
               { key: 'committeeId', label: 'Committee', type: 'select' as const, options: committees.map(c => ({ value: c.id, label: c.committeeName })) },
               { key: 'fundRequestId', label: 'Fund Request', type: 'select' as const, options: fundRequests.map(f => ({ value: f.id, label: f.requestName })), action: { label: '+ New Request', onClick: () => setShowNestedForm('fund-request') } },
-              { key: 'invoiceDoc', label: 'Invoice Document', type: 'file' as const },
+              { key: 'invoiceDoc', label: 'Invoice Document', type: 'file' as const, pathPrefix: 'finance-docs' },
             ] : tab === 'fund-requests' ? [
               { key: 'requestName', label: 'Request Name', type: 'text' as const, required: true },
               { key: 'requestDate', label: 'Request Date', type: 'date' as const },
@@ -667,7 +667,7 @@ function Finance() {
             { key: 'clientId', label: 'Client', type: 'select', options: clients.map(c => ({ value: c.id, label: c.clientName })) },
             { key: 'amount', label: 'Total Amount', type: 'number', required: true },
             { key: 'status', label: 'Status', type: 'select', options: [{ value: 'pending', label: 'Pending' }, { value: 'paid', label: 'Paid' }], required: true },
-            { key: 'invoiceDoc', label: 'Invoice Document', type: 'file', pathPrefix: 'invoices' },
+            { key: 'invoiceDoc', label: 'Invoice Document', type: 'file', pathPrefix: 'finance-docs' },
           ]}
           onClose={() => setShowSecondaryForm(false)}
           onSubmit={async (formData) => {

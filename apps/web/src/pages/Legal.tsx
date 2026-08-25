@@ -244,7 +244,7 @@ function Legal() {
                 { key: 'status', label: 'Status', type: 'status' as const },
                 { key: 'effectiveDate', label: 'Effective', type: 'date' as const },
                 { key: 'expiryDate', label: 'Expiry', type: 'date' as const },
-                { key: 'signedDoc', label: 'Document', type: 'file' as const },
+                { key: 'signedDoc', label: 'Document', type: 'file' as const  },
                 { key: 'autoRenewal', label: 'Auto Renewal', render: (v: any) => v ? '✅ Yes' : '❌ No' },
               ] : tab === 'templates' ? [
                 { key: 'documentName', label: 'Template', type: 'avatar' as const },
@@ -252,7 +252,7 @@ function Legal() {
                 { key: 'jurisdiction', label: 'Jurisdiction' },
                 { key: 'approvedBy', label: 'Approved By' },
                 { key: 'lastUpdated', label: 'Last Updated', type: 'date' as const },
-                { key: 'templateFile', label: 'File', type: 'file' as const },
+                { key: 'templateFile', label: 'File', type: 'file' as const  },
               ] : tab === 'compliance' ? [
                 { key: 'obligationName', label: 'Obligation', type: 'avatar' as const },
                 { key: 'appliesTo', label: 'Applies To' },
@@ -260,7 +260,7 @@ function Legal() {
                 { key: 'jurisdiction', label: 'Jurisdiction' },
                 { key: 'status', label: 'Status', type: 'status' as const },
                 { key: 'dueDate', label: 'Due Date', type: 'date' as const },
-                { key: 'supportingDoc', label: 'Proof', type: 'file' as const },
+                { key: 'supportingDoc', label: 'Proof', type: 'file' as const  },
               ] : tab === 'requests' ? [
                 { key: 'requestTitle', label: 'Request', type: 'avatar' as const },
                 { key: 'category', label: 'Category', type: 'badge' as const },
@@ -275,7 +275,7 @@ function Legal() {
                 { key: 'approvalStatus', label: 'Status', type: 'status' as const },
                 { key: 'effectiveDate', label: 'Effective', type: 'date' as const },
                 { key: 'lastReviewed', label: 'Last Reviewed', type: 'date' as const },
-                { key: 'docAttachment', label: 'File', type: 'file' as const },
+                { key: 'docAttachment', label: 'File', type: 'file' as const  },
               ] : tab === 'ip' ? [
                 { key: 'assetName', label: 'Asset', type: 'avatar' as const },
                 { key: 'ipType', label: 'Type', type: 'badge' as const },
@@ -285,7 +285,7 @@ function Legal() {
                 { key: 'status', label: 'Status', type: 'status' as const },
                 { key: 'filingDate', label: 'Filed', type: 'date' as const },
                 { key: 'expiryDate', label: 'Expiry', type: 'date' as const },
-                { key: 'supportingDocs', label: 'Docs', type: 'file' as const },
+                { key: 'supportingDocs', label: 'Docs', type: 'file' as const  },
               ] : [
                 { key: 'entityName', label: 'Party Name', type: 'avatar' as const },
                 { key: 'type', label: 'Type', type: 'badge' as const },
@@ -353,7 +353,7 @@ function Legal() {
               { key: 'clientId', label: 'Associated Client', type: 'select' as const, options: clients.map(c => ({ value: c.id, label: c.clientName })) },
               { key: 'templateId', label: 'Base Template', type: 'select' as const, options: templates.map(t => ({ value: t.id, label: t.documentName })) },
               { key: 'partyId', label: 'Primary Party', type: 'select' as const, options: parties.map(p => ({ value: p.id, label: p.entityName })), action: { label: '+ New Party', onClick: () => setShowNestedForm('party') } },
-              { key: 'signedDoc', label: 'Signed Document', type: 'file' as const },
+              { key: 'signedDoc', label: 'Signed Document', type: 'file' as const , pathPrefix: 'legal-docs' },
             ] : tab === 'templates' ? [
               { key: 'documentName', label: 'Template Name', type: 'text' as const, required: true },
               { key: 'versionNumber', label: 'Version Number', type: 'text' as const },
@@ -361,7 +361,7 @@ function Legal() {
               { key: 'lastUpdated', label: 'Last Updated', type: 'date' as const },
               { key: 'approvedBy', label: 'Approved By', type: 'text' as const },
               { key: 'isLatest', label: 'Is Latest Version', type: 'select' as const, options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] },
-              { key: 'templateFile', label: 'Template File', type: 'file' as const },
+              { key: 'templateFile', label: 'Template File', type: 'file' as const , pathPrefix: 'legal-docs' },
             ] : tab === 'compliance' ? [
               { key: 'obligationName', label: 'Obligation Name', type: 'text' as const, required: true },
               { key: 'appliesTo', label: 'Applies To (Dept/Role)', type: 'text' as const },
@@ -374,7 +374,7 @@ function Legal() {
               },
               { key: 'jurisdiction', label: 'Jurisdiction', type: 'text' as const },
               { key: 'assignedOfficer', label: 'Assigned Officer', type: 'text' as const },
-              { key: 'supportingDoc', label: 'Supporting Document', type: 'file' as const },
+              { key: 'supportingDoc', label: 'Supporting Document', type: 'file' as const , pathPrefix: 'legal-docs' },
               { key: 'agreementId', label: 'Linked Agreement', type: 'select' as const, options: agreements.map(a => ({ value: a.id, label: a.agreementName })) },
             ] : tab === 'requests' ? [
               { key: 'requestTitle', label: 'Request Title', type: 'text' as const, required: true },
@@ -419,7 +419,7 @@ function Legal() {
                   { value: 'approved', label: 'Approved' }, { value: 'deprecated', label: 'Deprecated' },
                 ]
               },
-              { key: 'docAttachment', label: 'SOP Document', type: 'file' as const },
+              { key: 'docAttachment', label: 'SOP Document', type: 'file' as const , pathPrefix: 'legal-docs' },
             ] : tab === 'ip' ? [
               { key: 'assetName', label: 'Asset Name', type: 'text' as const, required: true },
               {
@@ -440,7 +440,7 @@ function Legal() {
                 ], required: true
               },
               { key: 'partyId', label: 'Owning Party', type: 'select' as const, options: parties.map(p => ({ value: p.id, label: p.entityName })), action: { label: '+ New Party', onClick: () => setShowNestedForm('party') } },
-              { key: 'supportingDocs', label: 'Supporting Documents', type: 'file' as const },
+              { key: 'supportingDocs', label: 'Supporting Documents', type: 'file' as const , pathPrefix: 'legal-docs' },
             ] : [
               { key: 'entityName', label: 'Entity Name', type: 'text' as const, required: true },
               {
@@ -456,7 +456,7 @@ function Legal() {
                   { value: 'low', label: 'Low Risk' }, { value: 'medium', label: 'Medium Risk' }, { value: 'high', label: 'High Risk' },
                 ]
               },
-              { key: 'partyPhoto', label: 'Party Logo/Photo', type: 'file' as const },
+              { key: 'partyPhoto', label: 'Party Logo/Photo', type: 'file' as const , pathPrefix: 'entity-photos' },
             ]
           }
           initialData={editingRecord}

@@ -899,7 +899,7 @@ export default function CRM() {
           fields={[
             { key: 'title', label: 'Document Title', type: 'text', required: true },
             { key: 'docType', label: 'Document Type', type: 'select', options: [{value: 'contract', label: 'Contract'}, {value: 'report', label: 'Report'}, {value: 'presentation', label: 'Presentation'}, {value: 'other', label: 'Other'}], required: true },
-            { key: 'r2Key', label: 'File', type: 'file', required: true }
+            { key: 'r2Key', label: 'File', type: 'file', required: true, pathPrefix: 'crm-docs' }
           ]}
           onClose={() => setShowEntityForm(null)}
           onSubmit={handleEntitySubmit}

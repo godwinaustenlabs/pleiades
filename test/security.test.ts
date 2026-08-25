@@ -435,6 +435,48 @@ describe('asset download authorization', () => {
 		expect(res.status).not.toBe(403);
 	});
 
+	// Upload keys used to be derived from the title of the form doing the upload,
+	// so the bucket holds prefixes nobody chose: CRM documents under
+	// `upload_institutional_asset/`, legal templates under `update_template/`,
+	// and so on. Authorizing only the tidy prefixes made every one of those
+	// files unreadable. They stay readable, each behind its module's grant.
+	it.each([
+		['upload_institutional_asset/brief.docx', 'crm'],
+		['new_documents/policy.pdf', 'ceo'],
+		['update_template/nda.docx', 'ceo'],
+		['new_sop/onboarding.pdf', 'ceo'],
+	])('serves legacy object %s to a holder of its module grant', async (key, user) => {
+		const res = await authedGet(user as any, `/api/assets/download/${key}`);
+		expect(res.status).not.toBe(403);
+	});
+
+	it('still gates a legacy prefix on the right module', async () => {
+		// u_crm holds crm, not legal: legacy legal objects stay closed to them.
+		const res = await authedGet('crm', '/api/assets/download/update_template/nda.docx');
+		expect(res.status).toBe(403);
+	});
+
+	it('finds an object whose name contains a space', async () => {
+		// Upload decodes the key before storing, so a space is stored as a space.
+		// Download did not decode, so it asked R2 for the literal "%20" and every
+		// such file 404'd. The two sides must agree.
+		await env.CRM_BUCKET.put('entity-photos/My Company Logo.png', 'x');
+		const res = await authedGet('none', '/api/assets/download/entity-photos/My%20Company%20Logo.png');
+		expect(res.status).toBe(200);
+	});
+
+	it('does not fail a key with a malformed percent-sequence', async () => {
+		const res = await authedGet('none', '/api/assets/download/entity-photos/100%.png');
+		expect([200, 404]).toContain(res.status);
+	});
+
+	it('serves entity photos to any signed-in user', async () => {
+		// Logos rendered beside records the caller can already see. Gating these
+		// on one module's grant only produces broken images.
+		const res = await authedGet('none', '/api/assets/download/entity-photos/logo.png');
+		expect(res.status).not.toBe(403);
+	});
+
 	it('refuses a prefix no rule covers, rather than serving it', async () => {
 		const res = await get('ceo', 'unknown-prefix/secret.pdf');
 		expect(res.status).toBe(403);
