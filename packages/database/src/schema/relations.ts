@@ -13,6 +13,10 @@ import {
 } from './core';
 import { sectors, appointments, payrollRecords, legalTracker } from './hr';
 import {
+  complianceEvents, generatedDocuments, agentConversations,
+  conversationTurns,
+} from './pleiades';
+import {
   accounts, fundRequests, invoices, transactions, plReports,
   ledgers, generalJournals,
 } from './finance';
@@ -370,4 +374,35 @@ export const userNotesRelations = relations(userNotes, ({ one }) => ({
 
 export const userDashboardStateRelations = relations(userDashboardState, ({ one }) => ({
   user: one(usersLogins, { fields: [userDashboardState.userId], references: [usersLogins.id] }),
+}));
+
+/* ── PLEIADES ACCOUNTANT ── */
+export const complianceEventsRelations = relations(complianceEvents, ({ one }) => ({
+  // The draft prepared for this obligation, once one exists.
+  draftDocument: one(generatedDocuments, {
+    fields: [complianceEvents.draftDocumentId],
+    references: [generatedDocuments.id],
+  }),
+}));
+
+export const generatedDocumentsRelations = relations(generatedDocuments, ({ one }) => ({
+  complianceEvent: one(complianceEvents, {
+    fields: [generatedDocuments.complianceEventId],
+    references: [complianceEvents.id],
+  }),
+}));
+
+export const agentConversationsRelations = relations(agentConversations, ({ one, many }) => ({
+  operatorUser: one(usersLogins, {
+    fields: [agentConversations.operator],
+    references: [usersLogins.id],
+  }),
+  turns: many(conversationTurns),
+}));
+
+export const conversationTurnsRelations = relations(conversationTurns, ({ one }) => ({
+  conversation: one(agentConversations, {
+    fields: [conversationTurns.conversationId],
+    references: [agentConversations.id],
+  }),
 }));

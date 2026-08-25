@@ -1,5 +1,10 @@
 -- Production DDL, pulled from sqlite_master, so the test database cannot
 -- drift from the real one. Regenerate it rather than hand-editing.
+CREATE TABLE agent_conversations (
+	id TEXT PRIMARY KEY,
+	started_at INTEGER NOT NULL,
+	operator TEXT NOT NULL                  -- users_logins.id of the person talking
+);
 CREATE TABLE api_keys (
 	id TEXT PRIMARY KEY,
 	key_hash TEXT NOT NULL UNIQUE,
@@ -29,6 +34,15 @@ CREATE TABLE `audit_logs` (
 	`record_id` text NOT NULL,
 	`details` text,
 	`timestamp` integer NOT NULL
+);
+CREATE TABLE calc_config (
+	id TEXT PRIMARY KEY,
+	calc_name TEXT NOT NULL,                -- 'salary_withholding_slabs', 'eobi_contribution', ...
+	effective_from TEXT NOT NULL,           -- ISO date the rule takes effect
+	effective_to TEXT,                      -- NULL = still current
+	config_json TEXT NOT NULL,              -- the rate table itself
+	verification TEXT NOT NULL DEFAULT 'unverified', -- verified | needs_verification | unverified
+	source_note TEXT
 );
 CREATE TABLE `committee_members` (
 	`committee_id` text NOT NULL,
@@ -63,6 +77,29 @@ CREATE TABLE `company_documents` (
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`uploaded_by`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action
 );
+CREATE TABLE compliance_events (
+	id TEXT PRIMARY KEY,
+	obligation_type TEXT NOT NULL,          -- 'salary_withholding_statement', 'annual_return', ...
+	authority TEXT NOT NULL,                -- 'FBR' | 'SECP' | 'EOBI' | 'PESSI' | 'SESSI' | 'PSEB' | 'SRB' | 'PRA'
+	period_label TEXT NOT NULL,             -- '2026-08' | 'TY2027' | 'Q1-FY2027'
+	due_date TEXT NOT NULL,                 -- ISO date
+	status TEXT NOT NULL DEFAULT 'pending', -- pending | draft_ready | reviewed | filed | overdue
+	draft_document_id TEXT,                 -- -> generated_documents.id
+	reviewed_by TEXT,
+	filed_at TEXT,
+	notes TEXT,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE TABLE conversation_turns (
+	id TEXT PRIMARY KEY,
+	conversation_id TEXT NOT NULL REFERENCES agent_conversations(id),
+	role TEXT NOT NULL,                     -- 'user' | 'assistant' | 'tool'
+	content TEXT NOT NULL,
+	tool_calls TEXT,                        -- JSON array, if any
+	vector_id TEXT,
+	created_at INTEGER NOT NULL
+);
 CREATE TABLE `employees` (
 	`employee_id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -79,6 +116,27 @@ CREATE TABLE `employees` (
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
 , `email` text, `phone` text, `cnic` text, `dob` text, `gender` text, `address` text, `contact_info` text, `emergency_contact` text, `designation` text, `reporting_manager_id` text, `employment_type` text, `confirmation_date` text, `contract_start_date` text, `contract_end_date` text, `bank_details` text, `tax_information` text, `assigned_office` text, `notes` text);
+CREATE TABLE generated_documents (
+	id TEXT PRIMARY KEY,
+	doc_type TEXT NOT NULL,
+	period_label TEXT NOT NULL,
+	version INTEGER NOT NULL DEFAULT 1,
+	file_url TEXT NOT NULL,                 -- R2 object key, under a prefix assets.ts allows
+	generated_by TEXT NOT NULL DEFAULT 'pleiades-accountant',
+	generation_basis TEXT,                  -- JSON: source records + calc_* calls behind each number
+	compliance_event_id TEXT,               -- -> compliance_events.id, nullable
+	vector_id TEXT,                         -- id of the summary embedding in Vectorize
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE notifications_log (
+	id TEXT PRIMARY KEY,
+	channel TEXT NOT NULL,                  -- 'email' | 'slack'
+	subject_or_summary TEXT NOT NULL,
+	related_document_id TEXT,
+	related_compliance_event_id TEXT,
+	sent_at INTEGER NOT NULL,
+	status TEXT NOT NULL                    -- 'sent' | 'failed'
+);
 CREATE TABLE `permissions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -126,6 +184,16 @@ CREATE TABLE "users_logins" (
 	is_superadmin INTEGER DEFAULT 0,
 	phone TEXT
 );
+CREATE INDEX calc_config_name_effective_idx
+	ON calc_config (calc_name, effective_from);
+CREATE INDEX compliance_events_due_status_idx
+	ON compliance_events (due_date, status);
+CREATE INDEX conversation_turns_conversation_idx
+	ON conversation_turns (conversation_id, created_at);
+CREATE INDEX generated_documents_period_type_idx
+	ON generated_documents (period_label, doc_type);
+CREATE UNIQUE INDEX generated_documents_type_period_version_unique
+	ON generated_documents (doc_type, period_label, version);
 CREATE UNIQUE INDEX user_app_permissions_user_app_feature_unique
 	ON user_app_permissions (user_id, app_name, feature);
 CREATE INDEX user_app_permissions_user_idx

@@ -1,4 +1,5 @@
 export * from './auth';
+export * from './pleiades';
 export * from './core';
 export * from './hr';
 export * from './finance';

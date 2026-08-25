@@ -5,14 +5,62 @@ import seedSql from './seed.sql?raw';
 
 /**
  * Splits a SQL script into individual statements.
- * D1's exec() is whitespace-sensitive, so we run statements one at a time.
+ *
+ * D1's exec() is whitespace-sensitive, so statements run one at a time.
+ *
+ * Both string literals and line comments have to be understood in a single
+ * pass. Splitting naively on `;` truncated any statement with a semicolon
+ * inside a literal (a JSON rate table in calc_config, say). Handling strings
+ * but not comments is just as bad in the other direction: an apostrophe in a
+ * comment ("one person's access") flips the parser into a string that never
+ * closes, and every following statement is swallowed into one. Both failures
+ * are silent — the fixture looks loaded and simply is not.
  */
 function statements(sql: string): string[] {
-	return sql
-		.split(';')
-		.map((s) => s.replace(/^\s*--.*$/gm, '').trim())
-		.filter((s) => s.length > 0);
+	const out: string[] = [];
+	let current = '';
+	let inString = false;
+
+	for (let i = 0; i < sql.length; i++) {
+		const ch = sql[i];
+
+		if (inString) {
+			current += ch;
+			if (ch === "'") {
+				// '' is an escaped quote, not the end of the string.
+				if (sql[i + 1] === "'") current += sql[++i];
+				else inString = false;
+			}
+			continue;
+		}
+
+		// Line comment: skip to the newline. Only outside a string, so a `--`
+		// inside a literal is left alone.
+		if (ch === '-' && sql[i + 1] === '-') {
+			while (i < sql.length && sql[i] !== '\n') i++;
+			current += '\n';
+			continue;
+		}
+
+		if (ch === "'") {
+			inString = true;
+			current += ch;
+			continue;
+		}
+
+		if (ch === ';') {
+			out.push(current);
+			current = '';
+			continue;
+		}
+
+		current += ch;
+	}
+	out.push(current);
+
+	return out.map((s) => s.trim()).filter((s) => s.length > 0);
 }
+
 
 /**
  * Rebuilds the test database from the production DDL, then loads the
