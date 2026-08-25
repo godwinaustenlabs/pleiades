@@ -12,7 +12,7 @@
 	},
 	"vars": {
 		"VERBOSE": "true",
-		"LLM_MODEL": "gemini-2.5-flash",
+		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
 		"AGENT_ID": "nova-mcp-agent",
 		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
 		"CF_GATEWAY_NAME": "testing-gateway"

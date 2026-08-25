@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { tool } from 'ai';
 import { Env } from '../../index';
 import { buildStatutoryComponents } from './compliance';
 import { loadConfig, missingRequired } from './config';
@@ -66,383 +67,362 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     return execute(payload);
   };
 
-  return [
-    // ── Compliance configuration ──────────────────────────────────────────
-    {
-      name: 'get_compliance_config',
-      description:
-        'The operator-configured compliance settings: tax year, rates, thresholds, deadlines, ' +
-        'company registration details. This is the only source of rates. Check it before quoting any figure.',
-      schema: z.object({}),
-      func: async () => {
-        const vars = await loadConfig(ctx.env);
-        const missing = missingRequired(vars);
-        return JSON.stringify({
-          settings: vars.map((v) => ({ key: v.key, label: v.label, value: v.value, unit: v.unit, group: v.group })),
-          unconfiguredRequired: missing.map((v) => ({ key: v.key, label: v.label })),
-          note: missing.length
-            ? 'Some required settings are unset. Anything depending on them cannot be computed — say so instead.'
-            : 'All required settings are configured.',
-        });
-      },
-    },
+  return {
+    get_compliance_config: tool({
+      description: 'The operator-configured compliance settings: tax year, rates, thresholds, deadlines, ' +
+                'company registration details. This is the only source of rates. Check it before quoting any figure.',
+      inputSchema: z.object({}),
+      execute: async () => {
+              const vars = await loadConfig(ctx.env);
+              const missing = missingRequired(vars);
+              return JSON.stringify({
+                settings: vars.map((v) => ({ key: v.key, label: v.label, value: v.value, unit: v.unit, group: v.group })),
+                unconfiguredRequired: missing.map((v) => ({ key: v.key, label: v.label })),
+                note: missing.length
+                  ? 'Some required settings are unset. Anything depending on them cannot be computed — say so instead.'
+                  : 'All required settings are configured.',
+              });
+            },
+    }),
 
-    {
-      name: 'knowledge_search',
-      description:
-        'Searches the indexed compliance documents for rules, procedures, formats and worked ' +
-        'examples. Use it to understand HOW something must be done or reported. It is NOT a source ' +
-        'of rates — every number comes from get_compliance_config. If a passage states a figure ' +
-        'that contradicts the configured value, report the discrepancy rather than choosing.',
-      schema: z.object({
-        query: z.string().describe('What you need to understand'),
-        top_k: z.number().optional().describe('How many passages, default 5'),
-      }),
-      func: async (a: any) => {
-        const result = await searchKnowledge(ctx.env, a.query, { topK: a.top_k });
-        return JSON.stringify({
-          passages: result.passages.map((p) => ({
-            source: `${p.title} › ${p.section}`,
-            relevance: Math.round(p.score * 100) / 100,
-            text: p.text,
-          })),
-          authority: result.note,
-        });
-      },
-    },
+    knowledge_search: tool({
+      description: 'Searches the indexed compliance documents for rules, procedures, formats and worked ' +
+                'examples. Use it to understand HOW something must be done or reported. It is NOT a source ' +
+                'of rates — every number comes from get_compliance_config. If a passage states a figure ' +
+                'that contradicts the configured value, report the discrepancy rather than choosing.',
+      inputSchema: z.object({
+                query: z.string().describe('What you need to understand'),
+                top_k: z.number().optional().describe('How many passages, default 5'),
+              }),
+      execute: async (a: any) => {
+              const result = await searchKnowledge(ctx.env, a.query, { topK: a.top_k });
+              return JSON.stringify({
+                passages: result.passages.map((p) => ({
+                  source: `${p.title} › ${p.section}`,
+                  relevance: Math.round(p.score * 100) / 100,
+                  text: p.text,
+                })),
+                authority: result.note,
+              });
+            },
+    }),
 
-    {
-      name: 'record_action',
-      description:
-        'Writes what you did and WHY into your working journal, so a later conversation can ' +
-        'recover the reasoning. Record anything consequential or anything a person would later ' +
-        'ask you to justify — a statement produced (including a nil one, with the reason it was ' +
-        'nil), a structure set, an entry posted, or a refusal and what blocked it. Consequential ' +
-        'approved actions are journalled for you automatically; this is for the reasoning behind ' +
-        'them, and for everything else.',
-      schema: z.object({
-        action_type: z
-          .string()
-          .describe('e.g. statement_generated, payroll_generated, account_created, refused'),
-        subject: z.string().describe('What was acted on, in human terms'),
-        summary: z.string().describe('What you did'),
-        rationale: z.string().optional().describe('Why — including why a figure was nil'),
-        period_label: z.string().optional().describe("e.g. '2026-08' or 'TY2027'"),
-        outcome: z.enum(['completed', 'refused', 'blocked']).optional(),
-        entities: z.record(z.any()).optional().describe('Related record ids'),
-      }),
-      func: async (a: any) => {
-        const res = await recordAction(ctx.env, {
-          actionType: a.action_type,
-          subject: a.subject,
-          summary: a.summary,
-          rationale: a.rationale,
-          periodLabel: a.period_label,
-          outcome: a.outcome,
-          entities: a.entities,
-          actorUserId: ctx.actorUserId,
-          source: 'agent',
-        });
-        return JSON.stringify({
-          recorded: true,
-          id: res.id,
-          recallable: res.embedded,
-          note: res.embedded
-            ? 'Recorded and indexed for recall.'
-            : 'Recorded. Semantic recall is unavailable, but it is in the dated journal.',
-        });
-      },
-    },
-    {
-      name: 'recall_actions',
-      description:
-        'Looks up what you did before and why. Give a query to search by meaning, or filters ' +
-        '(action_type, period_label) for an exact answer. Check this before repeating work or ' +
-        'when asked why something was done a particular way — the reasoning is recorded, so do ' +
-        'not reconstruct it from memory.',
-      schema: z.object({
-        query: z.string().optional().describe('What you are trying to remember'),
-        action_type: z.string().optional(),
-        period_label: z.string().optional().describe("e.g. '2026-08'"),
-        limit: z.number().optional(),
-      }),
-      func: async (a: any) => {
-        const res = await recallActions(ctx.env, {
-          query: a.query,
-          actionType: a.action_type,
-          periodLabel: a.period_label,
-          limit: a.limit,
-        });
-        return JSON.stringify({
-          mode: res.mode,
-          entries: res.entries,
-          note:
-            res.entries.length === 0
-              ? 'Nothing recorded matches. Say so rather than assuming it was not done.'
-              : 'These are your own past actions and reasons, not the compliance manual.',
-        });
-      },
-    },
+    record_action: tool({
+      description: 'Writes what you did and WHY into your working journal, so a later conversation can ' +
+                'recover the reasoning. Record anything consequential or anything a person would later ' +
+                'ask you to justify — a statement produced (including a nil one, with the reason it was ' +
+                'nil), a structure set, an entry posted, or a refusal and what blocked it. Consequential ' +
+                'approved actions are journalled for you automatically; this is for the reasoning behind ' +
+                'them, and for everything else.',
+      inputSchema: z.object({
+                action_type: z
+                  .string()
+                  .describe('e.g. statement_generated, payroll_generated, account_created, refused'),
+                subject: z.string().describe('What was acted on, in human terms'),
+                summary: z.string().describe('What you did'),
+                rationale: z.string().optional().describe('Why — including why a figure was nil'),
+                period_label: z.string().optional().describe("e.g. '2026-08' or 'TY2027'"),
+                outcome: z.enum(['completed', 'refused', 'blocked']).optional(),
+                entities: z.record(z.string(), z.any()).optional().describe('Related record ids'),
+              }),
+      execute: async (a: any) => {
+              const res = await recordAction(ctx.env, {
+                actionType: a.action_type,
+                subject: a.subject,
+                summary: a.summary,
+                rationale: a.rationale,
+                periodLabel: a.period_label,
+                outcome: a.outcome,
+                entities: a.entities,
+                actorUserId: ctx.actorUserId,
+                source: 'agent',
+              });
+              return JSON.stringify({
+                recorded: true,
+                id: res.id,
+                recallable: res.embedded,
+                note: res.embedded
+                  ? 'Recorded and indexed for recall.'
+                  : 'Recorded. Semantic recall is unavailable, but it is in the dated journal.',
+              });
+            },
+    }),
 
-    // ── HR: people and salary structures ──────────────────────────────────
-    {
-      name: 'get_employees',
+    recall_actions: tool({
+      description: 'Looks up what you did before and why. Give a query to search by meaning, or filters ' +
+                '(action_type, period_label) for an exact answer. Check this before repeating work or ' +
+                'when asked why something was done a particular way — the reasoning is recorded, so do ' +
+                'not reconstruct it from memory.',
+      inputSchema: z.object({
+                query: z.string().optional().describe('What you are trying to remember'),
+                action_type: z.string().optional(),
+                period_label: z.string().optional().describe("e.g. '2026-08'"),
+                limit: z.number().optional(),
+              }),
+      execute: async (a: any) => {
+              const res = await recallActions(ctx.env, {
+                query: a.query,
+                actionType: a.action_type,
+                periodLabel: a.period_label,
+                limit: a.limit,
+              });
+              return JSON.stringify({
+                mode: res.mode,
+                entries: res.entries,
+                note:
+                  res.entries.length === 0
+                    ? 'Nothing recorded matches. Say so rather than assuming it was not done.'
+                    : 'These are your own past actions and reasons, not the compliance manual.',
+              });
+            },
+    }),
+
+    get_employees: tool({
       description: 'Employee records. Filter by department, or pass employee_id for one.',
-      schema: z.object({
-        employee_id: z.string().optional().describe('Internal employee id (emp_...)'),
-        department: z.string().optional(),
-      }),
-      func: async (a: any) => {
-        if (a.employee_id) return callApi('GET', `/api/core/employees/${a.employee_id}`);
-        const qs = a.department ? `?department=${encodeURIComponent(a.department)}` : '';
-        return callApi('GET', `/api/core/employees${qs}`);
-      },
-    },
-    {
-      name: 'get_salary_structure',
+      inputSchema: z.object({
+                employee_id: z.string().optional().describe('Internal employee id (emp_...)'),
+                department: z.string().optional(),
+              }),
+      execute: async (a: any) => {
+              if (a.employee_id) return callApi('GET', `/api/core/employees/${a.employee_id}`);
+              const qs = a.department ? `?department=${encodeURIComponent(a.department)}` : '';
+              return callApi('GET', `/api/core/employees${qs}`);
+            },
+    }),
+
+    get_salary_structure: tool({
       description: "An employee's active salary structure and its components.",
-      schema: z.object({ employee_id: z.string() }),
-      func: async (a: any) => callApi('GET', `/api/hr/salary-structures/${a.employee_id}/active`),
-    },
-    {
-      name: 'preview_salary_calculation',
+      inputSchema: z.object({ employee_id: z.string() }),
+      execute: async (a: any) => callApi('GET', `/api/hr/salary-structures/${a.employee_id}/active`),
+    }),
+
+    preview_salary_calculation: tool({
       description: 'What the payroll engine would compute for an employee from their current structure.',
-      schema: z.object({ employee_id: z.string() }),
-      func: async (a: any) => callApi('GET', `/api/hr/salary-structures/${a.employee_id}/calculate`),
-    },
-    {
-      name: 'build_compliant_salary_components',
-      description:
-        'Computes the statutory deduction components (income tax withholding, EOBI, optionally PESSI/SESSI) ' +
-        'for an annual gross, strictly from the configured rates. Returns a refusal naming the missing ' +
-        'setting if any required figure is unconfigured. Use this before setting any salary structure — ' +
-        'never work the deductions out yourself.',
-      schema: z.object({
-        annual_gross: z.number().describe('Annual gross salary in PKR'),
-        employee_count: z.number().describe('Total active employees — decides whether EOBI applies'),
-        include_eobi: z.boolean().optional(),
-        include_pessi: z.boolean().optional(),
-      }),
-      func: async (a: any) => {
-        const result = await buildStatutoryComponents(ctx.env, {
-          annualGross: a.annual_gross,
-          employeeCount: a.employee_count,
-          includeEobi: a.include_eobi,
-          includePessi: a.include_pessi,
-        });
-        return JSON.stringify(result);
-      },
-    },
-    {
-      name: 'set_salary_structure',
-      description:
-        "Replaces an employee's salary structure. Components must come from " +
-        'build_compliant_salary_components — do not hand-write deduction amounts. Needs approval.',
-      schema: z.object({
-        employee_id: z.string(),
-        base_salary: z.number(),
-        effective_date: z.string().describe('YYYY-MM-DD'),
-        components: z.array(
-          z.object({
-            componentName: z.string(),
-            componentType: z.enum(['Earning', 'Deduction']),
-            amountType: z.enum(['Fixed', 'Percentage']),
-            value: z.number(),
-          }),
-        ),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'set_salary_structure',
-        (p) =>
-          `Replace the salary structure for ${p.employee_id}: base ${p.base_salary}, ` +
-          `${p.components?.length ?? 0} component(s), effective ${p.effective_date}.`,
-        (p) =>
-          callApi('POST', `/api/hr/salary-structures/${p.employee_id}/setup`, {
-            baseSalary: p.base_salary,
-            effectiveDate: p.effective_date,
-            components: p.components,
-          }),
-      ),
-    },
-    {
-      name: 'generate_payroll',
-      description:
-        'Runs payroll for every active employee for a month. Consequential and organisation-wide, so it needs approval.',
-      schema: z.object({
-        month: z.string().describe('YYYY-MM'),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'generate_payroll',
-        (p) => `Generate payroll for ALL active employees for ${p.month}.`,
-        (p) => callApi('POST', '/api/hr/payroll/generate', { month: p.month }),
-      ),
-    },
-    {
-      name: 'get_payroll',
+      inputSchema: z.object({ employee_id: z.string() }),
+      execute: async (a: any) => callApi('GET', `/api/hr/salary-structures/${a.employee_id}/calculate`),
+    }),
+
+    build_compliant_salary_components: tool({
+      description: 'Computes the statutory deduction components (income tax withholding, EOBI, optionally PESSI/SESSI) ' +
+                'for an annual gross, strictly from the configured rates. Returns a refusal naming the missing ' +
+                'setting if any required figure is unconfigured. Use this before setting any salary structure — ' +
+                'never work the deductions out yourself.',
+      inputSchema: z.object({
+                annual_gross: z.number().describe('Annual gross salary in PKR'),
+                employee_count: z.number().describe('Total active employees — decides whether EOBI applies'),
+                include_eobi: z.boolean().optional(),
+                include_pessi: z.boolean().optional(),
+              }),
+      execute: async (a: any) => {
+              const result = await buildStatutoryComponents(ctx.env, {
+                annualGross: a.annual_gross,
+                employeeCount: a.employee_count,
+                includeEobi: a.include_eobi,
+                includePessi: a.include_pessi,
+              });
+              return JSON.stringify(result);
+            },
+    }),
+
+    set_salary_structure: tool({
+      description: "Replaces an employee's salary structure. Components must come from " +
+                'build_compliant_salary_components — do not hand-write deduction amounts. Needs approval.',
+      inputSchema: z.object({
+                employee_id: z.string(),
+                base_salary: z.number(),
+                effective_date: z.string().describe('YYYY-MM-DD'),
+                components: z.array(
+                  z.object({
+                    componentName: z.string(),
+                    componentType: z.enum(['Earning', 'Deduction']),
+                    amountType: z.enum(['Fixed', 'Percentage']),
+                    value: z.number(),
+                  }),
+                ),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'set_salary_structure',
+              (p) =>
+                `Replace the salary structure for ${p.employee_id}: base ${p.base_salary}, ` +
+                `${p.components?.length ?? 0} component(s), effective ${p.effective_date}.`,
+              (p) =>
+                callApi('POST', `/api/hr/salary-structures/${p.employee_id}/setup`, {
+                  baseSalary: p.base_salary,
+                  effectiveDate: p.effective_date,
+                  components: p.components,
+                }),
+            ),
+    }),
+
+    generate_payroll: tool({
+      description: 'Runs payroll for every active employee for a month. Consequential and organisation-wide, so it needs approval.',
+      inputSchema: z.object({
+                month: z.string().describe('YYYY-MM'),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'generate_payroll',
+              (p) => `Generate payroll for ALL active employees for ${p.month}.`,
+              (p) => callApi('POST', '/api/hr/payroll/generate', { month: p.month }),
+            ),
+    }),
+
+    get_payroll: tool({
       description: 'Payroll records, optionally for one month.',
-      schema: z.object({ month: z.string().optional().describe('YYYY-MM') }),
-      func: async (a: any) =>
-        callApi('GET', `/api/hr/payroll${a.month ? `?month=${encodeURIComponent(a.month)}` : ''}`),
-    },
-    {
-      name: 'get_attendance',
+      inputSchema: z.object({ month: z.string().optional().describe('YYYY-MM') }),
+      execute: async (a: any) =>
+              callApi('GET', `/api/hr/payroll${a.month ? `?month=${encodeURIComponent(a.month)}` : ''}`),
+    }),
+
+    get_attendance: tool({
       description: 'Attendance records, for payroll and statutory reporting.',
-      schema: z.object({ employee_id: z.string().optional() }),
-      func: async (a: any) =>
-        callApi('GET', `/api/hr/attendance${a.employee_id ? `?employeeId=${a.employee_id}` : ''}`),
-    },
-    {
-      name: 'get_loans',
+      inputSchema: z.object({ employee_id: z.string().optional() }),
+      execute: async (a: any) =>
+              callApi('GET', `/api/hr/attendance${a.employee_id ? `?employeeId=${a.employee_id}` : ''}`),
+    }),
+
+    get_loans: tool({
       description: 'Employee loans — they appear as payroll deductions.',
-      schema: z.object({}),
-      func: async () => callApi('GET', '/api/hr/loans'),
-    },
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/hr/loans'),
+    }),
 
-    // ── Accounting: ledgers, accounts, journals, transactions ─────────────
-    {
-      name: 'get_ledgers',
+    get_ledgers: tool({
       description: 'All ledgers.',
-      schema: z.object({}),
-      func: async () => callApi('GET', '/api/finance/ledgers'),
-    },
-    {
-      name: 'get_accounts',
-      description: 'Chart of accounts, or one account by id.',
-      schema: z.object({ account_id: z.string().optional() }),
-      func: async (a: any) =>
-        callApi('GET', a.account_id ? `/api/finance/accounts/${a.account_id}` : '/api/finance/accounts'),
-    },
-    {
-      name: 'create_ledger',
-      description:
-        'Opens a new ledger. A structural change to the books, so it needs approval — never create one to make an entry fit.',
-      schema: z.object({
-        ledgerName: z.string(),
-        description: z.string().optional(),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'create_ledger',
-        (p) => `Create a new LEDGER "${p.ledgerName}".`,
-        (p) => callApi('POST', '/api/finance/ledgers', p),
-      ),
-    },
-    {
-      name: 'create_account',
-      description:
-        'Opens a new account, optionally under a ledger. A structural change to the chart of accounts, so it needs approval.',
-      schema: z.object({
-        accountName: z.string(),
-        accountType: z.string().optional().describe('Asset | Liability | Equity | Revenue | Expense'),
-        ledgerId: z.string().optional(),
-        openingBalance: z.number().optional(),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'create_account',
-        (p) =>
-          `Create a new ACCOUNT "${p.accountName}"${p.accountType ? ` (${p.accountType})` : ''}` +
-          `${p.ledgerId ? ` linked to ledger ${p.ledgerId}` : ' with no ledger link'}.`,
-        (p) => callApi('POST', '/api/finance/accounts', p),
-      ),
-    },
-    {
-      name: 'get_journals',
-      description: 'General journal entries.',
-      schema: z.object({ journal_id: z.string().optional() }),
-      func: async (a: any) =>
-        callApi('GET', a.journal_id ? `/api/finance/journals/${a.journal_id}` : '/api/finance/journals'),
-    },
-    {
-      name: 'create_journal_entry',
-      description:
-        'Posts a compound double-entry journal. Debits must equal credits — the server rejects it otherwise. Needs approval.',
-      schema: z.object({
-        entryDate: z.string().describe('YYYY-MM-DD'),
-        narration: z.string().describe('What the entry records'),
-        lines: z
-          .array(
-            z.object({
-              accountId: z.string(),
-              type: z.enum(['debit', 'credit']),
-              amount: z.number(),
-            }),
-          )
-          .describe('At least one debit and one credit, totals equal'),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'create_journal_entry',
-        (p) => {
-          const dr = (p.lines || []).filter((l: any) => l.type === 'debit').reduce((s: number, l: any) => s + l.amount, 0);
-          return `Post a journal for ${p.entryDate} — "${p.narration}", ${p.lines?.length ?? 0} lines, ${dr} each side.`;
-        },
-        (p) => callApi('POST', '/api/finance/journals', p),
-      ),
-    },
-    {
-      name: 'get_transactions',
-      description: 'Financial transactions.',
-      schema: z.object({ transaction_id: z.string().optional() }),
-      func: async (a: any) =>
-        callApi('GET', a.transaction_id ? `/api/finance/transactions/${a.transaction_id}` : '/api/finance/transactions'),
-    },
-    {
-      name: 'record_transaction',
-      description: 'Records a financial transaction. Needs approval — it moves the books.',
-      schema: z.object({
-        accountId: z.string().optional(),
-        amount: z.number(),
-        transactionType: z.string().optional(),
-        description: z.string().optional(),
-        transactionDate: z.string().optional().describe('YYYY-MM-DD'),
-        approvalToken: z.string().optional(),
-      }),
-      func: gated(
-        'record_transaction',
-        (p) => `Record a transaction of ${p.amount}${p.description ? ` — "${p.description}"` : ''}.`,
-        (p) => callApi('POST', '/api/finance/transactions', p),
-      ),
-    },
-    {
-      name: 'get_trial_balance',
-      description: 'The trial balance — the basis for most statements.',
-      schema: z.object({}),
-      func: async () => callApi('GET', '/api/finance/trial-balance'),
-    },
-    {
-      name: 'get_invoices',
-      description: 'Invoices, for revenue and withholding workings.',
-      schema: z.object({ status: z.enum(['paid', 'unpaid', 'all']).optional() }),
-      func: async (a: any) =>
-        callApi('GET', `/api/finance/invoices${a.status && a.status !== 'all' ? `?status=${a.status}` : ''}`),
-    },
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/finance/ledgers'),
+    }),
 
-    // ── Deliverables ──────────────────────────────────────────────────────
-    {
-      name: 'save_finance_document',
-      description:
-        'Files a generated statement in the accounting document store. Call this after uploading the ' +
-        'rendered file, so the deliverable is findable where the accountant already looks.',
-      schema: z.object({
-        title: z.string(),
-        documentType: z.string().describe('e.g. Statement, Return, Reconciliation'),
-        url: z.string().describe('R2 path under finance-docs/'),
-      }),
-      func: async (a: any) =>
-        callApi('POST', '/api/finance/documents', {
-          title: a.title,
-          documentType: a.documentType,
-          url: a.url,
-        }),
-    },
-    {
-      name: 'get_finance_documents',
+    get_accounts: tool({
+      description: 'Chart of accounts, or one account by id.',
+      inputSchema: z.object({ account_id: z.string().optional() }),
+      execute: async (a: any) =>
+              callApi('GET', a.account_id ? `/api/finance/accounts/${a.account_id}` : '/api/finance/accounts'),
+    }),
+
+    create_ledger: tool({
+      description: 'Opens a new ledger. A structural change to the books, so it needs approval — never create one to make an entry fit.',
+      inputSchema: z.object({
+                ledgerName: z.string(),
+                description: z.string().optional(),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'create_ledger',
+              (p) => `Create a new LEDGER "${p.ledgerName}".`,
+              (p) => callApi('POST', '/api/finance/ledgers', p),
+            ),
+    }),
+
+    create_account: tool({
+      description: 'Opens a new account, optionally under a ledger. A structural change to the chart of accounts, so it needs approval.',
+      inputSchema: z.object({
+                accountName: z.string(),
+                accountType: z.string().optional().describe('Asset | Liability | Equity | Revenue | Expense'),
+                ledgerId: z.string().optional(),
+                openingBalance: z.number().optional(),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'create_account',
+              (p) =>
+                `Create a new ACCOUNT "${p.accountName}"${p.accountType ? ` (${p.accountType})` : ''}` +
+                `${p.ledgerId ? ` linked to ledger ${p.ledgerId}` : ' with no ledger link'}.`,
+              (p) => callApi('POST', '/api/finance/accounts', p),
+            ),
+    }),
+
+    get_journals: tool({
+      description: 'General journal entries.',
+      inputSchema: z.object({ journal_id: z.string().optional() }),
+      execute: async (a: any) =>
+              callApi('GET', a.journal_id ? `/api/finance/journals/${a.journal_id}` : '/api/finance/journals'),
+    }),
+
+    create_journal_entry: tool({
+      description: 'Posts a compound double-entry journal. Debits must equal credits — the server rejects it otherwise. Needs approval.',
+      inputSchema: z.object({
+                entryDate: z.string().describe('YYYY-MM-DD'),
+                narration: z.string().describe('What the entry records'),
+                lines: z
+                  .array(
+                    z.object({
+                      accountId: z.string(),
+                      type: z.enum(['debit', 'credit']),
+                      amount: z.number(),
+                    }),
+                  )
+                  .describe('At least one debit and one credit, totals equal'),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'create_journal_entry',
+              (p) => {
+                const dr = (p.lines || []).filter((l: any) => l.type === 'debit').reduce((s: number, l: any) => s + l.amount, 0);
+                return `Post a journal for ${p.entryDate} — "${p.narration}", ${p.lines?.length ?? 0} lines, ${dr} each side.`;
+              },
+              (p) => callApi('POST', '/api/finance/journals', p),
+            ),
+    }),
+
+    get_transactions: tool({
+      description: 'Financial transactions.',
+      inputSchema: z.object({ transaction_id: z.string().optional() }),
+      execute: async (a: any) =>
+              callApi('GET', a.transaction_id ? `/api/finance/transactions/${a.transaction_id}` : '/api/finance/transactions'),
+    }),
+
+    record_transaction: tool({
+      description: 'Records a financial transaction. Needs approval — it moves the books.',
+      inputSchema: z.object({
+                accountId: z.string().optional(),
+                amount: z.number(),
+                transactionType: z.string().optional(),
+                description: z.string().optional(),
+                transactionDate: z.string().optional().describe('YYYY-MM-DD'),
+                approvalToken: z.string().optional(),
+              }),
+      execute: gated(
+              'record_transaction',
+              (p) => `Record a transaction of ${p.amount}${p.description ? ` — "${p.description}"` : ''}.`,
+              (p) => callApi('POST', '/api/finance/transactions', p),
+            ),
+    }),
+
+    get_trial_balance: tool({
+      description: 'The trial balance — the basis for most statements.',
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/finance/trial-balance'),
+    }),
+
+    get_invoices: tool({
+      description: 'Invoices, for revenue and withholding workings.',
+      inputSchema: z.object({ status: z.enum(['paid', 'unpaid', 'all']).optional() }),
+      execute: async (a: any) =>
+              callApi('GET', `/api/finance/invoices${a.status && a.status !== 'all' ? `?status=${a.status}` : ''}`),
+    }),
+
+    save_finance_document: tool({
+      description: 'Files a generated statement in the accounting document store. Call this after uploading the ' +
+                'rendered file, so the deliverable is findable where the accountant already looks.',
+      inputSchema: z.object({
+                title: z.string(),
+                documentType: z.string().describe('e.g. Statement, Return, Reconciliation'),
+                url: z.string().describe('R2 path under finance-docs/'),
+              }),
+      execute: async (a: any) =>
+              callApi('POST', '/api/finance/documents', {
+                title: a.title,
+                documentType: a.documentType,
+                url: a.url,
+              }),
+    }),
+
+    get_finance_documents: tool({
       description: 'Documents already filed in accounting.',
-      schema: z.object({}),
-      func: async () => callApi('GET', '/api/finance/documents'),
-    },
-  ];
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/finance/documents'),
+    }),
+  };
 };

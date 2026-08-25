@@ -257,12 +257,19 @@ posting the same journal twice.
   have corrected a rate seconds ago.
 - Temperature 0.1. This is bookkeeping, not brainstorming.
 
-> **On the LLM stack.** The turn loop uses `nova-agent-framework`, as the Slack
-> agent does. `agents@0.21.0` peers `zod@^4` while that framework needs `zod@^3`;
-> the SDK's core entry uses no zod itself, so it is installed against the MCP
-> peers with `--legacy-peer-deps` and root zod stays at v3. When this agent needs
-> `AIChatAgent` or MCP, that is the moment to drop `nova-agent-framework` and
-> move wholesale to zod v4 — deliberately, not by accident.
+> **On the LLM stack.** The turn loop is the Vercel AI SDK (`generateText` with
+> `stopWhen: stepCountIs(12)`) over **Workers AI**, model
+> `@cf/openai/gpt-oss-120b`, reached through the `AI` binding.
+>
+> `nova-agent-framework` is gone. It pinned the project to zod v3, which the
+> Agents SDK's own surface could not use; dropping it moved everything to zod v4
+> and, more importantly, means tool schemas are real JSON Schema derived from
+> zod rather than a description the model has to interpret.
+>
+> Workers AI over the binding rather than a third-party gateway: no per-provider
+> quota to run into halfway through a payroll run — which is exactly what
+> happened on the previous stack — no gateway token to rotate, and the model runs
+> on the same platform as the data.
 
 ---
 

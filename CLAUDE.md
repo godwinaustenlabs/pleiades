@@ -203,6 +203,12 @@ exported from `src/index.ts` and bound in `wrangler.jsonc`.
   `tools.ts` is the HR + accounting surface, `approvals.ts` is the
   human-in-the-loop gate, `access.ts` decides who may drive it.
 
+Both run their turn loop on the Vercel AI SDK (`generateText`, tools defined
+with `tool()` and zod schemas) over **Workers AI** via the `AI` binding —
+`LLM_MODEL` in `wrangler.jsonc`, currently `@cf/openai/gpt-oss-120b`. Using the
+binding rather than a third-party gateway means no external quota can stop a
+payroll run mid-way, and no gateway credential to rotate.
+
 Three rules hold for any agent added here:
 
 1. **No direct database access.** Tools call the Worker's own API over the

@@ -1,5 +1,6 @@
 import { Agent } from 'agents';
-import { Pipeline } from 'nova-agent-framework';
+import { generateText, stepCountIs } from 'ai';
+import { createWorkersAI } from 'workers-ai-provider';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
@@ -127,37 +128,73 @@ export class PleiadesAgent extends Agent<Env> {
     // this whole design exists to prevent.
     const complianceContext = await buildComplianceContext(this.env);
 
-    const pipeline = new Pipeline({
-      verbose: this.env.VERBOSE === 'true',
-      llmConfig: {
-        model: this.env.LLM_MODEL,
-        provider: this.env.LLM_PROVIDER,
-        // Low: this is bookkeeping, not brainstorming.
-        temperature: 0.1,
-        cloudflare: {
-          accountId: this.env.CF_ACCOUNT_ID,
-          gatewayId: this.env.CF_GATEWAY_NAME,
-          cfAIGToken: this.env.CF_AIG_TOKEN,
-        },
-      },
-      ctxManagerConfig: {
-        clientId: conversationId,
-        agentId: 'pleiades-accountant',
-        memory: { type: 'summary', kvNamespace: this.env.MEMORY_KV_NAMESPACE, limitTurns: 6 },
-      },
-      promptBuilderConfig: {
-        systemPrompt: buildSystemPrompt({
+    // Workers AI through the binding — no gateway token, no per-provider quota
+    // to run into mid-payroll, and the model runs on the same platform as the
+    // data it is reasoning about.
+    const workersai = createWorkersAI({ binding: this.env.AI as any });
+    const model = this.env.LLM_MODEL || '@cf/openai/gpt-oss-120b';
+
+    let reply: string;
+    try {
+      const result = await generateText({
+        model: workersai(model as any),
+        system: buildSystemPrompt({
           complianceContext,
           operatorName: turn.operatorName,
           todayIso: new Date().toISOString().slice(0, 10),
         }),
-      },
-      tools,
-    });
+        prompt: turn.prompt,
+        tools,
+        // Bookkeeping needs several hops: read config, read records, compute,
+        // then act. Capped so a confused turn cannot loop indefinitely against
+        // the ledgers.
+        // gpt-oss spends its output budget on an analysis channel before
+        // answering, and on tool-heavy turns it runs out mid-thought and returns
+        // no final message at all. Low effort keeps it terse and makes it commit
+        // to an answer. The guardrails do not depend on the model deliberating:
+        // refusals come from the calculators and approvals from the database.
+        providerOptions: { 'workers-ai': { reasoning_effort: 'low' } },
+        stopWhen: stepCountIs(12),
+        // Low: this is bookkeeping, not brainstorming.
+        temperature: 0.1,
+      });
 
-    let reply: string;
-    try {
-      reply = await pipeline.run(turn.prompt);
+      reply = result.text?.trim() || '';
+
+      // gpt-oss is a reasoning model, and on some turns it stops mid-thought:
+      // reasoning is populated and `text` is empty. That reasoning is working
+      // out, not an answer — presenting it as one would put half-finished
+      // arithmetic in front of an accountant as though it were a conclusion. So
+      // it is surfaced, but labelled for what it is.
+      if (!reply) {
+        const thinking = result.reasoningText?.trim();
+        if (thinking) {
+          reply =
+            '_I did not finish this turn — below is my working, not a conclusion. ' +
+            'Ask me to continue, or narrow the question._\n\n' +
+            thinking;
+        }
+      }
+
+      // A turn that used tools but produced no prose would otherwise read as
+      // silence. Say what happened instead.
+      if (!reply) {
+        const used = result.steps?.flatMap((st: any) => st.toolCalls ?? []) ?? [];
+        reply = used.length
+          ? `I ran ${used.length} step(s) but produced no summary. Tools used: ${[
+              ...new Set(used.map((c: any) => c.toolName)),
+            ].join(', ')}.`
+          : 'I could not produce an answer for that.';
+      }
+
+      // Record the tool calls alongside the turn, so the conversation log shows
+      // what was actually touched and not only what was said about it.
+      const toolCalls = result.steps?.flatMap((st: any) =>
+        (st.toolCalls ?? []).map((c: any) => ({ tool: c.toolName, input: c.input })),
+      );
+      if (toolCalls?.length) {
+        await this.recordTurn(conversationId, 'tool', `${toolCalls.length} tool call(s)`, toolCalls);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await this.recordTurn(conversationId, 'assistant', `[error] ${message}`);

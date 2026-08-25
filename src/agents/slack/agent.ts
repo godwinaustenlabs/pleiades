@@ -1,5 +1,6 @@
 import { Agent } from 'agents';
-import { Pipeline } from 'nova-agent-framework';
+import { generateText, stepCountIs } from 'ai';
+import { createWorkersAI } from 'workers-ai-provider';
 import { Env } from '../../index';
 import { buildSystemPrompt } from './prompt';
 import { buildTools } from './tools';
@@ -36,10 +37,9 @@ export interface SlackTurn {
  *  - `this.schedule()` is available for follow-ups the agent should perform
  *    later, which a stateless webhook cannot do at all.
  *
- * Only the SDK's core entry point is imported. Its `schedule`, `mcp` and
- * `experimental/*` subpaths require zod v4 while this project is on v3 (see
- * tools.ts) — `this.schedule()` used here is a method on Agent and is not part
- * of that zod-dependent surface.
+ * The turn loop is the AI SDK's `generateText` over Workers AI, so tool
+ * schemas are real JSON Schema derived from zod rather than a description the
+ * model has to interpret.
  */
 export class SlackAgent extends Agent<Env> {
   /**
@@ -104,41 +104,35 @@ export class SlackAgent extends Agent<Env> {
   async handleTurn(turn: SlackTurn): Promise<void> {
     this.record('user', turn, turn.prompt);
 
-    const pipeline = new Pipeline({
-      verbose: this.env.VERBOSE === 'true',
-      llmConfig: {
-        model: this.env.LLM_MODEL,
-        provider: this.env.LLM_PROVIDER,
-        temperature: 0.2,
-        cloudflare: {
-          accountId: this.env.CF_ACCOUNT_ID,
-          gatewayId: this.env.CF_GATEWAY_NAME,
-          cfAIGToken: this.env.CF_AIG_TOKEN,
-        },
-      },
-      ctxManagerConfig: {
-        // Keyed by conversation, not by user: this agent instance *is* the
-        // thread, so two threads with the same person no longer share context.
-        clientId: this.name,
-        agentId: this.env.AGENT_ID || 'nova-slack-agent',
-        memory: {
-          type: 'summary',
-          kvNamespace: this.env.MEMORY_KV_NAMESPACE,
-          limitTurns: 3,
-        },
-      },
-      promptBuilderConfig: { systemPrompt: buildSystemPrompt(turn.slackId) },
-      tools: buildTools(this.apiCaller(turn)),
-    });
+    // Workers AI through the binding: no gateway token and no third-party
+    // quota, which matters for a Slack bot that answers on demand.
+    const workersai = createWorkersAI({ binding: this.env.AI as any });
+    const model = this.env.LLM_MODEL || '@cf/openai/gpt-oss-120b';
 
     const token = this.env.SLACK_BOT_OAUTH_TOKEN;
 
     let answer: string;
     try {
-      answer = await pipeline.run(turn.prompt);
+      const result = await generateText({
+        model: workersai(model as any),
+        system: buildSystemPrompt(turn.slackId),
+        prompt: turn.prompt,
+        tools: buildTools(this.apiCaller(turn)),
+        // Keep gpt-oss terse: its analysis channel otherwise consumes the
+        // output budget and the turn ends without a final message.
+        providerOptions: { 'workers-ai': { reasoning_effort: 'low' } },
+        stopWhen: stepCountIs(8),
+        temperature: 0.2,
+      });
+      // Reasoning models sometimes leave `text` empty and put the answer in
+      // reasoning; prefer text, fall back rather than replying with nothing.
+      answer =
+        result.text?.trim() ||
+        result.reasoningText?.trim() ||
+        'I could not produce an answer for that.';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error('[SlackAgent] Pipeline error:', err);
+      console.error('[SlackAgent] Turn failed:', err);
       this.record('error', turn, message);
       const text = `Sorry <@${turn.slackId}>, I encountered an error: ${message}`;
       if (turn.responseUrl) await replyToSlashCommand(turn.responseUrl, text);
