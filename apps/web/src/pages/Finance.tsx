@@ -383,7 +383,11 @@ function Finance() {
           </div>
         )}
 
-        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && (
+        {/* Tabs that render their own surface. The generic grid below is for
+            record lists; drawing it for these produced an empty accounts table,
+            a "0 agens available" count and an "Add agen" button above the
+            accountant, because the header is derived from the tab id. */}
+        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && tab !== 'agent' && (
           <div className="space-y-4">
             {tab === 'journals' && (
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
