@@ -1,12 +1,13 @@
 import { Agent } from 'agents';
 import { generateText, stepCountIs } from 'ai';
 import { createWorkersAI } from 'workers-ai-provider';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
 import { generateId } from '../../utils/id';
 import { buildComplianceContext } from './config';
 import { buildPleiadesTools } from './tools';
+import { apiCallerFor } from './executors';
 import { buildSystemPrompt } from './prompt';
 
 /** One turn, after the caller has been authenticated and authorised. */
@@ -77,50 +78,47 @@ export class PleiadesAgent extends Agent<Env> {
   }
 
   /**
-   * Calls back into the Worker's own API as the acting user.
+   * The recent conversation, rebuilt from D1.
    *
-   * A real subrequest, not an in-process call: a Durable Object cannot reach the
-   * Hono app without an import cycle, and going over the origin means every tool
-   * request traverses the same middleware chain a browser request does. The
-   * internal actor header authorises it and its secret never leaves the Worker.
+   * The Durable Object gives serialisation, not memory: without this the model
+   * saw exactly one user message per turn and could not remember what it had
+   * just said, what it had proposed, or what the operator asked two messages
+   * ago. Turns were being written to `conversation_turns` and never read back.
+   *
+   * `tool` rows are skipped — they are a record of what was touched, not
+   * dialogue, and replaying them as prose invites the model to treat its own
+   * bookkeeping notes as instructions. Errors are skipped for the same reason.
    */
-  private apiCaller(turn: AccountantTurn) {
-    return async (method: string, path: string, body?: unknown): Promise<string> => {
-      try {
-        const res = await fetch(`${turn.origin}${path}`, {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-agent-actor': turn.actorUserId,
-            'x-agent-secret': this.env.AGENT_INTERNAL_SECRET || '',
-          },
-          ...(body ? { body: JSON.stringify(body) } : {}),
-        });
-        const text = await res.text();
-        if (!res.ok) {
-          // Give the model the status: a 403 means "you may not", which it
-          // should relay rather than retry, and a 400 usually means its payload
-          // was wrong, which it can fix.
-          return JSON.stringify({ success: false, status: res.status, error: text.slice(0, 500) });
-        }
-        return text;
-      } catch (err) {
-        return JSON.stringify({
-          success: false,
-          error: err instanceof Error ? err.message : 'Request failed',
-        });
-      }
-    };
+  private async loadRecentTurns(
+    conversationId: string,
+    limit = 8,
+  ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
+    const db = getDb(this.env);
+    const rows = await db
+      .select()
+      .from(schema.conversationTurns)
+      .where(eq(schema.conversationTurns.conversationId, conversationId))
+      .orderBy(desc(schema.conversationTurns.createdAt))
+      .limit(limit * 2);
+
+    return rows
+      .reverse()
+      .filter((r) => (r.role === 'user' || r.role === 'assistant') && !r.content.startsWith('[error]'))
+      .slice(-limit)
+      .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
   }
 
   async handleTurn(turn: AccountantTurn): Promise<AccountantReply> {
     const conversationId = await this.ensureConversation(turn);
+
+    // Read history *before* recording this turn, or the prompt appears twice.
+    const history = await this.loadRecentTurns(conversationId);
     await this.recordTurn(conversationId, 'user', turn.prompt);
 
     const tools = buildPleiadesTools({
       env: this.env,
       actorUserId: turn.actorUserId,
-      callApi: this.apiCaller(turn),
+      callApi: apiCallerFor(this.env, turn.actorUserId, turn.origin),
     });
 
     // Compliance context is rebuilt every turn, not cached: the operator may
@@ -143,7 +141,7 @@ export class PleiadesAgent extends Agent<Env> {
           operatorName: turn.operatorName,
           todayIso: new Date().toISOString().slice(0, 10),
         }),
-        prompt: turn.prompt,
+        messages: [...history, { role: 'user' as const, content: turn.prompt }],
         tools,
         // Bookkeeping needs several hops: read config, read records, compute,
         // then act. Capped so a confused turn cannot loop indefinitely against

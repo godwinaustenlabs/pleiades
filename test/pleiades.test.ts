@@ -463,3 +463,117 @@ describe('agent journal', () => {
 		expect((await authedGet('crm', '/api/finance/agent/journal')).status).toBe(403);
 	});
 });
+
+describe('conversation memory', () => {
+	it('replays recent turns to the model', async () => {
+		// The Durable Object gives serialisation, not memory. Turns were being
+		// written to conversation_turns and never read back, so the model saw one
+		// message per turn and could not remember what it had just proposed.
+		const conv = 'conv_mem_test';
+		await env.DB.prepare(
+			"INSERT INTO agent_conversations (id, started_at, operator) VALUES (?, 0, 'u_ceo')",
+		).bind(conv).run();
+
+		const add = (role: string, content: string, at: number) =>
+			env.DB.prepare(
+				`INSERT INTO conversation_turns (id, conversation_id, role, content, created_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+			).bind(`ct_${role}_${at}`, conv, role, content, at).run();
+
+		await add('user', 'What is our tax year?', 1);
+		await add('assistant', 'It runs 1 July to 30 June.', 2);
+		await add('tool', '2 tool call(s)', 3);
+		await add('assistant', '[error] something broke', 4);
+
+		const rows = await env.DB.prepare(
+			`SELECT role, content FROM conversation_turns
+			 WHERE conversation_id = ? ORDER BY created_at`,
+		).bind(conv).all();
+
+		const usable = (rows.results as any[]).filter(
+			(r) => (r.role === 'user' || r.role === 'assistant') && !r.content.startsWith('[error]'),
+		);
+		// Tool records are bookkeeping, not dialogue; errors are noise. Replaying
+		// either invites the model to treat its own notes as instructions.
+		expect(usable).toHaveLength(2);
+		expect(usable[0].content).toMatch(/tax year/);
+	});
+});
+
+describe('approvals execute on approval', () => {
+	const approvalRow = async (id: string, tool: string, payload: object) => {
+		const hash = 'x'.repeat(64);
+		await env.DB.prepare(
+			`INSERT INTO agent_approvals
+			 (id, tool_name, payload, payload_hash, summary, status, requested_by, expires_at, created_at)
+			 VALUES (?, ?, ?, ?, 'test', 'pending', 'u_ceo', ?, 0)`,
+		).bind(id, tool, JSON.stringify(payload), hash, Date.now() + 3600_000).run();
+	};
+
+	const decide = async (id: string, decision: string) => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		return SELF.fetch(`https://test.local/api/finance/agent/approvals/${id}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await tokenFor('ceo')}` },
+			body: JSON.stringify({ decision }),
+		});
+	};
+
+	it('runs the stored payload when approved', async () => {
+		await approvalRow('apr_exec_ok', 'create_ledger', { ledgerName: 'Approved Ledger' });
+		const res = await decide('apr_exec_ok', 'approved');
+		expect(res.status).toBe(200);
+
+		const row = await env.DB.prepare(
+			'SELECT status, execution_status FROM agent_approvals WHERE id = ?',
+		).bind('apr_exec_ok').first<any>();
+		// Executed, and consumed only because it succeeded.
+		expect(row.execution_status).toBe('succeeded');
+		expect(row.status).toBe('consumed');
+
+		const ledger = await env.DB.prepare(
+			"SELECT ledger_name FROM ledgers WHERE ledger_name = 'Approved Ledger'",
+		).first();
+		expect(ledger).not.toBeNull();
+	});
+
+	it('does not consume an approval whose action failed', async () => {
+		// A failed run must stay approved so it can be retried, not be burnt.
+		await approvalRow('apr_exec_fail', 'create_journal_entry', {
+			entryDate: '2026-08-01',
+			narration: 'unbalanced',
+			lines: [{ accountId: 'acc_x', type: 'debit', amount: 100 }],
+		});
+		const res = await decide('apr_exec_fail', 'approved');
+		expect(res.status).toBe(400);
+
+		const row = await env.DB.prepare(
+			'SELECT status, execution_status FROM agent_approvals WHERE id = ?',
+		).bind('apr_exec_fail').first<any>();
+		expect(row.execution_status).toBe('failed');
+		expect(row.status).toBe('approved');
+	});
+
+	it('rejects without executing', async () => {
+		await approvalRow('apr_rejected', 'create_ledger', { ledgerName: 'Never Created' });
+		expect((await decide('apr_rejected', 'rejected')).status).toBe(200);
+
+		const row = await env.DB.prepare(
+			'SELECT status, execution_status FROM agent_approvals WHERE id = ?',
+		).bind('apr_rejected').first<any>();
+		expect(row.status).toBe('rejected');
+		expect(row.execution_status).toBeNull();
+
+		const ledger = await env.DB.prepare(
+			"SELECT ledger_name FROM ledgers WHERE ledger_name = 'Never Created'",
+		).first();
+		expect(ledger).toBeNull();
+	});
+
+	it('will not decide the same approval twice', async () => {
+		await approvalRow('apr_twice', 'create_ledger', { ledgerName: 'Once Only' });
+		expect((await decide('apr_twice', 'approved')).status).toBe(200);
+		expect((await decide('apr_twice', 'approved')).status).toBe(400);
+	});
+});

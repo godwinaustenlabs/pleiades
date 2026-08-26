@@ -4,6 +4,7 @@ import { Env } from '../../index';
 import { generateId } from '../../utils/id';
 import { logAudit } from '../../utils/audit';
 import { recordAction } from './journal';
+import { apiCallerFor, buildExecutors } from './executors';
 
 /**
  * Human-in-the-loop approvals.
@@ -127,13 +128,27 @@ export async function consumeApproval(
   return { ok: true };
 }
 
-/** Approves or rejects a pending request. Called by the operator, never the agent. */
+/**
+ * Approves or rejects a pending request, and carries out an approved one.
+ *
+ * Approving used to only flip a status. The action itself then required the
+ * agent to call the same tool again with a byte-identical payload plus the
+ * token — which it could not do, having no memory of either. So the row is the
+ * source of truth: it already holds the tool name and the exact payload the
+ * operator saw, and that is what gets executed.
+ *
+ * It runs as `requested_by`, not as the approver. Approval is authorisation,
+ * not impersonation — the write belongs in the audit trail under the name of
+ * the person the agent was acting for, and running it as the approver would
+ * also silently widen it to *their* grants.
+ */
 export async function decideApproval(
   env: Env,
   approvalId: string,
   deciderUserId: string,
   decision: 'approved' | 'rejected',
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+  origin?: string,
+): Promise<{ ok: true; executed?: boolean; result?: string } | { ok: false; reason: string }> {
   const db = getDb(env);
   const row = await db.query.agentApprovals.findFirst({
     where: eq(schema.agentApprovals.id, approvalId),
@@ -151,7 +166,90 @@ export async function decideApproval(
     decision,
     toolName: row.toolName,
   });
-  return { ok: true };
+
+  if (decision === 'rejected') return { ok: true, executed: false };
+
+  // ── Carry it out ──────────────────────────────────────────────────────────
+  if (!origin) {
+    // Without an origin the executor cannot reach the Worker's own API. Leave
+    // the row approved-but-unexecuted rather than pretending it ran.
+    await db
+      .update(schema.agentApprovals)
+      .set({ executionStatus: 'pending' })
+      .where(eq(schema.agentApprovals.id, approvalId));
+    return { ok: true, executed: false };
+  }
+
+  const executors = buildExecutors(apiCallerFor(env, row.requestedBy, origin));
+  const executor = executors[row.toolName];
+  if (!executor) {
+    await db
+      .update(schema.agentApprovals)
+      .set({
+        executionStatus: 'failed',
+        executionResult: `No executor for ${row.toolName}`,
+        executedAt: new Date(),
+      })
+      .where(eq(schema.agentApprovals.id, approvalId));
+    return { ok: false, reason: `Approved, but nothing knows how to run ${row.toolName}.` };
+  }
+
+  let result: string;
+  let failed = false;
+  try {
+    result = await executor(JSON.parse(row.payload));
+    // The API layer answers 200 with { success: false } for a rejected write,
+    // so a thrown error is not the only failure mode worth catching.
+    try {
+      const parsed = JSON.parse(result);
+      if (parsed && parsed.success === false) failed = true;
+    } catch {
+      // A non-JSON body is not itself a failure.
+    }
+  } catch (err) {
+    failed = true;
+    result = err instanceof Error ? err.message : String(err);
+  }
+
+  await db
+    .update(schema.agentApprovals)
+    // Only a successful run consumes the approval. A failed one stays
+    // `approved` so it can be retried, rather than being burnt.
+    .set({
+      status: failed ? 'approved' : 'consumed',
+      executionStatus: failed ? 'failed' : 'succeeded',
+      executionResult: result.slice(0, 2000),
+      executedAt: new Date(),
+      ...(failed ? {} : { consumedAt: new Date() }),
+    })
+    .where(eq(schema.agentApprovals.id, approvalId));
+
+  await logAudit(env, row.requestedBy, 'UPDATE', 'agent_approvals', approvalId, {
+    action: 'executed',
+    toolName: row.toolName,
+    ok: !failed,
+  });
+
+  try {
+    await recordAction(env, {
+      actionType: row.toolName,
+      subject: row.summary,
+      summary: failed
+        ? `Approved by ${deciderUserId}, but execution failed.`
+        : `Approved by ${deciderUserId} and executed.`,
+      rationale: failed ? result.slice(0, 500) : undefined,
+      outcome: failed ? 'blocked' : 'completed',
+      entities: { approvalId, payload: JSON.parse(row.payload) },
+      actorUserId: row.requestedBy,
+      source: 'approval_gate',
+    });
+  } catch (err) {
+    console.error('[approvals] journal write failed:', err);
+  }
+
+  return failed
+    ? { ok: false, reason: `Approved, but it failed to run: ${result.slice(0, 300)}` }
+    : { ok: true, executed: true, result };
 }
 
 /** Pending requests for the operator to act on. */

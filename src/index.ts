@@ -50,6 +50,8 @@ export type Env = {
   DB: D1Database;
   /** Static assets: the built SPA in apps/web/dist, with SPA fallback. */
   ASSETS: Fetcher;
+  /** This Worker, bound to itself, so agent tools re-enter the API in-process. */
+  SELF?: Fetcher;
   /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
   CRM_BUCKET?: R2Bucket;
   /** Source documents for the accountant's knowledge base. */

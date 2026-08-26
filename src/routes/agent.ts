@@ -216,9 +216,23 @@ agentRouter.post('/approvals/:id', requireFeatureAccess('finance', 'agent', 'edi
     if (decision !== 'approved' && decision !== 'rejected') {
       return badRequest(c, "decision must be 'approved' or 'rejected'");
     }
-    const result = await decideApproval(c.env, c.req.param('id')!, user.id, decision);
+    // The origin lets the executor reach this Worker's own API. Approving now
+    // carries the action out; it used to only set a status and wait for the
+    // agent to retry, which it could never do.
+    const result = await decideApproval(
+      c.env,
+      c.req.param('id')!,
+      user.id,
+      decision,
+      new URL(c.req.url).origin,
+    );
     if (!result.ok) return badRequest(c, result.reason);
-    return ok(c, { id: c.req.param('id'), decision });
+    return ok(c, {
+      id: c.req.param('id'),
+      decision,
+      executed: result.executed ?? false,
+      result: result.result,
+    });
   } catch (err) {
     return serverError(c, err);
   }

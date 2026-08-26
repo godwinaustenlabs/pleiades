@@ -171,6 +171,14 @@ export const agentApprovals = sqliteTable('agent_approvals', {
   consumedAt: integer('consumed_at', { mode: 'timestamp' }),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  /**
+   * What happened when the approved action ran: pending | succeeded | failed.
+   * Without this an approval that was granted and then failed is
+   * indistinguishable from one that worked.
+   */
+  executionStatus: text('execution_status'),
+  executionResult: text('execution_result'),
+  executedAt: integer('executed_at', { mode: 'timestamp' }),
 });
 
 /**

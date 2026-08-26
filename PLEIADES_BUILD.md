@@ -28,17 +28,34 @@ to paste `apr_…` into the chat. That was a design error, not a tuning problem.
 
 ## Stage 1 — Memory and auto-executing approvals
 
-- [ ] Read the last ~8 `conversation_turns` and pass them as `messages`
-- [ ] Skip `tool` rows and `[error]` entries when rebuilding history
-- [ ] Executor registry so a stored payload can run without the model
-- [ ] `POST /approvals/:id` executes on approval
-- [ ] Execution runs as `requested_by`, never the approver — approval is
+- [x] Read the last ~8 `conversation_turns` and pass them as `messages`
+- [x] Skip `tool` rows and `[error]` entries when rebuilding history
+- [x] Executor registry so a stored payload can run without the model
+- [x] `POST /approvals/:id` executes on approval
+- [x] Execution runs as `requested_by`, never the approver — approval is
       authorisation, not impersonation, and the audit trail must attribute the
       write to the person the agent was acting for
-- [ ] `execution_status` / `execution_result` columns, so an approved action that
+- [x] `execution_status` / `execution_result` columns, so an approved action that
       failed is visible rather than silently `consumed`
-- [ ] `consumed` transition moved to after a successful execute
-- [ ] Tests: memory reaches the model; auto-execute including the failure path
+- [x] `consumed` transition moved to after a successful execute
+- [x] Tests: memory reaches the model; auto-execute including the failure path
+
+Two things surfaced while testing and were fixed here rather than deferred:
+
+**The Worker is now bound to itself** (`services: [{ binding: SELF }]`). Agent
+tools call back into this Worker's own API so a tool request passes the same
+middleware chain a browser request does; that call used to go out to the origin
+and back. A service binding dispatches in-process — no DNS, no second TLS
+handshake, and it works under `wrangler dev` and in tests, where a loopback
+fetch to the Worker's own origin simply hangs.
+
+**`test/schema.sql` held 23 of the 85 production tables.** Its header claimed to
+be the production DDL; it was a subset, so nothing touching finance, CRM or
+assets could be tested at all — the first approval test failed on
+`no such table: ledgers`. Regenerated in full from `sqlite_master`, with the
+command in the header so the next regeneration is a copy-paste.
+
+*Deployed: version `2199ba11`.*
 
 ## Stage 2 — A readable agent panel
 

@@ -4,6 +4,7 @@ import { Env } from '../../index';
 import { buildStatutoryComponents } from './compliance';
 import { loadConfig, missingRequired } from './config';
 import { requestApproval, consumeApproval } from './approvals';
+import { buildExecutors } from './executors';
 import { searchKnowledge } from './knowledge';
 import { recordAction, recallActions } from './journal';
 
@@ -41,6 +42,10 @@ export interface ToolContext {
 export const buildPleiadesTools = (ctx: ToolContext) => {
   const { callApi } = ctx;
 
+  // The same map the approvals route runs on approval, so the thing approved
+  // and the thing executed can never drift apart.
+  const executors = buildExecutors(callApi);
+
   /** Wraps a gated action: request approval, or execute the approved payload. */
   const gated = (
     toolName: string,
@@ -56,8 +61,9 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
         approvalId: req.id,
         summary: req.summary,
         message:
-          `This needs ${'the operator'}'s approval before it can run. Show them exactly what will ` +
-          `happen and wait — do not retry without a token they have granted.`,
+          'Waiting on the operator. Tell them plainly what will change and stop — do not retry. ' +
+          'When they approve it in the Accounting view it runs on its own; you do not need to ' +
+          'call this again.',
       });
     }
 

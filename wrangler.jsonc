@@ -25,6 +25,18 @@
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application"
 	},
+	// The Worker bound to itself. Agent tools call back into this Worker's own
+	// API so a tool request traverses exactly the same middleware chain
+	// (authMiddleware -> requireAppAccess -> requireFeatureAccess) as a browser
+	// request. A service binding dispatches in-process, so it does not leave the
+	// edge, does not depend on public DNS, and works under `wrangler dev` and in
+	// tests, where a loopback fetch to the Worker's own origin hangs.
+	"services": [
+		{
+			"binding": "SELF",
+			"service": "office"
+		}
+	],
 	// The Slack agent runs as a Durable Object via the Agents SDK: one instance
 	// per Slack conversation, so turns in a thread are serialised and the
 	// conversation keeps its own durable SQLite state.
