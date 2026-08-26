@@ -66,12 +66,22 @@ had no background. `MarkdownView` sets `text-black/85`, but this project
 *inverts* black and white via `--dynamic-black`, so assistant replies rendered
 at near-zero contrast. Unreadable was literal.
 
-- [ ] Replace undefined tokens with ones that exist
-- [ ] Fix `MarkdownView` contrast in the panel context
-- [ ] Lift prose from `text-[10px]`/`text-[11px]` to a readable size
-- [ ] Author labels, timestamps and separation between turns
-- [ ] Pending approvals inline in the chat with Approve / Reject
-- [ ] `textarea` composer so Shift+Enter makes a newline
+- [x] Replace undefined tokens with ones that exist
+- [x] Fix `MarkdownView` contrast in the panel context
+- [x] Lift prose from `text-[10px]`/`text-[11px]` to a readable size
+- [x] Author labels, timestamps and separation between turns
+- [x] Pending approvals inline in the chat with Approve / Reject
+- [x] `textarea` composer so Shift+Enter makes a newline
+
+`--color-surfaceAlt` and `--color-border` are now defined in `index.css` rather
+than the classes being rewritten away: `PermissionMatrix` and `Admin` were
+styling with the same two undefined tokens, so one definition fixes all three.
+
+`MarkdownView` no longer names a colour at all — it inherits from its container.
+It only ever had contrast inside the asset previewer, which sets `bg-white
+text-black`, and this project inverts that pair via `--dynamic-black`.
+
+*Deployed: version `a62a6cac`.*
 
 ## Stage 3 — Asset register with depreciation
 

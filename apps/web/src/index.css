@@ -9,6 +9,12 @@
   --color-accent: var(--accent);
   --color-textPrimary: var(--text-main);
   --color-textSecondary: var(--text-sec);
+  /* Three components — AccountantPanel, PermissionMatrix and Admin — were
+     already styling with `bg-surfaceAlt` and `border-border`, but neither token
+     was ever defined, so those panels rendered with no background and no
+     visible border. Defining them here fixes all three at once. */
+  --color-surfaceAlt: var(--surface-alt);
+  --color-border: var(--border);
   --color-white: var(--dynamic-white);
   --color-black: var(--dynamic-black);
   --font-sans: "Outfit", "Inter", sans-serif;
@@ -28,6 +34,8 @@
     --glass-bg-heavy: rgba(255, 255, 255, 0.95);
     --gradient-start: hsla(217, 91%, 95%, 1);
     --gradient-end: hsla(217, 91%, 98%, 1);
+    --surface-alt: #F1F5F9;
+    --border: #E2E8F0;
     --dynamic-white: #0F172A;
     --dynamic-black: #FFFFFF;
   }
@@ -45,6 +53,8 @@
     --glass-bg-heavy: rgba(15, 23, 42, 0.8);
     --gradient-start: hsla(217, 33%, 10%, 1);
     --gradient-end: hsla(217, 33%, 5%, 1);
+    --surface-alt: #273449;
+    --border: #334155;
     --dynamic-white: #ffffff;
     --dynamic-black: #000000;
   }

@@ -19,7 +19,13 @@ interface ConfigVar {
 }
 interface ConfigGroup { key: string; label: string; vars: ConfigVar[] }
 interface Approval { id: string; toolName: string; summary: string; payload: unknown; createdAt: string }
-interface ChatMessage { role: 'user' | 'assistant'; text: string }
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  at: number;
+  /** Approvals this turn raised, shown inline under the reply. */
+  raised?: string[];
+}
 interface KnowledgeDoc {
   id: string; r2Key: string; title: string; chunkCount: number;
   status: 'pending' | 'indexed' | 'failed'; error: string | null;
@@ -33,6 +39,72 @@ interface AccountantPanelProps {
   canDrive: boolean;
   /** finance/agent_config edit — may change the rates it quotes. */
   canEditConfig: boolean;
+}
+
+/** hh:mm, local. Turns need to be placeable in time; a full date does not fit. */
+const clock = (at: number | string) =>
+  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+/**
+ * One pending approval, with the change spelled out.
+ *
+ * Rendered both in the Approvals tab and inline under the reply that raised it:
+ * approving now carries the action out, so the decision belongs where the
+ * operator is already reading rather than behind another tab.
+ */
+function ApprovalCard({
+  approval,
+  canDrive,
+  onDecide,
+}: {
+  approval: Approval;
+  canDrive: boolean;
+  onDecide: (id: string, decision: 'approved' | 'rejected') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-amber-500/40 bg-amber-500/5 rounded-xl p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+            Needs your approval · {approval.toolName.replace(/_/g, ' ')}
+          </div>
+          <div className="text-sm font-semibold mt-1 leading-relaxed">{approval.summary}</div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-[11px] text-textSecondary underline underline-offset-2"
+      >
+        {open ? 'Hide' : 'Show'} exactly what will change
+      </button>
+      {open && (
+        <pre className="text-[11px] font-mono bg-surfaceAlt rounded-lg p-3 overflow-x-auto">
+          {JSON.stringify(approval.payload, null, 2)}
+        </pre>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onDecide(approval.id, 'approved')}
+          disabled={!canDrive}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+        >
+          <Check className="w-3.5 h-3.5" /> Approve &amp; run
+        </button>
+        <button
+          onClick={() => onDecide(approval.id, 'rejected')}
+          disabled={!canDrive}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+        >
+          <X className="w-3.5 h-3.5" /> Reject
+        </button>
+        <span className="text-[10px] text-textSecondary ml-auto">{clock(approval.createdAt)}</span>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -192,7 +264,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
     const text = draft.trim();
     if (!text || sending) return;
     setDraft(''); setError(null);
-    setMessages((m) => [...m, { role: 'user', text }]);
+    setMessages((m) => [...m, { role: 'user', text, at: Date.now() }]);
     setSending(true);
     try {
       const res = await fetch(`${API}/finance/agent/chat`, {
@@ -202,11 +274,15 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `The agent could not answer (${res.status})`);
-      setMessages((m) => [...m, { role: 'assistant', text: body.data.reply }]);
-      if (body.data.pendingApprovals?.length) await loadApprovals();
+      const raised: string[] = (body.data.pendingApprovals || []).map((a: { id: string }) => a.id);
+      setMessages((m) => [...m, { role: 'assistant', text: body.data.reply, at: Date.now(), raised }]);
+      if (raised.length) await loadApprovals();
     } catch (e) {
       setError(errorMessage(e));
-      setMessages((m) => [...m, { role: 'assistant', text: `_Could not complete that turn._` }]);
+      setMessages((m) => [
+        ...m,
+        { role: 'assistant', text: '_Could not complete that turn._', at: Date.now() },
+      ]);
     } finally { setSending(false); }
   }
 
@@ -217,12 +293,17 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Failed');
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Failed');
       await loadApprovals();
+      // Approving carries the action out; there is no id to relay back to the
+      // agent any more, and nothing further for the operator to do.
       setNotice(
-        decision === 'approved'
-          ? 'Approved. Tell the agent to go ahead — it needs the approval id to proceed.'
-          : 'Rejected.',
+        decision === 'rejected'
+          ? 'Rejected. Nothing was changed.'
+          : body?.data?.executed
+            ? 'Approved and carried out.'
+            : 'Approved.',
       );
     } catch (e) { setError(errorMessage(e)); }
   }
@@ -273,7 +354,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
           <button
             key={id}
             onClick={() => setTab(id as Tab)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-black uppercase tracking-wider border-b-2 -mb-px ${
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[11px] font-black uppercase tracking-wider border-b-2 -mb-px ${
               tab === id ? 'border-primary text-primary' : 'border-transparent text-textSecondary hover:text-text'
             }`}
           >
@@ -395,9 +476,9 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
             )}
           </div>
 
-          <div className="border border-border rounded-lg p-4 min-h-[45vh] max-h-[60vh] overflow-y-auto space-y-4">
+          <div className="border border-border rounded-xl bg-surface p-5 min-h-[45vh] max-h-[62vh] overflow-y-auto divide-y divide-border">
             {messages.length === 0 && (
-              <div className="text-xs text-textSecondary py-10 text-center space-y-2">
+              <div className="text-sm text-textSecondary py-12 text-center space-y-2">
                 <p>Ask it about payroll, ledgers, journals or a filing.</p>
                 <p className="opacity-70">
                   It reads your compliance settings for every rate, and asks before changing anything.
@@ -405,14 +486,40 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
               </div>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'text-right' : ''}>
-                <div className={`inline-block text-left max-w-[85%] px-3 py-2 rounded-xl ${
-                  m.role === 'user' ? 'bg-primary text-white' : 'bg-surfaceAlt'
-                }`}>
-                  {m.role === 'assistant'
-                    ? <div className="text-sm"><MarkdownView source={m.text} /></div>
-                    : <div className="text-sm whitespace-pre-wrap">{m.text}</div>}
+              <div key={i} className="py-4 first:pt-0 last:pb-0">
+                {/* Who said it and when. The two used to run together with no
+                    label, no timestamp and no separator. */}
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <span
+                    className={`text-[10px] font-black uppercase tracking-wider ${
+                      m.role === 'user' ? 'text-primary' : 'text-textSecondary'
+                    }`}
+                  >
+                    {m.role === 'user' ? 'You' : 'Accountant'}
+                  </span>
+                  <span className="text-[10px] text-textSecondary/70">{clock(m.at)}</span>
                 </div>
+                {m.role === 'assistant' ? (
+                  <div className="text-textPrimary text-[15px]">
+                    <MarkdownView source={m.text} />
+                  </div>
+                ) : (
+                  <div className="text-[15px] leading-7 whitespace-pre-wrap text-textPrimary">
+                    {m.text}
+                  </div>
+                )}
+                {/* The approvals this turn raised, decided here rather than in
+                    another tab. */}
+                {m.raised?.length ? (
+                  <div className="mt-3 space-y-2">
+                    {m.raised
+                      .map((id) => approvals.find((a) => a.id === id))
+                      .filter((a): a is Approval => !!a)
+                      .map((a) => (
+                        <ApprovalCard key={a.id} approval={a} canDrive={canDrive} onDecide={decide} />
+                      ))}
+                  </div>
+                ) : null}
               </div>
             ))}
             {sending && (
@@ -422,21 +529,29 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
             )}
             <div ref={endRef} />
           </div>
-          <div className="flex gap-2">
-            <input
+          <div className="flex gap-2 items-end">
+            {/* A textarea, not an input: these questions run to several lines,
+                and Shift+Enter now makes a newline instead of being swallowed. */}
+            <textarea
               value={draft}
+              rows={2}
               onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
               disabled={!canDrive || sending}
-              placeholder={canDrive ? 'Ask the accountant…' : 'You need agent / reports (edit) to drive the agent'}
-              className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-transparent outline-none focus:border-primary disabled:opacity-50"
+              placeholder={canDrive ? 'Ask the accountant…  (Shift+Enter for a new line)' : 'You need agent / reports (edit) to drive the agent'}
+              className="flex-1 border border-border rounded-xl px-3.5 py-2.5 text-sm bg-surface resize-y min-h-[3rem] max-h-40 outline-none focus:border-primary disabled:opacity-50"
             />
             <button
               onClick={send}
               disabled={!canDrive || sending || !draft.trim()}
-              className="px-4 rounded-lg bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-primary text-white text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
             >
-              Send
+              <Send className="w-3.5 h-3.5" /> Send
             </button>
           </div>
         </div>
@@ -526,42 +641,17 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
 
       {tab === 'approvals' && (
         <div className="space-y-3">
-          <p className="text-xs text-textSecondary">
-            The agent stops rather than take these alone. Approving authorises exactly the change
-            described — if the details change, it has to ask again.
+          <p className="text-sm text-textSecondary leading-relaxed">
+            The agent stops rather than take these alone. Approving carries out exactly the change
+            described, as the person who asked for it — if the details change, it has to ask again.
           </p>
           {approvals.length === 0 && (
-            <div className="border border-border rounded-lg py-10 text-center text-xs text-textSecondary">
+            <div className="border border-border rounded-xl py-12 text-center text-sm text-textSecondary">
               Nothing waiting.
             </div>
           )}
           {approvals.map((a) => (
-            <div key={a.id} className="border border-border rounded-lg p-4 space-y-3">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-textSecondary">{a.toolName}</div>
-                <div className="text-sm font-bold mt-1">{a.summary}</div>
-              </div>
-              <pre className="text-[10px] font-mono bg-surfaceAlt rounded p-2 overflow-x-auto">
-                {JSON.stringify(a.payload, null, 2)}
-              </pre>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => decide(a.id, 'approved')}
-                  disabled={!canDrive}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
-                >
-                  <Check className="w-3.5 h-3.5" /> Approve
-                </button>
-                <button
-                  onClick={() => decide(a.id, 'rejected')}
-                  disabled={!canDrive}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
-                >
-                  <X className="w-3.5 h-3.5" /> Reject
-                </button>
-                <code className="text-[10px] text-textSecondary ml-auto">{a.id}</code>
-              </div>
-            </div>
+            <ApprovalCard key={a.id} approval={a} canDrive={canDrive} onDecide={decide} />
           ))}
         </div>
       )}
