@@ -285,3 +285,9 @@ VALUES ('cc_wealth_statement_due', 'wealth_statement_due', 'filing_deadlines', '
 INSERT OR IGNORE INTO compliance_config
 	(id, config_key, group_name, label, description, value_type, unit, value, required, sort_order, effective_from, created_at, updated_at)
 VALUES ('cc_nil_return_required', 'nil_return_required', 'filing_deadlines', 'Nil return still required', 'Generate the filing even when there is nothing to report.', 'boolean', NULL, 'true', 1, 47, '2026-07-01', unixepoch(), unixepoch());
+
+-- Migration 0036: the daily runner's operator. Left unset here as it is in
+-- production, so the tests exercise the refusal path by default.
+INSERT OR IGNORE INTO compliance_config
+	(id, config_key, group_name, label, description, value_type, unit, value, required, sort_order, effective_from, created_at, updated_at)
+VALUES ('cc_daily_runner_actor', 'daily_runner_actor', 'company', 'Daily runner operator', 'The users_logins id the twice-daily check runs as. Its tool calls are limited to that person''s permissions. Leave blank to switch the scheduled run off.', 'text', NULL, NULL, 0, 90, '2020-01-01', unixepoch(), unixepoch());

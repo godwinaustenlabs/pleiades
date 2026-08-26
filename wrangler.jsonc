@@ -12,6 +12,7 @@
 	},
 	"vars": {
 		"VERBOSE": "true",
+		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
 		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
 		"AGENT_ID": "nova-mcp-agent",
 		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
@@ -24,6 +25,16 @@
 		"directory": "./apps/web/dist",
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application"
+	},
+	// The accountant's twice-daily check: 06:00 and 17:00 UTC, which is 11am and
+	// 10pm in Pakistan — the start of the working day and after it ends. Cron
+	// rather than the Agents SDK's this.schedule() because the run is global,
+	// not per-conversation, and no Durable Object here wakes on a timer.
+	"triggers": {
+		"crons": [
+			"0 6 * * *",
+			"0 17 * * *"
+		]
 	},
 	// The Worker bound to itself. Agent tools call back into this Worker's own
 	// API so a tool request traverses exactly the same middleware chain

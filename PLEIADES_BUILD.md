@@ -177,15 +177,28 @@ disappear.
 
 ## Stage 6 — `daily_runner`
 
-- [ ] Cron triggers and a `scheduled` handler (the Worker exports a bare Hono
+- [x] Cron triggers and a `scheduled` handler (the Worker exports a bare Hono
       app today, so both are needed)
-- [ ] Twice-daily prompt: read the manual, recall what was done, check what was
+- [x] Twice-daily prompt: read the manual, recall what was done, check what was
       produced, say what is due
-- [ ] Runs as a configured operator, so its tools stay bounded by real grants
-- [ ] Output to `app_messages` for the finance app and to the agent journal
-- [ ] It proposes; anything consequential still raises an approval
+- [x] Runs as a configured operator, so its tools stay bounded by real grants
+- [x] Output to `app_messages` for the finance app and to the agent journal
+- [x] It proposes; anything consequential still raises an approval
 
 ---
+
+Runs at 06:00 and 17:00 UTC — 11am and 10pm in Pakistan, the start of the
+working day and after it ends. The morning asks what is due; the evening asks
+what is still outstanding.
+
+`daily_runner_actor` ships **unset**, and the runner refuses rather than picking
+someone. Choosing whose authority an unattended job acts under is a decision
+about trust, not one for code to guess. A deactivated account stops the run.
+
+Set it in Accounting → Accountant → Compliance settings to switch the schedule
+on.
+
+*Deployed: version `565997e8`, both crons registered. Migration 0036 applied.*
 
 ## Standing rules
 

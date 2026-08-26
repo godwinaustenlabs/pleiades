@@ -69,7 +69,7 @@ describe('Pleiades schema', () => {
 describe('compliance configuration', () => {
 	it('ships every variable the operator has to own', async () => {
 		const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM compliance_config').first<{ n: number }>();
-		expect(row?.n).toBe(48);
+		expect(row?.n).toBe(49);
 	});
 
 	it('leaves figures the source could not confirm unset', async () => {
@@ -220,7 +220,7 @@ describe('agent access and approvals', () => {
 		const res = await authedGet('ceo', '/api/finance/agent/config');
 		expect(res.status).toBe(200);
 		const { data } = await res.json() as any;
-		expect(data.total).toBe(48);
+		expect(data.total).toBe(49);
 		expect(data.groups.length).toBeGreaterThan(0);
 	});
 

@@ -52,6 +52,8 @@ export type Env = {
   ASSETS: Fetcher;
   /** This Worker, bound to itself, so agent tools re-enter the API in-process. */
   SELF?: Fetcher;
+  /** This Worker's public origin, for runs with no inbound request to read it from. */
+  WORKER_ORIGIN?: string;
   /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
   CRM_BUCKET?: R2Bucket;
   /** Source documents for the accountant's knowledge base. */
@@ -198,4 +200,35 @@ app.onError((err, c) => {
   return c.json({ success: false, error: 'Internal server error' }, 500);
 });
 
-export default app;
+/**
+ * The Worker's entrypoint.
+ *
+ * An object rather than the bare Hono app, because a bare app has no
+ * `scheduled` handler and cron triggers would fire into nothing.
+ */
+export default {
+  fetch: app.fetch,
+
+  /**
+   * The accountant's scheduled check.
+   *
+   * `ctx.waitUntil` is not used: the run *is* the work, and returning before it
+   * finishes would let the platform cancel it halfway. A failure is logged and
+   * swallowed — a scheduled handler that throws is retried, and a retried agent
+   * turn would post the same suggestion twice.
+   */
+  async scheduled(event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    try {
+      const { runDailyCheck } = await import('./agents/pleiades-accountant/daily-runner');
+      // A scheduled run has no request to take an origin from. The var keeps a
+      // preview deployment from calling back into production.
+      const result = await runDailyCheck(env, env.WORKER_ORIGIN || 'https://office.galabs.workers.dev');
+      console.log(
+        `[daily-runner] ${event.cron}:`,
+        result.ran ? `posted ${result.messageId}` : `skipped — ${result.reason}`,
+      );
+    } catch (err) {
+      console.error('[daily-runner] failed:', err);
+    }
+  },
+};
