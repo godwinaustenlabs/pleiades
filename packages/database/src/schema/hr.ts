@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 import { employees, committees } from './core';
 import { usersLogins } from './auth';
+import { accounts } from './finance';
 
 export const sectors = sqliteTable('sectors', {
   id: text('sector_id').primaryKey(),
@@ -130,6 +131,14 @@ export const loans = sqliteTable('loans', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+/**
+ * The asset register.
+ *
+ * Custody (who holds it) and value (what it is worth) in one table, because
+ * they describe the same object. HR assigns; Accounting depreciates. The
+ * monetary columns are all nullable: a keyboard needs no useful life, and the
+ * register is still worth keeping before the chart of accounts exists.
+ */
 export const assets = sqliteTable('assets', {
   id: text('id').primaryKey(),
   assetName: text('asset_name').notNull(),
@@ -140,6 +149,30 @@ export const assets = sqliteTable('assets', {
   condition: text('condition'),
   status: text('status').notNull().default('Available'), // Available, Assigned, Damaged
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+
+  // ── What it is worth ──────────────────────────────────────────────────────
+  purchaseCost: real('purchase_cost'),
+  purchaseDate: text('purchase_date'), // YYYY-MM-DD
+  salvageValue: real('salvage_value').default(0),
+  usefulLifeMonths: integer('useful_life_months'),
+  /** laptop | furniture | building | vehicle | equipment | stationery | other */
+  assetClass: text('asset_class').default('other'),
+  serialNumber: text('serial_number'),
+  vendor: text('vendor'),
+  depreciationMethod: text('depreciation_method').default('straight_line'),
+  accumulatedDepreciation: real('accumulated_depreciation').default(0),
+  /** YYYY-MM of the last period posted, so a re-run cannot charge it twice. */
+  lastDepreciationPeriod: text('last_depreciation_period'),
+  disposedAt: text('disposed_at'), // YYYY-MM-DD
+  disposalProceeds: real('disposal_proceeds'),
+  notes: text('notes'),
+
+  // ── Where it sits in the books ────────────────────────────────────────────
+  assetAccountId: text('asset_account_id').references(() => accounts.id),
+  depreciationExpenseAccountId: text('depreciation_expense_account_id').references(() => accounts.id),
+  accumulatedDepreciationAccountId: text('accumulated_depreciation_account_id').references(() => accounts.id),
+
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 });
 
 export const performanceReviews = sqliteTable('performance_reviews', {

@@ -22,6 +22,9 @@ export const APP_FEATURES: Record<string, string[]> = {
   finance: [
     'transactions', 'invoices', 'fund_requests', 'accounts',
     'ledgers', 'journals', 'trial_balance',
+    // The asset register. HR's own asset routes stay gated on hr/employees and
+    // cover custody; the money columns live behind this one.
+    'assets',
     'docs', 'tasks',
     // The Pleiades accountant lives in Accounting rather than in an app of its
     // own. Two features, not one: driving the agent and editing the rates it

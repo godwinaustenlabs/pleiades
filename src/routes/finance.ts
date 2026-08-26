@@ -50,6 +50,7 @@ import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import agentRouter from './agent';
+import assetRegisterRouter from './assets-register';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -62,6 +63,10 @@ financeRouter.use('*', requireAppAccess('finance'));
 // and inherits its auth and app gate. Routes inside declare the extra trust
 // they need: `agent` to drive it, `agent_config` to change the rates it quotes.
 financeRouter.route('/agent', agentRouter);
+
+// The asset register. Mounted here rather than at /api/assets, which is R2 blob
+// storage whose wildcard key routes would shadow a record API.
+financeRouter.route('/assets', assetRegisterRouter);
 
 /* ── LEDGERS ── */
 financeRouter.get('/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {

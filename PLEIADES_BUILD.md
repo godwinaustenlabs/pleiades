@@ -89,15 +89,35 @@ text-black`, and this project inverts that pair via `--dynamic-black`.
 so it could not feed a wealth statement. There was no `DELETE` route anywhere,
 and nothing in the UI ever called the existing `POST /api/hr/assets`.
 
-- [ ] Extend `assets`: cost, purchase date, salvage, useful life, class, serial,
+- [x] Extend `assets`: cost, purchase date, salvage, useful life, class, serial,
       vendor, accumulated depreciation, disposal, linked accounts
-- [ ] CRUD at `/api/finance/assets` (kept away from `src/routes/assets.ts`,
+- [x] CRUD at `/api/finance/assets` (kept away from `src/routes/assets.ts`,
       which is R2 blob storage and would clobber its wildcards)
-- [ ] Straight-line monthly depreciation as a pure, shared function
-- [ ] Gated `post_depreciation` tool posting a balanced compound journal
-- [ ] `assets` feature in `APP_FEATURES.finance` plus a grant migration
-- [ ] Assets tab in Accounting
-- [ ] Tests: depreciation arithmetic, fully-depreciated and disposed assets
+- [x] Straight-line monthly depreciation as a pure, shared function
+- [x] Gated `post_depreciation` tool posting a balanced compound journal
+- [x] `assets` feature in `APP_FEATURES.finance` plus a grant migration
+- [x] Assets tab in Accounting
+- [x] Tests: depreciation arithmetic, fully-depreciated and disposed assets
+
+The register reports `accumulatedPosted` and `accumulatedToDate` separately —
+what is in the ledger versus what has accrued — and the gap between them as
+`unpostedDepreciation`. Collapsing the two would let the register quietly
+disagree with the books.
+
+`accumulated_depreciation` is not settable through the API: it is a consequence
+of posting, and letting a caller write it directly would move the register out
+of step with the ledger with no journal to explain the difference.
+`last_depreciation_period` makes a re-run of the same month a no-op rather than
+a doubled expense.
+
+Delete is refused once anything has been posted — those charges are in the
+ledger and would be left pointing at nothing. Disposal is the way out, and it
+stops the depreciation from that date.
+
+`gated()` in `tools.ts` no longer carries its own copy of each action; it looks
+the work up in the same `executors` registry the approvals route uses.
+
+*Deployed: version `0efa5d39`. Migrations 0034 and 0035 applied to office-db.*
 
 ## Stage 4 — The statement generator
 

@@ -39,6 +39,9 @@ export function buildExecutors(callApi: ApiCaller): Record<string, Executor> {
     create_journal_entry: (p) => callApi('POST', '/api/finance/journals', p),
 
     record_transaction: (p) => callApi('POST', '/api/finance/transactions', p),
+
+    post_depreciation: (p) =>
+      callApi('POST', '/api/finance/assets/post-depreciation', { period: p.period }),
   };
 }
 

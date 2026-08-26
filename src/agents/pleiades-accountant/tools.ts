@@ -47,11 +47,15 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
   const executors = buildExecutors(callApi);
 
   /** Wraps a gated action: request approval, or execute the approved payload. */
-  const gated = (
-    toolName: string,
-    summarise: (args: any) => string,
-    execute: (args: any) => Promise<string>,
-  ) => async (args: any) => {
+  /**
+   * Wraps a consequential action behind the approval gate.
+   *
+   * The work itself comes from `executors[toolName]`, not from a closure passed
+   * in here, so the payload the operator approves and the payload the agent
+   * runs go through the very same function. As two implementations they could
+   * diverge silently, and only the approved path would be wrong.
+   */
+  const gated = (toolName: string, summarise: (args: any) => string) => async (args: any) => {
     const { approvalToken, ...payload } = args ?? {};
 
     if (!approvalToken) {
@@ -70,7 +74,9 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     const check = await consumeApproval(ctx, approvalToken, toolName, payload);
     if (!check.ok) return JSON.stringify({ status: 'refused', reason: check.reason });
 
-    return execute(payload);
+    const executor = executors[toolName];
+    if (!executor) return JSON.stringify({ status: 'refused', reason: `No executor for ${toolName}.` });
+    return executor(payload);
   };
 
   return {
@@ -247,18 +253,9 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 ),
                 approvalToken: z.string().optional(),
               }),
-      execute: gated(
-              'set_salary_structure',
-              (p) =>
+      execute: gated('set_salary_structure', (p) =>
                 `Replace the salary structure for ${p.employee_id}: base ${p.base_salary}, ` +
-                `${p.components?.length ?? 0} component(s), effective ${p.effective_date}.`,
-              (p) =>
-                callApi('POST', `/api/hr/salary-structures/${p.employee_id}/setup`, {
-                  baseSalary: p.base_salary,
-                  effectiveDate: p.effective_date,
-                  components: p.components,
-                }),
-            ),
+                `${p.components?.length ?? 0} component(s), effective ${p.effective_date}.`),
     }),
 
     generate_payroll: tool({
@@ -267,11 +264,50 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 month: z.string().describe('YYYY-MM'),
                 approvalToken: z.string().optional(),
               }),
+      execute: gated('generate_payroll', (p) => `Generate payroll for ALL active employees for ${p.month}.`),
+    }),
+
+    get_assets: tool({
+      description:
+        'The asset register: what the company owns, what it cost, what has been depreciated and what it is ' +
+        'currently worth. Use this for anything about equipment, buildings, vehicles or written-down value.',
+      inputSchema: z.object({
+        assetClass: z.string().optional().describe('laptop | furniture | building | vehicle | equipment | stationery | other'),
+        assignedTo: z.string().optional().describe('employee id'),
+        asOf: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+      }),
+      execute: async (a: any) => {
+        const q = new URLSearchParams();
+        if (a.assetClass) q.set('assetClass', a.assetClass);
+        if (a.assignedTo) q.set('assignedTo', a.assignedTo);
+        if (a.asOf) q.set('asOf', a.asOf);
+        return callApi('GET', `/api/finance/assets${q.toString() ? `?${q}` : ''}`);
+      },
+    }),
+
+    get_depreciation_schedule: tool({
+      description:
+        'What a depreciation run would charge for a month, per asset, WITHOUT posting anything. ' +
+        'Read this before proposing to post — it names assets that cannot be posted because no ' +
+        'depreciation accounts are set.',
+      inputSchema: z.object({ period: z.string().describe('YYYY-MM') }),
+      execute: async (a: any) =>
+        callApi('GET', `/api/finance/assets/depreciation?period=${encodeURIComponent(a.period)}`),
+    }),
+
+    post_depreciation: tool({
+      description:
+        'Posts one month of depreciation to the general journal: debit depreciation expense, credit ' +
+        'accumulated depreciation, one balanced compound entry across the whole register. Changes the ' +
+        'books, so it needs approval. A period already posted is skipped rather than charged twice.',
+      inputSchema: z.object({
+        period: z.string().describe('YYYY-MM'),
+        approvalToken: z.string().optional(),
+      }),
       execute: gated(
-              'generate_payroll',
-              (p) => `Generate payroll for ALL active employees for ${p.month}.`,
-              (p) => callApi('POST', '/api/hr/payroll/generate', { month: p.month }),
-            ),
+        'post_depreciation',
+        (p) => `Post depreciation for ${p.period} to the general journal.`,
+      ),
     }),
 
     get_payroll: tool({
@@ -314,11 +350,7 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 description: z.string().optional(),
                 approvalToken: z.string().optional(),
               }),
-      execute: gated(
-              'create_ledger',
-              (p) => `Create a new LEDGER "${p.ledgerName}".`,
-              (p) => callApi('POST', '/api/finance/ledgers', p),
-            ),
+      execute: gated('create_ledger', (p) => `Create a new LEDGER "${p.ledgerName}".`),
     }),
 
     create_account: tool({
@@ -330,13 +362,9 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 openingBalance: z.number().optional(),
                 approvalToken: z.string().optional(),
               }),
-      execute: gated(
-              'create_account',
-              (p) =>
+      execute: gated('create_account', (p) =>
                 `Create a new ACCOUNT "${p.accountName}"${p.accountType ? ` (${p.accountType})` : ''}` +
-                `${p.ledgerId ? ` linked to ledger ${p.ledgerId}` : ' with no ledger link'}.`,
-              (p) => callApi('POST', '/api/finance/accounts', p),
-            ),
+                `${p.ledgerId ? ` linked to ledger ${p.ledgerId}` : ' with no ledger link'}.`),
     }),
 
     get_journals: tool({
@@ -362,14 +390,10 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                   .describe('At least one debit and one credit, totals equal'),
                 approvalToken: z.string().optional(),
               }),
-      execute: gated(
-              'create_journal_entry',
-              (p) => {
+      execute: gated('create_journal_entry', (p) => {
                 const dr = (p.lines || []).filter((l: any) => l.type === 'debit').reduce((s: number, l: any) => s + l.amount, 0);
                 return `Post a journal for ${p.entryDate} — "${p.narration}", ${p.lines?.length ?? 0} lines, ${dr} each side.`;
-              },
-              (p) => callApi('POST', '/api/finance/journals', p),
-            ),
+              }),
     }),
 
     get_transactions: tool({
@@ -389,11 +413,7 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 transactionDate: z.string().optional().describe('YYYY-MM-DD'),
                 approvalToken: z.string().optional(),
               }),
-      execute: gated(
-              'record_transaction',
-              (p) => `Record a transaction of ${p.amount}${p.description ? ` — "${p.description}"` : ''}.`,
-              (p) => callApi('POST', '/api/finance/transactions', p),
-            ),
+      execute: gated('record_transaction', (p) => `Record a transaction of ${p.amount}${p.description ? ` — "${p.description}"` : ''}.`),
     }),
 
     get_trial_balance: tool({

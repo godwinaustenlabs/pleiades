@@ -134,7 +134,7 @@ CREATE TABLE `assets` (
 	`return_date` text,
 	`condition` text,
 	`status` text DEFAULT 'Available' NOT NULL,
-	`created_at` integer NOT NULL,
+	`created_at` integer NOT NULL, purchase_cost real, purchase_date text, salvage_value real DEFAULT 0, useful_life_months integer, asset_class text DEFAULT 'other', serial_number text, vendor text, depreciation_method text DEFAULT 'straight_line', accumulated_depreciation real DEFAULT 0, last_depreciation_period text, disposed_at text, disposal_proceeds real, notes text, asset_account_id text REFERENCES accounts(account_id), depreciation_expense_account_id text REFERENCES accounts(account_id), accumulated_depreciation_account_id text REFERENCES accounts(account_id), updated_at integer,
 	FOREIGN KEY (`assigned_to`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action
 );
 CREATE TABLE `attendance` (
@@ -1023,6 +1023,8 @@ CREATE INDEX generated_documents_period_type_idx
 	ON generated_documents (period_label, doc_type);
 CREATE UNIQUE INDEX generated_documents_type_period_version_unique
 	ON generated_documents (doc_type, period_label, version);
+CREATE INDEX idx_assets_class ON assets(asset_class);
+CREATE INDEX idx_assets_status ON assets(status);
 CREATE UNIQUE INDEX `invoices_invoice_number_unique` ON `invoices` (`invoice_number`);
 CREATE INDEX knowledge_documents_status_idx
 	ON knowledge_documents (status, created_at);
