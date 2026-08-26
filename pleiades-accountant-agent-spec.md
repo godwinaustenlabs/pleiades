@@ -159,12 +159,49 @@ a property of the transport, not a promise in the prompt.
 ### Accounting
 
 `get_ledgers` · `get_accounts` · `create_ledger`† · `create_account`† ·
-`get_journals` · `create_journal_entry`† · `get_transactions` ·
-`record_transaction`† · `get_trial_balance` · `get_invoices`
+`get_journals` · `get_ledger_view` · `create_journal_entry`† ·
+`get_transactions` · `record_transaction`† · `get_trial_balance` ·
+`get_invoices`
 
-### Configuration and deliverables
+Reads take date ranges. `get_journals` and `get_accounts` accept
+`start_date`/`end_date`, and `get_accounts` then reports opening balance, period
+movement and closing balance per account — the period-delta view. The trial
+balance is cumulative-to-date and cannot express a period, so it is the wrong
+tool for any question about a month. `get_ledger_view` is the T-account for one
+account, and `get_ledgers(with_accounts)` joins accounts onto their ledgers and
+separately reports accounts belonging to none.
 
-`get_compliance_config` · `save_finance_document` · `get_finance_documents`
+### Assets
+
+`get_assets` · `get_depreciation_schedule` · `post_depreciation`†
+
+The register carries cost, purchase date, salvage, useful life, class, serial,
+vendor and the two accounts depreciation posts to. Straight-line, monthly, from
+the month after purchase, stopped at disposal, never below salvage. Posting
+writes one balanced compound journal for the whole register — debit
+depreciation expense, credit accumulated depreciation — and names any asset it
+could not post rather than posting it to a default. The arithmetic is a pure
+function shared with the statement generator, because a figure those two
+disagreed on would be a reconciliation failure nobody could explain.
+
+### Statements
+
+`generate_statement` · `list_statements`
+
+Renders a profit and loss account for a date range, or a statement of assets and
+liabilities as at a date, as a PDF into `finance-docs/`. **Not approval-gated:**
+it reads the ledger and writes a draft, and changes no books. That is what lets
+the scheduled run have the month's statement ready to download rather than
+merely suggesting one.
+
+### Configuration, knowledge and memory
+
+`get_compliance_config` · `knowledge_search` · `recall_actions` ·
+`record_action` · `save_finance_document` · `get_finance_documents`
+
+`recall_actions` takes `since`/`until` as well as a query, and returns the
+`entities` an action touched — recalling *that* something was filed without
+recalling *what* leaves the next question unanswerable.
 
 † requires approval.
 
@@ -213,13 +250,31 @@ cannot be argued with.
 
 1. The agent calls a gated tool. No token → a row is created and the tool
    returns `approval_required` with an id. It does **not** act.
-2. The operator sees it in the approvals inbox with the exact payload, and
-   approves or rejects.
-3. The agent retries with the token. The payload is **hashed and re-checked**,
-   so an approval for one thing cannot be replayed against another.
+2. The operator sees the exact payload — inline under the reply that raised it,
+   and in the approvals inbox — and approves or rejects.
+3. **Approving carries the action out.** The stored payload runs immediately,
+   and the result is recorded on the row.
 
-Approvals are single-use and expire after an hour — a stale "yes" should not
-still authorise tomorrow.
+The third step used to require the agent to call the same tool again with a
+byte-identical payload plus the token, checked by SHA-256. That could never
+succeed: the agent had no conversation memory, so it could neither recall the id
+nor reproduce the payload, and any re-derived amount or re-ordered `lines` array
+changed the hash. The UI was reduced to asking the human to paste `apr_…` into
+the chat. This was a design error, not a tuning problem.
+
+Two properties of the fix are worth stating:
+
+- **The work has one implementation.** Both the tool path and the approval path
+  invoke the same executor registry, so the thing approved and the thing
+  executed cannot drift apart.
+- **Execution runs as the requester, never the approver.** Approval is
+  authorisation, not impersonation; the audit trail must name the person the
+  agent was acting for.
+
+A run that fails leaves the row `approved` with `execution_status = 'failed'`
+rather than silently `consumed`, so it can be retried instead of burnt. The
+token path still works for the agent, and approvals remain single-use and expire
+after an hour — a stale "yes" should not still authorise tomorrow.
 
 ---
 
@@ -253,6 +308,14 @@ posting the same journal twice.
 
 - Conversation history → D1, so it is queryable by the operator and their
   accountant. `this.sql` is private to the instance and not an audit trail.
+- **The last ~8 turns are replayed to the model each turn.** They were being
+  written and never read back: nothing in the repo SELECTed `conversation_turns`.
+  The Durable Object was giving serialisation, not memory. Tool rows and
+  `[error]` entries are skipped — replaying either invites the model to treat
+  its own bookkeeping as instruction.
+- Long-term memory is the agent journal: every action written to D1 for exact
+  recall and embedded into Vectorize under the `history` namespace for
+  associative recall. An exact filter is answered exactly, never by similarity.
 - Compliance context is rebuilt **every turn**, never cached — the operator may
   have corrected a rate seconds ago.
 - Temperature 0.1. This is bookkeeping, not brainstorming.
@@ -275,15 +338,29 @@ posting the same journal twice.
 
 ## SECTION H — Interfaces
 
-**Accounting UI** (`/accountant`) — three tabs, because they are one job:
+**Accounting UI** — tabs inside Accounting, not an app of its own:
 
 - **Chat** — drive the agent
 - **Compliance settings** — all 48 variables by group and type, with a warning
   banner naming unset required ones, and a **preview of the exact prompt block
   the agent will read**, so settings can be verified rather than trusted
-- **Approvals** — the inbox, showing each pending payload in full
+- **Approvals** — the inbox, showing each pending payload in full. Approvals
+  also appear inline in the chat, under the reply that raised them: with
+  approving now executing, there is no id to copy anywhere.
+- **Assets** — the register, with a depreciation run previewed before it posts
+- **Statements** — generate a P&L or a wealth statement, and download either
 
 **Slack** — the existing agent, with the accountant behind the same entry check.
+
+**Scheduled** — a cron at 06:00 and 17:00 UTC. The morning asks what is due; the
+evening asks what is still outstanding. It runs as the account named in
+`daily_runner_actor`, so its tool calls are bounded by a real person's grants
+exactly as an interactive turn is. That setting ships unset and the runner
+refuses rather than choosing someone: deciding whose authority an unattended job
+acts under is a question about trust, not one for code to guess. Output goes to
+`app_messages` for the finance app and to the agent journal, so a suggestion
+survives nobody being logged in. It proposes; anything touching the ledger still
+raises an approval.
 
 ---
 
@@ -291,23 +368,23 @@ posting the same journal twice.
 
 Honestly stated, in the order worth doing:
 
-1. **Fill in the 17 required-unset variables.** Nothing numeric works without
-   them, and the salary slab table blocks every payroll schema. This is
-   operator work, not engineering.
-2. **Statement rendering.** `save_finance_document` files metadata; nothing yet
-   produces the formatted XLSX/PDF. Needs a template per deliverable, R2 upload
-   under `finance-docs/`, and the `GAL_<DocType>_<Period>_v<n>` naming with the
-   DRAFT header and provenance annex.
+1. **Fill in the required-unset variables.** Nothing numeric works without them,
+   and the salary slab table blocks every payroll schema. This is operator work,
+   not engineering. `daily_runner_actor` belongs in the same pass: until it is
+   set, the scheduled run declines to act.
+2. **Upload the compliance manual.** `knowledge_search` and the ingestion
+   pipeline are built and the bucket is wired; the corpus is what is missing.
 3. **The compliance calendar generator.** `compliance_events` exists and is
-   empty; the expansion of recurring rules into dated instances is not written.
-4. **Scheduled sweeps.** `this.schedule()` is available and unused. The daily
-   "what is due in 14 days" pass depends on 3.
-5. **Notifications.** `notifications_log` exists; no email or Slack delivery of
-   deliverables is wired.
-6. **Vectorize / `knowledge_search`.** Not built. Deliberately deferred: with
-   configuration as the source of rates, RAG over a compliance corpus is a
-   research aid, not a dependency — and it was the part most likely to produce
-   confident, wrong citations.
+   empty. The expansion of recurring rules into dated instances is not written,
+   so the scheduled run reasons from the manual and the configured deadlines
+   rather than from a calendar of concrete obligations.
+4. **Notifications.** `notifications_log` exists; the scheduled check writes to
+   `app_messages`, but no email or Slack delivery of deliverables is wired.
+5. **More statements.** Profit and loss and assets-and-liabilities are built. A
+   cash-flow statement and the statutory return formats are not.
+6. **Declining-balance depreciation.** Only straight-line is implemented;
+   `depreciation_method` is stored so the choice is recorded, and anything other
+   than `straight_line` is currently refused rather than approximated.
 
 ## Dropped from the original spec
 
