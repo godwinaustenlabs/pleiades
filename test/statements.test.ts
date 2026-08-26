@@ -203,3 +203,62 @@ describe('who may generate one', () => {
 		expect([401, 403]).toContain(res.status);
 	});
 });
+
+describe('downloading a generated statement', () => {
+	let doc: any;
+
+	beforeAll(async () => {
+		doc = (
+			await (
+				await call('POST', '/statements', { type: 'assets_and_liabilities', endDate: '2026-03-31' })
+			).json<any>()
+		).data;
+	});
+
+	const fetchDoc = async (init: RequestInit, suffix = '') =>
+		SELF.fetch(`https://test.local${doc.url}${suffix}`, init);
+
+	it('serves the PDF to an Authorization header', async () => {
+		// What the Download button does. A plain <a href> cannot set a header,
+		// which is why this used to go through the query parameter instead.
+		const res = await fetchDoc({
+			headers: { Authorization: `Bearer ${await tokenFor('ceo')}` },
+		});
+		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toContain('application/pdf');
+		const head = new TextDecoder().decode((await res.arrayBuffer()).slice(0, 5));
+		expect(head).toBe('%PDF-');
+	});
+
+	it('names the file even when it is served inline', async () => {
+		const res = await fetchDoc({ headers: { Authorization: `Bearer ${await tokenFor('ceo')}` } });
+		// Without a filename, "Save as" on an inline PDF offers the last segment
+		// of a percent-encoded URL.
+		expect(res.headers.get('content-disposition')).toMatch(/^inline; filename=".+\.pdf"$/);
+	});
+
+	it('still accepts a token in the query string', async () => {
+		const res = await fetchDoc({}, `?token=${await tokenFor('ceo')}`);
+		expect(res.status).toBe(200);
+	});
+
+	it('does not let a stale cookie shadow a usable token', async () => {
+		// The cookie was read before the query parameter and, once present,
+		// nothing else was tried — so a valid credential sat unread in the URL
+		// while the request failed.
+		const res = await fetchDoc(
+			{ headers: { Cookie: 'auth_token=not-a-real-token' } },
+			`?token=${await tokenFor('ceo')}`,
+		);
+		expect(res.status).toBe(200);
+	});
+
+	it('refuses a caller without finance/docs', async () => {
+		const res = await fetchDoc({ headers: { Authorization: `Bearer ${await tokenFor('none')}` } });
+		expect(res.status).toBe(403);
+	});
+
+	it('refuses with no credential at all', async () => {
+		expect((await fetchDoc({})).status).toBe(401);
+	});
+});

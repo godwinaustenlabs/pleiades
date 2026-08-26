@@ -110,25 +110,35 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
 
   // 3. Check JWT for Human Users
   const authHeader = c.req.header('Authorization');
-  let token = '';
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else {
-    // Fallback to cookie
-    token = getCookie(c, 'auth_token') || '';
-  }
+  // Every place a browser can carry a token, in order of preference. Tried in
+  // turn rather than picked once: a stale `auth_token` cookie used to shadow a
+  // perfectly good `?token=`, so the request failed with a valid credential
+  // sitting unread in the query string. The query param exists at all so that
+  // `<img>` and download URLs, which cannot set a header, can authenticate.
+  const candidates = [
+    authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '',
+    getCookie(c, 'auth_token') || '',
+    c.req.query('token') || '',
+  ].filter(Boolean);
 
-  if (!token) {
-    token = c.req.query('token') || '';
-  }
-
-  if (!token) {
+  if (candidates.length === 0) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+  let payload: Awaited<ReturnType<typeof verify>> | null = null;
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      payload = await verify(candidate, c.env.JWT_SECRET, 'HS256');
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
   try {
-    const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
+    if (!payload) throw lastError ?? new Error('No usable token');
 
     // Reject audience-scoped tokens. Tokens minted for a narrow purpose (e.g.
     // the short-lived agent WebSocket ticket) carry an `aud` claim and must not

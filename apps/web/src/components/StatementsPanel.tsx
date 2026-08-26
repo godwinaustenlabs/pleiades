@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, FileDown, AlertTriangle, X, FileText } from 'lucide-react';
-import { API, authHeaders, token } from '../lib/auth';
+import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
 /**
@@ -54,6 +54,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const [type, setType] = useState<(typeof TYPES)[number]['id']>('profit_and_loss');
   const [startDate, setStartDate] = useState(() => {
@@ -92,9 +93,43 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
 
-  // The download route authenticates from a query parameter as well as a
-  // header, which is what lets a plain link work at all.
-  const downloadUrl = (d: GeneratedDoc) => `${API}${d.fileUrl.replace('/api', '')}?token=${token()}`;
+  /**
+   * Fetches the PDF and saves it.
+   *
+   * A plain `<a href>` cannot carry an Authorization header, so it had to put
+   * the token in the query string and hope the browser did the rest — and even
+   * when that authenticated, `application/pdf` is served inline, so the click
+   * opened a viewer tab instead of downloading anything. Fetching it here uses
+   * the same headers as every other call, saves under a readable name, and
+   * surfaces the server's reason instead of failing silently in a new tab.
+   */
+  async function download(d: GeneratedDoc) {
+    setError(null);
+    setDownloading(d.id);
+    try {
+      const res = await fetch(`${API}${d.fileUrl.replace('/api', '')}`, { headers: authHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          body?.error ||
+            (res.status === 403
+              ? 'You do not have permission to read finance documents.'
+              : `Could not download it (${res.status}).`),
+        );
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `${d.docType}_${d.periodLabel}_v${d.version}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoked on the next tick: revoking synchronously can cancel the save in
+      // some browsers before it has read the blob.
+      setTimeout(() => URL.revokeObjectURL(href), 10_000);
+    } catch (e) { setError(errorMessage(e)); } finally { setDownloading(null); }
+  }
 
   const needsPeriod = TYPES.find((t) => t.id === type)?.period;
 
@@ -201,14 +236,16 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
                   </div>
                 )}
               </div>
-              <a
-                href={downloadUrl(d)}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/10 text-[11px] font-black uppercase tracking-wider shrink-0"
+              <button
+                onClick={() => download(d)}
+                disabled={downloading === d.id}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/10 text-[11px] font-black uppercase tracking-wider shrink-0 disabled:opacity-40"
               >
-                <FileDown className="w-3.5 h-3.5" /> Download
-              </a>
+                {downloading === d.id
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <FileDown className="w-3.5 h-3.5" />}
+                Download
+              </button>
             </div>
           ))}
         </div>

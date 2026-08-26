@@ -243,9 +243,15 @@ assetsRouter.get('/*', async (c, next) => {
     ];
     const storedType = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     headers.set('X-Content-Type-Options', 'nosniff');
+    // Anything the browser must not render is forced to download; the rest is
+    // still given a filename, so "Save as" on an inline PDF offers the object's
+    // real name rather than the last path segment of an encoded URL.
+    const filename = key.split('/').pop() || 'download';
     if (!INLINE_SAFE.includes(storedType)) {
       headers.set('Content-Type', 'application/octet-stream');
-      headers.set('Content-Disposition', 'attachment');
+      headers.set('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    } else {
+      headers.set('Content-Disposition', `inline; filename="${filename.replace(/"/g, '')}"`);
     }
 
     // Only public objects may be cached by shared caches; an authorized

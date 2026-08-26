@@ -626,6 +626,12 @@ describe('reading the books', () => {
 });
 
 describe('the agent journal', () => {
+	// `recordAction` embeds each entry into Vectorize, which the test pool can
+	// only reach remotely. The write to D1 is what these assert on — the
+	// embedding is best-effort and deliberately swallowed — but the call still
+	// has to come back, and 5s is not always enough for a round trip.
+	const REMOTE_EMBEDDING = 20_000;
+
 	it('returns the records an action touched, not just prose', async () => {
 		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
 		await recordAction(env as any, {
@@ -642,7 +648,7 @@ describe('the agent journal', () => {
 		// Recalling *that* something was filed without recalling *what* leaves
 		// the agent unable to answer the question that always comes next.
 		expect(entries[0].entities).toEqual({ journalId: 'jrn_r2', period: '2026-06' });
-	});
+	}, REMOTE_EMBEDDING);
 
 	it('honours a date range over similarity', async () => {
 		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
@@ -669,5 +675,5 @@ describe('the agent journal', () => {
 		// similarity score.
 		expect(mode).toBe('chronological');
 		expect(entries.map((e) => e.subject)).toEqual(['Recent action']);
-	});
+	}, REMOTE_EMBEDDING);
 });
