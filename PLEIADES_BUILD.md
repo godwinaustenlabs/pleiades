@@ -163,11 +163,17 @@ made from journals the caller can already read, and it lands in the same tab.
 
 ## Stage 5 — Reading the books properly
 
-- [ ] Date range on `get_journals` (the route supports it; the tool ignored it)
-- [ ] Ledger-with-accounts and T-account tools
-- [ ] `since` / `until` on `recall_actions`
-- [ ] Return `entities`, so the agent can recall which records it touched
-- [ ] Fix the unbounded full-table scan in semantic recall
+- [x] Date range on `get_journals` (the route supports it; the tool ignored it)
+- [x] Ledger-with-accounts and T-account tools
+- [x] `since` / `until` on `recall_actions`
+- [x] Return `entities`, so the agent can recall which records it touched
+- [x] Fix the unbounded full-table scan in semantic recall
+
+`get_ledgers(with_accounts)` also reports accounts linked to no ledger. They are
+real accounts, and a ledger-shaped view is exactly where they would otherwise
+disappear.
+
+*Deployed: version `c6b015b1`.*
 
 ## Stage 6 — `daily_runner`
 

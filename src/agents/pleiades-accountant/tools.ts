@@ -169,6 +169,8 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 query: z.string().optional().describe('What you are trying to remember'),
                 action_type: z.string().optional(),
                 period_label: z.string().optional().describe("e.g. '2026-08'"),
+                since: z.string().optional().describe('YYYY-MM-DD, inclusive'),
+                until: z.string().optional().describe('YYYY-MM-DD, inclusive'),
                 limit: z.number().optional(),
               }),
       execute: async (a: any) => {
@@ -176,6 +178,8 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 query: a.query,
                 actionType: a.action_type,
                 periodLabel: a.period_label,
+                since: a.since ? new Date(`${a.since}T00:00:00Z`) : undefined,
+                until: a.until ? new Date(`${a.until}T23:59:59Z`) : undefined,
                 limit: a.limit,
               });
               return JSON.stringify({
@@ -356,16 +360,52 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     }),
 
     get_ledgers: tool({
-      description: 'All ledgers.',
-      inputSchema: z.object({}),
-      execute: async () => callApi('GET', '/api/finance/ledgers'),
+      description:
+        'All ledgers. With with_accounts, each ledger carries the accounts linked to it and their ' +
+        'balances, which is usually what "show me the ledgers" actually means.',
+      inputSchema: z.object({ with_accounts: z.boolean().optional() }),
+      execute: async (a: any) => {
+        const ledgers = await callApi('GET', '/api/finance/ledgers');
+        if (!a.with_accounts) return ledgers;
+
+        const accounts = await callApi('GET', '/api/finance/accounts');
+        try {
+          const l = JSON.parse(ledgers)?.data ?? [];
+          const acc = JSON.parse(accounts)?.data ?? [];
+          return JSON.stringify({
+            ledgers: l.map((led: any) => ({
+              ...led,
+              accounts: acc.filter((x: any) => x.ledgerId === led.id),
+            })),
+            // Accounts with no ledger are real and would otherwise be invisible
+            // in a ledger-shaped view.
+            unlinkedAccounts: acc.filter((x: any) => !x.ledgerId),
+          });
+        } catch {
+          // Two valid responses that would not join; better to hand back both
+          // than to claim the join failed.
+          return JSON.stringify({ ledgers: JSON.parse(ledgers), accounts: JSON.parse(accounts) });
+        }
+      },
     }),
 
     get_accounts: tool({
-      description: 'Chart of accounts, or one account by id.',
-      inputSchema: z.object({ account_id: z.string().optional() }),
-      execute: async (a: any) =>
-              callApi('GET', a.account_id ? `/api/finance/accounts/${a.account_id}` : '/api/finance/accounts'),
+      description:
+        'Chart of accounts, or one account by id. With a date range each account also carries its ' +
+        'opening balance, the movement in the period and its closing balance — which is what to use ' +
+        'for anything about a period rather than the trial balance, which is cumulative to date.',
+      inputSchema: z.object({
+        account_id: z.string().optional(),
+        start_date: z.string().optional().describe('YYYY-MM-DD'),
+        end_date: z.string().optional().describe('YYYY-MM-DD'),
+      }),
+      execute: async (a: any) => {
+        if (a.account_id) return callApi('GET', `/api/finance/accounts/${a.account_id}`);
+        const q = new URLSearchParams();
+        if (a.start_date) q.set('startDate', a.start_date);
+        if (a.end_date) q.set('endDate', a.end_date);
+        return callApi('GET', `/api/finance/accounts${q.toString() ? `?${q}` : ''}`);
+      },
     }),
 
     create_ledger: tool({
@@ -393,10 +433,42 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     }),
 
     get_journals: tool({
-      description: 'General journal entries.',
-      inputSchema: z.object({ journal_id: z.string().optional() }),
-      execute: async (a: any) =>
-              callApi('GET', a.journal_id ? `/api/finance/journals/${a.journal_id}` : '/api/finance/journals'),
+      description:
+        'General journal entries, optionally for one ledger and one date range. Always pass a range when ' +
+        'the question is about a period — reading every entry ever posted and filtering them yourself ' +
+        'wastes the context you need for the answer.',
+      inputSchema: z.object({
+        journal_id: z.string().optional(),
+        ledger_id: z.string().optional(),
+        start_date: z.string().optional().describe('YYYY-MM-DD, inclusive'),
+        end_date: z.string().optional().describe('YYYY-MM-DD, inclusive'),
+      }),
+      execute: async (a: any) => {
+        if (a.journal_id) return callApi('GET', `/api/finance/journals/${a.journal_id}`);
+        const q = new URLSearchParams();
+        if (a.ledger_id) q.set('ledger_id', a.ledger_id);
+        if (a.start_date) q.set('startDate', a.start_date);
+        if (a.end_date) q.set('endDate', a.end_date);
+        return callApi('GET', `/api/finance/journals${q.toString() ? `?${q}` : ''}`);
+      },
+    }),
+
+    get_ledger_view: tool({
+      description:
+        'One account as a T-account: opening balance, every entry against it in the period, and the ' +
+        'closing balance. This is how to answer "what happened on this account", rather than reading ' +
+        'the whole journal and adding it up yourself.',
+      inputSchema: z.object({
+        account_id: z.string(),
+        start_date: z.string().optional().describe('YYYY-MM-DD'),
+        end_date: z.string().optional().describe('YYYY-MM-DD'),
+      }),
+      execute: async (a: any) => {
+        const q = new URLSearchParams({ account_id: a.account_id });
+        if (a.start_date) q.set('startDate', a.start_date);
+        if (a.end_date) q.set('endDate', a.end_date);
+        return callApi('GET', `/api/finance/ledger-view?${q}`);
+      },
     }),
 
     create_journal_entry: tool({

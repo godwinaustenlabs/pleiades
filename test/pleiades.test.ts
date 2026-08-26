@@ -577,3 +577,97 @@ describe('approvals execute on approval', () => {
 		expect((await decide('apr_twice', 'approved')).status).toBe(400);
 	});
 });
+
+describe('reading the books', () => {
+	const call = async (path: string) => {
+		const { tokenFor } = await import('./helpers');
+		const { SELF } = await import('cloudflare:test');
+		return SELF.fetch(`https://test.local/api/finance${path}`, {
+			headers: { Authorization: `Bearer ${await tokenFor('ceo')}` },
+		});
+	};
+
+	beforeAll(async () => {
+		const now = Date.now();
+		await env.DB.prepare(
+			'INSERT OR IGNORE INTO accounts (account_id, account_name, account_type, created_at) VALUES (?,?,?,?)',
+		).bind('acc_range', 'Range test', 'expense', now).run();
+
+		for (const [id, date, amount] of [
+			['jrn_r1', '2026-05-10', 1000],
+			['jrn_r2', '2026-06-10', 2000],
+			['jrn_r3', '2026-07-10', 4000],
+		] as const) {
+			await env.DB.prepare(
+				`INSERT INTO general_journals (journal_id, entry_date, description, amount, lines, created_at)
+				 VALUES (?,?,?,?,?,?)`,
+			).bind(id, date, 'range', amount, JSON.stringify([
+				{ accountId: 'acc_range', type: 'debit', amount },
+				{ accountId: 'acc_range', type: 'credit', amount },
+			]), now).run();
+		}
+	});
+
+	it('filters journals by date range', async () => {
+		// The route supported startDate/endDate all along; the agent's tool did
+		// not pass them, so every question about a month read the whole ledger.
+		const res = await call('/journals?startDate=2026-06-01&endDate=2026-06-30');
+		const { data } = await res.json<any>();
+		const ids = data.map((j: any) => j.id ?? j.journalId);
+		expect(ids).toContain('jrn_r2');
+		expect(ids).not.toContain('jrn_r1');
+		expect(ids).not.toContain('jrn_r3');
+	});
+
+	it('reads one account as a T-account', async () => {
+		const res = await call('/ledger-view?account_id=acc_range&startDate=2026-01-01&endDate=2026-12-31');
+		expect(res.status).toBe(200);
+	});
+});
+
+describe('the agent journal', () => {
+	it('returns the records an action touched, not just prose', async () => {
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		await recordAction(env as any, {
+			actionType: 'test_entities',
+			subject: 'Filed something',
+			summary: 'A test entry.',
+			entities: { journalId: 'jrn_r2', period: '2026-06' },
+			periodLabel: '2026-06',
+			actorUserId: 'u_ceo',
+		});
+
+		const { entries } = await recallActions(env as any, { actionType: 'test_entities' });
+		expect(entries).toHaveLength(1);
+		// Recalling *that* something was filed without recalling *what* leaves
+		// the agent unable to answer the question that always comes next.
+		expect(entries[0].entities).toEqual({ journalId: 'jrn_r2', period: '2026-06' });
+	});
+
+	it('honours a date range over similarity', async () => {
+		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		await recordAction(env as any, {
+			actionType: 'dated_test',
+			subject: 'Old action',
+			summary: 'Long ago.',
+			actorUserId: 'u_ceo',
+			occurredAt: new Date('2020-01-01T00:00:00Z'),
+		});
+		await recordAction(env as any, {
+			actionType: 'dated_test',
+			subject: 'Recent action',
+			summary: 'Lately.',
+			actorUserId: 'u_ceo',
+			occurredAt: new Date('2026-08-01T00:00:00Z'),
+		});
+
+		const { entries, mode } = await recallActions(env as any, {
+			actionType: 'dated_test',
+			since: new Date('2026-01-01T00:00:00Z'),
+		});
+		// An exact filter is an exact question; it must not be answered with a
+		// similarity score.
+		expect(mode).toBe('chronological');
+		expect(entries.map((e) => e.subject)).toEqual(['Recent action']);
+	});
+});

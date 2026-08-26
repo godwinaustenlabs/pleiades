@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
 import { generateId } from '../../utils/id';
@@ -122,6 +122,8 @@ export interface RecalledEntry {
   outcome: string;
   occurredAt: string;
   source: string;
+  /** The records this action touched: ids, periods, amounts. */
+  entities: Record<string, unknown> | null;
   relevance?: number;
 }
 
@@ -156,6 +158,13 @@ export async function recallActions(
     outcome: r.outcome,
     occurredAt: new Date(r.occurredAt).toISOString(),
     source: r.source,
+    // Returned, not just stored. Without it the agent could recall that it had
+    // filed something but not which record it filed, which is exactly the
+    // question that gets asked next.
+    entities: (() => {
+      if (!r.entities) return null;
+      try { return JSON.parse(r.entities); } catch { return null; }
+    })(),
     ...(relevance !== undefined ? { relevance } : {}),
   });
 
@@ -178,8 +187,13 @@ export async function recallActions(
     if (ids.length === 0) return { entries: [], mode: 'semantic' };
 
     // Read the rows rather than trusting metadata: the row is the record, and
-    // metadata is a copy that can lag it.
-    const rows = await db.query.agentJournal.findMany();
+    // metadata is a copy that can lag it. Fetched by id — this used to read the
+    // entire journal on every semantic recall and throw nearly all of it away,
+    // which got slower with every action the agent ever took.
+    const rows = await db
+      .select()
+      .from(schema.agentJournal)
+      .where(inArray(schema.agentJournal.id, ids));
     const byId = new Map(rows.map((r) => [r.id, r]));
     const entries = ids
       .filter((id: string) => byId.has(id))
