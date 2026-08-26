@@ -267,6 +267,31 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
       execute: gated('generate_payroll', (p) => `Generate payroll for ALL active employees for ${p.month}.`),
     }),
 
+    generate_statement: tool({
+      description:
+        'Renders a formatted accounting statement as a PDF and files it under finance-docs/, returning a ' +
+        'download link. Types: profit_and_loss (needs start_date and end_date) and assets_and_liabilities ' +
+        '(a wealth statement, as at end_date). The figures come from the ledger, not from you — say what ' +
+        'the statement reports, do not restate it from memory. This changes no books, so it needs no approval.',
+      inputSchema: z.object({
+        type: z.enum(['profit_and_loss', 'assets_and_liabilities']),
+        start_date: z.string().optional().describe('YYYY-MM-DD; required for profit_and_loss'),
+        end_date: z.string().describe('YYYY-MM-DD'),
+      }),
+      execute: async (a: any) =>
+        callApi('POST', '/api/finance/statements', {
+          type: a.type,
+          startDate: a.start_date,
+          endDate: a.end_date,
+        }),
+    }),
+
+    list_statements: tool({
+      description: 'Statements already generated, newest first, with the figures each one reported.',
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/finance/statements'),
+    }),
+
     get_assets: tool({
       description:
         'The asset register: what the company owns, what it cost, what has been depreciated and what it is ' +

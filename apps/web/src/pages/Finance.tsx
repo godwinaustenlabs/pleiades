@@ -14,11 +14,12 @@ import JournalEntryForm from '../components/JournalEntryForm';
 import DocumentsTab from '../components/DocumentsTab';
 import AccountantPanel from '../components/AccountantPanel';
 import AssetRegister from '../components/AssetRegister';
+import StatementsPanel from '../components/StatementsPanel';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
 
-type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'agent';
+type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'statements' | 'agent';
 
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -103,7 +104,7 @@ function Finance() {
     // DocumentsTab loads its own data from /finance/documents; the generic
     // `/finance/<tab>` fetch below would just 404 on /finance/docs.
     // Both render their own data; the generic finance fetch below does not apply.
-    if (tab === 'docs' || tab === 'agent' || tab === 'assets') { setLoading(false); return; }
+    if (tab === 'docs' || tab === 'agent' || tab === 'assets' || tab === 'statements') { setLoading(false); return; }
     setLoading(true);
     let url = `${API}/finance/${tab}`;
     if (tab === 'journals') {
@@ -172,6 +173,7 @@ function Finance() {
       { id: 'docs', label: 'Documents', icon: Book, feature: 'docs' },
       { id: 'tasks', label: 'Tasks', icon: Receipt, feature: 'tasks' },
       { id: 'assets', label: 'Assets', icon: Package, feature: 'assets' },
+      { id: 'statements', label: 'Statements', icon: FileText, feature: 'docs' },
       { id: 'agent', label: 'Accountant', icon: Calculator, feature: 'agent' },
     ] as const;
 
@@ -389,7 +391,7 @@ function Finance() {
             record lists; drawing it for these produced an empty accounts table,
             a "0 agens available" count and an "Add agen" button above the
             accountant, because the header is derived from the tab id. */}
-        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && tab !== 'agent' && tab !== 'assets' && (
+        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && tab !== 'agent' && tab !== 'assets' && tab !== 'statements' && (
           <div className="space-y-4">
             {tab === 'journals' && (
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
@@ -568,6 +570,10 @@ function Finance() {
           />
         )}
         {tab === 'tasks' && <TaskBoard department="Finance" canEdit={getPerm('tasks').canEdit} />}
+
+        {tab === 'statements' && (
+          <StatementsPanel canEdit={user.isSuperadmin || getPerm('docs').canEdit} />
+        )}
 
         {tab === 'assets' && (
           <AssetRegister

@@ -125,24 +125,41 @@ The agent could file a document path but nothing rendered one.
 `save_finance_document` documented a `finance-docs/` url with no companion tool
 that produced a file.
 
-- [ ] `pdf-lib` (nothing generates PDFs today; `react-pdf` is a viewer and the
+- [x] `pdf-lib` (nothing generates PDFs today; `react-pdf` is a viewer and the
       existing "Generate PDF" buttons open a browser print dialog)
-- [ ] Layout kit: title block, money alignment, totals, page breaks, DRAFT
+- [x] Layout kit: title block, money alignment, totals, page breaks, DRAFT
       header and provenance footer
-- [ ] Ledger data module reusing `getJournalLines()` and the **period-delta**
+- [x] Ledger data module reusing `getJournalLines()` and the **period-delta**
       pattern from `GET /accounts` — `/trial-balance` is cumulative-to-date and
       cannot express a period
-- [ ] Normalise `accountType` case; the UI writes lowercase, the agent tool
+- [x] Normalise `accountType` case; the UI writes lowercase, the agent tool
       describes capitalised, and the column is nullable
-- [ ] Profit & loss / income statement for a date range
-- [ ] Statement of assets and liabilities, reconciling the register to the ledger
-- [ ] Write straight to R2 under `finance-docs/`, already allowlisted for upload
+- [x] Profit & loss / income statement for a date range
+- [x] Statement of assets and liabilities, reconciling the register to the ledger
+- [x] Write straight to R2 under `finance-docs/`, already allowlisted for upload
       and readable under `finance/docs`
-- [ ] Version rather than overwrite, via the existing unique index
-- [ ] `generate_statement` tool, **not** approval-gated — a statement reads the
+- [x] Version rather than overwrite, via the existing unique index
+- [x] `generate_statement` tool, **not** approval-gated — a statement reads the
       ledger and writes a draft; it changes no books
-- [ ] Statements tab with downloads
-- [ ] Tests: figures against a hand-built ledger fixture
+- [x] Statements tab with downloads
+- [x] Tests: figures against a hand-built ledger fixture
+
+Two decisions worth recording. The statement of assets and liabilities shows the
+register **beside** the ledger, never added to it — they are two records of the
+same property, and summing them would double-count everything the company owns;
+the reconciliation line exists precisely to expose where they differ. And the
+register is valued at what has actually been **posted**, not at what has
+accrued: the statement must agree with the books, so un-posted depreciation is a
+prompt to run the month rather than a licence to write down early.
+
+An account with no `account_type` is reported under "Not classified" and left
+out of the totals. Dropping it silently would understate a total with nothing to
+show why.
+
+Gated on `finance/docs` rather than a new feature: a statement is a document
+made from journals the caller can already read, and it lands in the same tab.
+
+*Deployed: version `c526a10c`.*
 
 ## Stage 5 — Reading the books properly
 

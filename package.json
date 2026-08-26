@@ -34,6 +34,7 @@
     "@modelcontextprotocol/server": "^2.0.0",
     "agents": "^0.21.0",
     "ai": "^7.0.79",
+    "pdf-lib": "^1.17.1",
     "react-pdf": "^10.4.1",
     "react-router-dom": "^7.15.0",
     "workers-ai-provider": "^4.0.0",

@@ -51,6 +51,7 @@ import { authMiddleware } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import agentRouter from './agent';
 import assetRegisterRouter from './assets-register';
+import statementsRouter from './statements';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -67,6 +68,9 @@ financeRouter.route('/agent', agentRouter);
 // The asset register. Mounted here rather than at /api/assets, which is R2 blob
 // storage whose wildcard key routes would shadow a record API.
 financeRouter.route('/assets', assetRegisterRouter);
+
+// Generated statements — rendered as PDFs into R2 under finance-docs/.
+financeRouter.route('/statements', statementsRouter);
 
 /* ── LEDGERS ── */
 financeRouter.get('/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {
