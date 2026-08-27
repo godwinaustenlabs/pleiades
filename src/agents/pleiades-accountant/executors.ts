@@ -67,7 +67,7 @@ export function apiCallerFor(env: Env, actorUserId: string, origin: string): Api
         headers: {
           'Content-Type': 'application/json',
           'x-agent-actor': actorUserId,
-          'x-agent-secret': env.AGENT_INTERNAL_SECRET || '',
+          'x-agent-secret': env.AGENT_INTERNAL_SECRET,
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
       };

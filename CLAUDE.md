@@ -244,9 +244,21 @@ Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_
 
 ### Bindings and secrets
 
-`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `CLIENTS_KV_NAMESPACE`,
-`MEMORY_KV_NAMESPACE`, `AI`, and `CRM_BUCKET` (R2, `office-crm-docs`, used by
-`/api/assets` for uploads/downloads).
+`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `SELF` (this Worker,
+bound to itself), `AI`, `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
+`office-crm-docs`, used by `/api/assets` for uploads/downloads),
+`COMPLIANCE_BUCKET` (R2 `office-compliance-docs`), and the two Durable Object
+bindings `SLACK_AGENT` / `PLEIADES_AGENT`.
+
+`CLIENTS_KV_NAMESPACE` and `MEMORY_KV_NAMESPACE` were removed: nothing read
+either, and both namespaces were verified empty before the bindings were
+dropped. Pleiades keeps its memory in D1 and Vectorize, never KV.
+
+The `VECTORIZE` index carries three metadata indexes — `namespace`, `doc_id`
+and `section`. The `filter:` clauses in `agents/pleiades-accountant/knowledge.ts`
+and `journal.ts` depend on them, and they exist only on the live index; nothing
+in this repo recreates them. If the index is ever rebuilt, recreate all three or
+filtering silently stops narrowing.
 
 There are exactly **five secrets**, and the same five exist both in production
 (`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
@@ -264,10 +276,25 @@ differ silently:
 `.dev.vars.example` is the committed template listing all five with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
 
-Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`
-(`CF_ACCOUNT_ID`, `AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`, `AGENT_ID`, `VERBOSE`). The
-full surface is the `Env` type in `src/index.ts`, where every entry names the
-file that reads it — do not declare a binding nothing reads.
+Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`:
+`AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`. The full
+surface is the `Env` type in `src/index.ts`, where every entry names the file
+that reads it — do not declare a binding nothing reads.
+
+That rule is now enforced. `Env` used to open with an `[x: string]: any` index
+signature, which made `env.ANYTHING` type-check and let six dead entries
+accumulate unnoticed (`CLIENTS_KV_NAMESPACE`, `MEMORY_KV_NAMESPACE`, `AGENT_ID`,
+`VERBOSE`, `CF_ACCOUNT_ID`, `LLM_PROVIDER`). The index signature is gone and an
+unknown `env.*` key is a compile error. Do not reintroduce it.
+
+`WORKER_ORIGIN` and `AGENT_INTERNAL_SECRET` are **required**, not optional.
+`WORKER_ORIGIN` used to fall back to a hardcoded `https://office.galabs.workers.dev`
+duplicated in `src/index.ts`, so a renamed or preview deployment would silently
+call back into production; it must equal the deployed origin. `AGENT_INTERNAL_SECRET`
+used to be defaulted to `''` by both senders — that never opened a bypass
+(`middleware/auth.ts` refuses an empty expected value) but it made a missing
+secret surface as "every agent tool call 401s" instead of "the Worker is
+misconfigured".
 
 ## Gotchas
 

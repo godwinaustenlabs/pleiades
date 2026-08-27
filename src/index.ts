@@ -32,28 +32,44 @@ export { PleiadesAgent } from './agents/pleiades-accountant/agent';
 /**
  * The Worker's environment.
  *
- * Every entry below is read somewhere in this codebase — the file/line is named
- * on each. Anything not read has been removed rather than left declared, since
- * a declared-but-unused binding reads as a configured integration that does not
+ * Every entry below is read somewhere in this codebase — the file is named on
+ * each. Anything not read has been removed rather than left declared, since a
+ * declared-but-unused binding reads as a configured integration that does not
  * exist (this type previously carried WhatsApp, Groq and Slack OAuth entries
  * for features that were never built).
+ *
+ * That claim used to be false and unenforceable: an `[x: string]: any` index
+ * signature sat at the top of this type, so `env.ANYTHING` type-checked and six
+ * dead entries (two KV namespaces, AGENT_ID, VERBOSE, CF_ACCOUNT_ID,
+ * LLM_PROVIDER) went unnoticed. The index signature is gone. Do not reintroduce
+ * it — it is the only thing making the sentence above checkable.
  *
  * Plaintext config lives in `wrangler.jsonc` under `vars`. Anything sensitive is
  * a Worker secret (`wrangler secret put NAME`) and is mirrored by name — never
  * by value — in `.dev.vars` for local development.
  */
 export type Env = {
-  [x: string]: any;
-
   // ── Bindings (wrangler.jsonc) ──────────────────────────────────────────────
   /** D1 `office-db`. The only database. */
   DB: D1Database;
   /** Static assets: the built SPA in apps/web/dist, with SPA fallback. */
   ASSETS: Fetcher;
-  /** This Worker, bound to itself, so agent tools re-enter the API in-process. */
+  /**
+   * This Worker, bound to itself, so agent tools re-enter the API in-process.
+   * Optional because `executors.ts` falls back to a plain fetch when it is
+   * absent — which is what makes a first deploy of a renamed script possible,
+   * since a self-referential service binding cannot name a script that does
+   * not exist yet.
+   */
   SELF?: Fetcher;
-  /** This Worker's public origin, for runs with no inbound request to read it from. */
-  WORKER_ORIGIN?: string;
+  /**
+   * This Worker's public origin, for runs with no inbound request to read it
+   * from (the cron path). Required: an unset origin used to fall back to a
+   * hardcoded literal, which meant a renamed or preview deployment silently
+   * called back into production.
+   * Read by: src/index.ts (scheduled)
+   */
+  WORKER_ORIGIN: string;
   /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
   CRM_BUCKET?: R2Bucket;
   /** Source documents for the accountant's knowledge base. */
@@ -62,62 +78,68 @@ export type Env = {
    * Vectorize index over those documents. Optional on purpose: an absent
    * binding degrades to "no knowledge base configured", the same way an unset
    * rate produces a refusal rather than a guess.
+   *
+   * The index carries three metadata indexes — `namespace`, `doc_id` and
+   * `section` — without which the `filter:` clauses in knowledge.ts and
+   * journal.ts silently stop narrowing. They exist only on the live index;
+   * recreating it means recreating all three.
    */
   VECTORIZE?: VectorizeIndex;
-  /** Workers AI. Bound for the agent pipeline. */
+  /**
+   * Workers AI. Optional only so tests can stub it absent; every read site
+   * calls it unguarded, so at runtime it is effectively required.
+   * Read by: src/utils/model.ts, agents/pleiades-accountant/{knowledge,journal}.ts
+   */
   AI?: Ai;
   /** The Slack agent Durable Object — one instance per Slack conversation. */
   SLACK_AGENT: DurableObjectNamespace;
   /** The accountant agent Durable Object — one instance per conversation. */
   PLEIADES_AGENT: DurableObjectNamespace;
-  CLIENTS_KV_NAMESPACE?: KVNamespace;
-  MEMORY_KV_NAMESPACE?: KVNamespace;
 
   // ── Secrets (wrangler secret put / .dev.vars) ──────────────────────────────
   /**
    * Signs and verifies staff and client-portal JWTs.
-   * Used in: src/middleware/auth.ts, src/routes/auth.ts, src/routes/portal.ts.
+   * Read by: src/middleware/auth.ts, src/routes/auth.ts, src/routes/portal.ts
    */
   JWT_SECRET: string;
   /**
    * Gates the internal `x-agent-actor` identity header. It never leaves the
    * Worker, which is what makes that header unforgeable from outside.
-   * Used in: src/middleware/auth.ts, src/agents/slack/index.ts.
+   *
+   * Required. It was optional, and both senders defaulted it to `''`, so a
+   * missing secret surfaced as "every agent tool call 401s" rather than as a
+   * misconfigured Worker. (It never opened a bypass — auth.ts refuses an empty
+   * expected value — but it was a confusing way to fail.)
+   * Read by: src/middleware/auth.ts, agents/pleiades-accountant/executors.ts,
+   *          agents/slack/agent.ts
    */
-  AGENT_INTERNAL_SECRET?: string;
+  AGENT_INTERNAL_SECRET: string;
   /**
    * Slack's app signing secret. Verifies the HMAC over the raw request body
    * before any Slack payload is trusted.
-   * Used in: src/agents/slack/lib/slack.ts.
+   * Read by: src/agents/slack/lib/slack.ts
    */
   SLACK_SIGNING_SECRET?: string;
   /**
    * Slack bot OAuth token, for posting messages back into Slack.
-   * Used in: src/agents/slack/index.ts, src/utils/slack.ts.
+   * Read by: src/agents/slack/index.ts, src/utils/slack.ts
    */
   SLACK_BOT_OAUTH_TOKEN?: string;
   /**
-   * AI Gateway auth token. These gateways have Authenticated Gateway enabled,
-   * so it is sent as `cf-aig-authorization` on every model call.
+   * AI Gateway auth token. Both gateways have Authenticated Gateway enabled,
+   * so it is sent as `cf-aig-authorization` on every model call. Unset, the
+   * agents log a warning and call the AI binding directly.
    * Read by: src/utils/model.ts
-   * Used in: src/agents/slack/index.ts.
    */
   CF_AIG_TOKEN?: string;
 
   // ── Plaintext config (wrangler.jsonc `vars`) ───────────────────────────────
-  /** AI Gateway account and gateway name — src/agents/slack/index.ts. */
-  CF_ACCOUNT_ID?: string;
   /** AI Gateway for the accountant. Read by: agents/pleiades-accountant/agent.ts */
   AI_GATEWAY_PLEIADES?: string;
   /** AI Gateway for the Slack assistant. Read by: agents/slack/agent.ts */
   AI_GATEWAY_SLACK?: string;
-  /** Model and provider for the agent pipeline — src/agents/slack/index.ts. */
+  /** Model for the agent pipeline. Read by: src/utils/model.ts */
   LLM_MODEL?: string;
-  LLM_PROVIDER?: string;
-  /** Agent identifier passed to the pipeline — src/agents/slack/index.ts. */
-  AGENT_ID?: string;
-  /** Extra agent logging — src/agents/slack/index.ts. */
-  VERBOSE?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -240,7 +262,7 @@ export default {
       const { runDailyCheck } = await import('./agents/pleiades-accountant/daily-runner');
       // A scheduled run has no request to take an origin from. The var keeps a
       // preview deployment from calling back into production.
-      const result = await runDailyCheck(env, env.WORKER_ORIGIN || 'https://office.galabs.workers.dev');
+      const result = await runDailyCheck(env, env.WORKER_ORIGIN);
       console.log(
         `[daily-runner] ${event.cron}:`,
         result.ran ? `posted ${result.messageId}` : `skipped — ${result.reason}`,

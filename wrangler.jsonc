@@ -10,17 +10,18 @@
 	"observability": {
 		"enabled": true
 	},
+	// Every var here is read by the Worker. VERBOSE, AGENT_ID and CF_ACCOUNT_ID
+	// used to sit alongside these and were read by nothing — see the note on the
+	// Env type in src/index.ts for why that went unnoticed for so long.
 	"vars": {
-		"VERBOSE": "true",
 		// One AI Gateway per agent. Shared would mean one request log mixing payroll
 		// runs with "what's on my calendar", which is a log nobody reads.
 		"AI_GATEWAY_PLEIADES": "pleiades-accounting-agent",
 		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
+		// Must match `name` below: the cron path has no inbound request to take an
+		// origin from, and this is what stops a preview deploy calling production.
 		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
-		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
-		"AGENT_ID": "nova-mcp-agent",
-		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
-		
+		"LLM_MODEL": "@cf/openai/gpt-oss-120b"
 	},
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -89,16 +90,6 @@
 			"database_id": "2c0c6471-7fcb-4ce0-96fa-03a41d260201",
 			"database_name": "office-db",
 			"migrations_dir": "packages/database/migrations"
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "CLIENTS_KV_NAMESPACE",
-			"id": "669b10984a084d2d88f046a056d2ad4d"
-		},
-		{
-			"binding": "MEMORY_KV_NAMESPACE",
-			"id": "fe850a4d50b945ab84298100d85e9460"
 		}
 	],
 	"ai": {

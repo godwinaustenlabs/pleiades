@@ -82,7 +82,7 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
   const actorId = c.req.header('x-agent-actor');
   if (actorId) {
     const presented = c.req.header('x-agent-secret') || '';
-    const expected = c.env.AGENT_INTERNAL_SECRET || '';
+    const expected = c.env.AGENT_INTERNAL_SECRET;
 
     // Present-but-invalid always denies. It must never fall through to another
     // identity source, or a bad secret would silently downgrade to anonymous.
