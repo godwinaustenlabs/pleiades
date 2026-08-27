@@ -22,9 +22,28 @@ PLEIADES_DB_ID="f075010c-d41b-4c3e-b859-9981b3e7aad1"
 
 step() { print -P "\n%F{cyan}== $1 ==%f"; }
 
+# Run a --json d1 query and print its stdout, via a file.
+#
+# Piping wrangler straight into jq is not reliable here: the run that produced
+# this helper failed twice at step 1 with `jq: error ... Cannot index object
+# with number` (jq exits 5, which `set -e` then propagates), while the identical
+# command succeeded when run by hand. Capturing first removes every difference
+# between a pipe, a TTY and a background shell, and leaves the raw response on
+# disk when something does go wrong.
+d1json() {
+  local db="$1" sql="$2" out
+  out=$(mktemp)
+  npx wrangler d1 execute "$db" --remote --json --command="$sql" >"$out" 2>/dev/null
+  if ! jq -e . "$out" >/dev/null 2>&1; then
+    echo "  d1json: non-JSON response from $db — see $out" >&2
+    return 1
+  fi
+  cat "$out"
+  rm -f "$out"
+}
+
 step "1/7  Record the last write, so drift is detectable afterwards"
-npx wrangler d1 execute office-db --remote --json \
-  --command="SELECT MAX(timestamp) last_audit FROM audit_logs" | jq -c '.[0].results'
+d1json office-db "SELECT MAX(timestamp) last_audit FROM audit_logs" | jq -c '.[0].results'
 
 step "2/7  Export office-db (schema and data separately — a combined dump does not import)"
 rm -rf cutover/final && mkdir -p cutover/final
@@ -35,11 +54,11 @@ python3 scripts/d1-order-dump.py cutover/final/schema.sql cutover/final/data.sql
 step "3/7  Rebuild pleiades-db from that export"
 # Dropping every table is what makes this re-runnable: a failed attempt can be
 # retried without hand-cleaning a half-populated database.
-DROPS=$(npx wrangler d1 execute pleiades-db --remote --json \
-  --command="SELECT group_concat('DROP TABLE IF EXISTS \"'||name||'\";', ' ') q
-             FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'" \
-  | jq -r '.[0].results[0].q // empty')
-[ -n "$DROPS" ] && npx wrangler d1 execute pleiades-db --remote --command="$DROPS" --yes >/dev/null
+# Children before parents, and via a file: D1 enforces foreign keys, so
+# dropping in sqlite_master order fails with FOREIGN KEY constraint failed,
+# and it rejects long multi-statement --command strings.
+python3 scripts/d1-order-dump.py --drops cutover/final/schema.sql cutover/final/drop.sql
+npx wrangler d1 execute pleiades-db --remote --file=cutover/final/drop.sql --yes >/dev/null
 npx wrangler d1 execute pleiades-db --remote --file=cutover/final/schema.sql  --yes >/dev/null
 npx wrangler d1 execute pleiades-db --remote --file=cutover/final/ordered.sql --yes >/dev/null
 
@@ -63,7 +82,7 @@ rclone check r2:office-crm-docs        r2:pleiades-docs            --one-way --s
 rclone check r2:office-compliance-docs r2:pleiades-compliance-docs --one-way --size-only
 
 step "6/7  Every D1 pointer into R2 still resolves"
-npx wrangler d1 execute pleiades-db --remote --json --command="SELECT r2_key FROM knowledge_documents" \
+d1json pleiades-db "SELECT r2_key FROM knowledge_documents" \
   | jq -r '.[0].results[].r2_key' | sort > cutover/final/kd-keys.txt
 rclone lsf r2:pleiades-compliance-docs --recursive | sort > cutover/final/comp-objects.txt
 MISSING=$(comm -23 cutover/final/kd-keys.txt cutover/final/comp-objects.txt)

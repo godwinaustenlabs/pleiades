@@ -105,7 +105,7 @@ describe('wrangler.jsonc contracts', () => {
    * Empty this list when the storage cutover lands. The rule below tightens
    * automatically, and anything left behind fails.
    */
-  const TRANSITIONAL_PREFIXES = ['office'];
+  const TRANSITIONAL_PREFIXES: string[] = [];
 
   it('names its resources consistently', () => {
     // The rename's own self-check. Every resource name must share a prefix with

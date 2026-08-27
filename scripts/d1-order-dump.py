@@ -26,6 +26,10 @@ so the import is always three steps:
     wrangler d1 execute <dst> --remote --file=schema.sql  --yes
     wrangler d1 execute <dst> --remote --file=ordered.sql --yes
 
+`--drops <schema.sql> <drops.sql>` emits DROP TABLE statements in the reverse
+order, children first, so an existing database can be cleared before reimport.
+Dropping in sqlite_master order fails the same way inserting in it does.
+
 sqlite_sequence is dropped deliberately. SQLite maintains it itself, and
 replaying the dump's copy leaves two rows for the same table, which makes the
 next AUTOINCREMENT id for that table unpredictable. In this schema that is
@@ -91,9 +95,26 @@ def dependency_order(schema_sql: str):
     return order, known
 
 
+def emit_drops(schema_path, out_path):
+    """DROP TABLE statements, children before parents.
+
+    Dropping in arbitrary order fails with `FOREIGN KEY constraint failed`:
+    D1 enforces foreign keys, so a parent cannot go while rows still reference
+    it. Reversing the insert order drops every child first.
+    """
+    order, _ = dependency_order(open(schema_path).read())
+    with open(out_path, 'w') as f:
+        for t in reversed(order):
+            f.write(f'DROP TABLE IF EXISTS "{t}";\n')
+    print(f"DROP statements written : {len(order)} (children first)")
+
+
 def main():
+    if len(sys.argv) == 4 and sys.argv[1] == '--drops':
+        return emit_drops(sys.argv[2], sys.argv[3])
     if len(sys.argv) != 4:
-        sys.exit(f"usage: {sys.argv[0]} <schema.sql> <data.sql> <ordered.sql>")
+        sys.exit(f"usage: {sys.argv[0]} <schema.sql> <data.sql> <ordered.sql>\n"
+                 f"       {sys.argv[0]} --drops <schema.sql> <drops.sql>")
     schema_path, data_path, out_path = sys.argv[1:]
 
     order, known = dependency_order(open(schema_path).read())

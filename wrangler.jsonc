@@ -85,8 +85,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_id": "2c0c6471-7fcb-4ce0-96fa-03a41d260201",
-			"database_name": "office-db",
+			"database_id": "f075010c-d41b-4c3e-b859-9981b3e7aad1",
+			"database_name": "pleiades-db",
 			"migrations_dir": "packages/database/migrations"
 		}
 	],
@@ -96,14 +96,14 @@
 	"r2_buckets": [
 		{
 			"binding": "CRM_BUCKET",
-			"bucket_name": "office-crm-docs"
+			"bucket_name": "pleiades-docs"
 		},
 		{
 			// Source documents for the accountant's knowledge base. Kept apart
 			// from CRM_BUCKET so a compliance manual can never be served through
 			// /api/assets, which is reachable by anyone with the right grant.
 			"binding": "COMPLIANCE_BUCKET",
-			"bucket_name": "office-compliance-docs"
+			"bucket_name": "pleiades-compliance-docs"
 		}
 	],
 	// Retrieval over those documents. Rates never come from here — see
