@@ -1,7 +1,8 @@
-import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, lte } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
 import { generateId } from '../../utils/id';
+import { chunk } from '../../utils/batch';
 
 /**
  * The agent's working memory of its own actions.
@@ -216,4 +217,60 @@ export async function recallActions(
     .limit(limit);
 
   return { entries: rows.map((r) => toEntry(r)), mode: 'chronological' };
+}
+
+/**
+ * Drops journal vectors older than a year out of the index.
+ *
+ * The **row stays**. `agent_journal` is the accountable record of what the
+ * agent did and why, and a company's books are not something to forget after
+ * twelve months — dated recall (`recall_actions` with `since`/`until`) still
+ * reaches every entry ever written. What is bounded is the *semantic* index:
+ * Vectorize is billed per stored vector and, more to the point, similarity
+ * search over years of routine bookkeeping surfaces the merely-similar ahead of
+ * the recent and relevant.
+ *
+ * A year because that is the shape of the work: the tax year, the annual
+ * return, "what did we do last time this came round". Two Januaries ago is
+ * history to be looked up by date, not a neighbour to be stumbled upon.
+ */
+export async function pruneJournalVectors(
+  env: Env,
+  opts: { olderThanDays?: number; now?: Date } = {},
+): Promise<{ pruned: number; cutoff: string }> {
+  const days = opts.olderThanDays ?? 365;
+  const cutoff = new Date((opts.now ?? new Date()).getTime() - days * 24 * 60 * 60 * 1000);
+
+  // Without the binding there is nothing to prune *from*. Clearing `vector_id`
+  // anyway would drop the only pointer to vectors that are still in the index,
+  // leaving them there permanently with nothing that remembers they exist.
+  if (!env.VECTORIZE) return { pruned: 0, cutoff: cutoff.toISOString() };
+
+  const db = getDb(env);
+  const stale = await db
+    .select({ id: schema.agentJournal.id, vectorId: schema.agentJournal.vectorId })
+    .from(schema.agentJournal)
+    .where(and(lt(schema.agentJournal.occurredAt, cutoff), isNotNull(schema.agentJournal.vectorId)));
+
+  if (stale.length === 0) return { pruned: 0, cutoff: cutoff.toISOString() };
+
+  let pruned = 0;
+  for (const batch of chunk(stale, 100)) {
+    const vectorIds = batch.map((r) => r.vectorId!).filter(Boolean);
+    try {
+      if (vectorIds.length) await env.VECTORIZE.deleteByIds(vectorIds);
+      // Cleared only after the delete succeeds, so a failed batch is retried on
+      // the next sweep rather than leaving a vector in the index that nothing
+      // remembers is there.
+      await db
+        .update(schema.agentJournal)
+        .set({ vectorId: null })
+        .where(inArray(schema.agentJournal.id, batch.map((r) => r.id)));
+      pruned += vectorIds.length;
+    } catch (err) {
+      console.error('[journal] pruning a batch failed, leaving it for next time:', err);
+    }
+  }
+
+  return { pruned, cutoff: cutoff.toISOString() };
 }

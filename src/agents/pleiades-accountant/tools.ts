@@ -79,6 +79,59 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     return executor(payload);
   };
 
+  /**
+   * Wraps a consequential tool that needs no approval, and journals what it did.
+   *
+   * The same argument as the approval gate, one step down: an action the
+   * business will be asked about later must not go unrecorded because the model
+   * did not think to call `record_action`. Generating a statement or filing a
+   * document produces something a person will hold in their hand — "which
+   * figures were in the August P&L, and when was it produced" has to be
+   * answerable from the record, not from the model's recollection.
+   *
+   * Reads are deliberately NOT wrapped. Indexing every `get_accounts` would
+   * bury the handful of entries that matter under thousands that do not, and a
+   * semantic index whose signal is drowned is worse than a smaller one.
+   *
+   * Failures are journalled too, as `blocked`. "Why is there no August
+   * statement" is answered by the attempt that failed, not by silence.
+   */
+  const recorded = (
+    toolName: string,
+    describe: (
+      args: any,
+      parsed: any,
+    ) => { subject: string; summary: string; periodLabel?: string; entities?: Record<string, unknown> },
+    execute: (args: any) => Promise<string>,
+  ) => async (args: any) => {
+    const result = await execute(args);
+
+    try {
+      let parsed: any = null;
+      try { parsed = JSON.parse(result); } catch { /* a non-JSON body is not a failure */ }
+      // The API answers 200 with { success: false } for a refused write, so a
+      // thrown error is not the only way this ends badly.
+      const failed = parsed?.success === false;
+      const d = describe(args, parsed?.data ?? parsed);
+
+      await recordAction(ctx.env, {
+        actionType: toolName,
+        subject: d.subject,
+        summary: failed ? `Attempted, and failed: ${String(parsed?.error ?? '').slice(0, 300)}` : d.summary,
+        periodLabel: d.periodLabel,
+        entities: d.entities,
+        outcome: failed ? 'blocked' : 'completed',
+        actorUserId: ctx.actorUserId,
+        source: 'agent',
+      });
+    } catch (err) {
+      // Never fail the action because the note about it failed.
+      console.error(`[tools] journalling ${toolName} failed:`, err);
+    }
+
+    return result;
+  };
+
   return {
     get_compliance_config: tool({
       description: 'The operator-configured compliance settings: tax year, rates, thresholds, deadlines, ' +
@@ -243,15 +296,36 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 include_eobi: z.boolean().optional(),
                 include_pessi: z.boolean().optional(),
               }),
-      execute: async (a: any) => {
-              const result = await buildStatutoryComponents(ctx.env, {
-                annualGross: a.annual_gross,
-                employeeCount: a.employee_count,
-                includeEobi: a.include_eobi,
-                includePessi: a.include_pessi,
-              });
-              return JSON.stringify(result);
-            },
+      // Journalled because its *refusals* are the record worth keeping. "Why
+      // was August's withholding nil" is answered by the attempt that named the
+      // unset setting, and that answer is worthless if it was never written
+      // down. The successes are recorded for the same reason: they are the
+      // basis of somebody's actual pay.
+      execute: recorded(
+        'build_compliant_salary_components',
+        (a, parsed) => ({
+          subject: `Statutory components for annual gross ${a.annual_gross}`,
+          summary: parsed?.ok === false
+            ? `Refused: ${parsed.reason ?? 'a required setting is unset'}.`
+            : `Built ${parsed?.components?.length ?? 0} component(s). Basis: ` +
+              `${(parsed?.basis ?? []).join('; ') || 'not stated'}.`,
+          entities: {
+            annualGross: a.annual_gross,
+            employeeCount: a.employee_count,
+            components: parsed?.components,
+            refused: parsed?.ok === false || undefined,
+          },
+        }),
+        async (a: any) => {
+          const result = await buildStatutoryComponents(ctx.env, {
+            annualGross: a.annual_gross,
+            employeeCount: a.employee_count,
+            includeEobi: a.include_eobi,
+            includePessi: a.include_pessi,
+          });
+          return JSON.stringify(result);
+        },
+      ),
     }),
 
     set_salary_structure: tool({
@@ -296,12 +370,34 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
         start_date: z.string().optional().describe('YYYY-MM-DD; required for profit_and_loss'),
         end_date: z.string().describe('YYYY-MM-DD'),
       }),
-      execute: async (a: any) =>
-        callApi('POST', '/api/finance/statements', {
-          type: a.type,
-          startDate: a.start_date,
-          endDate: a.end_date,
+      execute: recorded(
+        'generate_statement',
+        (a, data) => ({
+          subject: `${a.type === 'profit_and_loss' ? 'Profit and loss' : 'Assets and liabilities'} statement`,
+          summary:
+            `Generated version ${data?.version ?? '?'} covering ` +
+            `${a.start_date ? `${a.start_date} to ` : 'as at '}${a.end_date}` +
+            (data?.figures ? `. Figures: ${JSON.stringify(data.figures)}` : '') +
+            '.',
+          // The period the statement *reports on*, not the day it was made —
+          // "what did we produce for August" is the question that gets asked.
+          periodLabel: (a.start_date ?? a.end_date).slice(0, 7),
+          entities: {
+            docId: data?.docId,
+            version: data?.version,
+            url: data?.url,
+            startDate: a.start_date ?? null,
+            endDate: a.end_date,
+            figures: data?.figures,
+          },
         }),
+        (a: any) =>
+          callApi('POST', '/api/finance/statements', {
+            type: a.type,
+            startDate: a.start_date,
+            endDate: a.end_date,
+          }),
+      ),
     }),
 
     list_statements: tool({
@@ -552,12 +648,20 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
                 documentType: z.string().describe('e.g. Statement, Return, Reconciliation'),
                 url: z.string().describe('R2 path under finance-docs/'),
               }),
-      execute: async (a: any) =>
-              callApi('POST', '/api/finance/documents', {
-                title: a.title,
-                documentType: a.documentType,
-                url: a.url,
-              }),
+      execute: recorded(
+        'save_finance_document',
+        (a, data) => ({
+          subject: `Filed: ${a.title}`,
+          summary: `Filed a ${a.documentType} in the accounting document store at ${a.url}.`,
+          entities: { documentId: data?.id, title: a.title, documentType: a.documentType, url: a.url },
+        }),
+        (a: any) =>
+          callApi('POST', '/api/finance/documents', {
+            title: a.title,
+            documentType: a.documentType,
+            url: a.url,
+          }),
+      ),
     }),
 
     get_finance_documents: tool({

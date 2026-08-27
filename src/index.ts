@@ -218,6 +218,19 @@ export default {
    * turn would post the same suggestion twice.
    */
   async scheduled(event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    // Retention first, and outside the runner: the index must stay bounded
+    // whether or not `daily_runner_actor` is set. Once a day, not twice — a
+    // second sweep six hours later has nothing left to find.
+    if (event.cron === '0 6 * * *') {
+      try {
+        const { pruneJournalVectors } = await import('./agents/pleiades-accountant/journal');
+        const { pruned, cutoff } = await pruneJournalVectors(env);
+        if (pruned > 0) console.log(`[journal] pruned ${pruned} vector(s) older than ${cutoff}`);
+      } catch (err) {
+        console.error('[journal] retention sweep failed:', err);
+      }
+    }
+
     try {
       const { runDailyCheck } = await import('./agents/pleiades-accountant/daily-runner');
       // A scheduled run has no request to take an origin from. The var keeps a

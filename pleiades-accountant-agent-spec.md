@@ -313,9 +313,25 @@ posting the same journal twice.
   The Durable Object was giving serialisation, not memory. Tool rows and
   `[error]` entries are skipped — replaying either invites the model to treat
   its own bookkeeping as instruction.
-- Long-term memory is the agent journal: every action written to D1 for exact
-  recall and embedded into Vectorize under the `history` namespace for
+- Long-term memory is the agent journal: consequential actions written to D1 for
+  exact recall and embedded into Vectorize under the `history` namespace for
   associative recall. An exact filter is answered exactly, never by similarity.
+
+  **What gets journalled is decided in code, not by the model.** Approval-gated
+  actions are recorded by the gate; `generate_statement`,
+  `save_finance_document` and `build_compliant_salary_components` are wrapped in
+  `recorded()`, which journals the outcome — including failures and refusals,
+  since "why was August's withholding nil" is answered by the attempt that named
+  the unset setting. Reads are deliberately not journalled: indexing every
+  `get_accounts` would bury the entries that matter. `record_action` remains, for
+  reasoning the tool layer cannot infer.
+
+  **The index holds one year; the record is kept for ever.** A daily sweep drops
+  journal vectors older than 365 days and clears their `vector_id`, leaving the
+  row untouched — dated recall still reaches everything ever written. Similarity
+  search over years of routine bookkeeping surfaces the merely similar ahead of
+  the recent and relevant, and a company's books are not something to forget
+  after twelve months.
 - Compliance context is rebuilt **every turn**, never cached — the operator may
   have corrected a rate seconds ago.
 - Temperature 0.1. This is bookkeeping, not brainstorming.
