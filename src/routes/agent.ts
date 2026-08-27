@@ -1,0 +1,516 @@
+import { Hono } from 'hono';
+import { eq, and } from 'drizzle-orm';
+import { getDb, schema } from '@ganova/database';
+import { Env } from '../index';
+import { UserPayload } from '../middleware/auth';
+import { requireFeatureAccess } from '../middleware/rbac';
+import { logAudit } from '../utils/audit';
+import { ok, badRequest, serverError } from '../utils/response';
+import { chunk } from '../utils/batch';
+import { decideApproval, listPending } from '../agents/pleiades-accountant/approvals';
+import { accountantKey, type AccountantTurn } from '../agents/pleiades-accountant/agent';
+import { ingestDocument, removeDocument, searchKnowledge } from '../agents/pleiades-accountant/knowledge';
+import { recallActions } from '../agents/pleiades-accountant/journal';
+import { generateId } from '../utils/id';
+import {
+  loadConfig,
+  missingRequired,
+  renderComplianceContext,
+  GROUP_LABELS,
+  GROUP_ORDER,
+} from '../agents/pleiades-accountant/config';
+
+/**
+ * The Pleiades accountant, mounted inside the finance router at
+ * /api/finance/agent.
+ *
+ * It is a capability of the Accounting department, not an application of its
+ * own — the people who use it are the people who already work the ledgers.
+ * Mounting it here means authMiddleware and requireAppAccess('finance') are
+ * already applied by the parent, so this file only expresses the *extra* trust
+ * each route needs beyond having finance access at all.
+ */
+const agentRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
+
+/**
+ * Validates a value against its declared type.
+ *
+ * This runs at the write boundary rather than at render time on purpose: a
+ * malformed rate that reaches compliance_config is a figure the agent will read
+ * out as fact. Rejecting "twenty-nine" here is much cheaper than discovering it
+ * inside a filing draft.
+ */
+function validate(valueType: string, raw: string | null): { ok: true; value: string | null } | { ok: false; reason: string } {
+  // Clearing a value is always allowed — it returns the variable to "unset",
+  // which makes the agent refuse rather than use a stale figure.
+  if (raw === null || raw === '') return { ok: true, value: null };
+  const value = raw.trim();
+
+  switch (valueType) {
+    case 'percent': {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return { ok: false, reason: 'must be a number' };
+      if (n < 0 || n > 100) return { ok: false, reason: 'must be between 0 and 100' };
+      return { ok: true, value: String(n) };
+    }
+    case 'currency':
+    case 'number': {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return { ok: false, reason: 'must be a number' };
+      if (n < 0) return { ok: false, reason: 'cannot be negative' };
+      return { ok: true, value: String(n) };
+    }
+    case 'date':
+      // MM-DD: these are recurring annual boundaries, not calendar dates, so a
+      // year would be actively misleading.
+      if (!/^\d{2}-\d{2}$/.test(value)) return { ok: false, reason: 'must be MM-DD' };
+      {
+        const [m, d] = value.split('-').map(Number);
+        if (m < 1 || m > 12 || d < 1 || d > 31) return { ok: false, reason: 'not a valid month/day' };
+      }
+      return { ok: true, value };
+    case 'boolean':
+      if (value !== 'true' && value !== 'false') return { ok: false, reason: 'must be true or false' };
+      return { ok: true, value };
+    case 'json':
+      try {
+        JSON.parse(value);
+      } catch {
+        return { ok: false, reason: 'must be valid JSON' };
+      }
+      return { ok: true, value };
+    case 'text':
+      return { ok: true, value };
+    default:
+      return { ok: false, reason: `unknown value type: ${valueType}` };
+  }
+}
+
+/**
+ * GET /api/agent/config
+ *
+ * Every compliance variable, grouped for the settings UI, plus which required
+ * ones are still unset.
+ */
+agentRouter.get('/config', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
+  try {
+    const vars = await loadConfig(c.env);
+    return ok(c, {
+      groups: GROUP_ORDER.filter((g) => vars.some((v) => v.group === g)).map((g) => ({
+        key: g,
+        label: GROUP_LABELS[g],
+        vars: vars.filter((v) => v.group === g),
+      })),
+      missingRequired: missingRequired(vars).map((v) => ({ key: v.key, label: v.label, group: v.group })),
+      total: vars.length,
+    });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * PUT /api/agent/config
+ * Body: { values: { <config_key>: <string | null> } }
+ *
+ * Updates values in place for the current effective window. Superseding a rate
+ * for a *new* window (a Finance Act change) is a different operation — see
+ * POST /config/supersede — because editing in place would rewrite the past.
+ */
+agentRouter.put('/config', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const { values } = await c.req.json<{ values: Record<string, string | null> }>();
+    if (!values || typeof values !== 'object') return badRequest(c, 'values object required');
+
+    const existing = await loadConfig(c.env);
+    const byKey = new Map(existing.map((v) => [v.key, v]));
+
+    const errors: string[] = [];
+    const updates: { key: string; value: string | null }[] = [];
+
+    for (const [key, raw] of Object.entries(values)) {
+      const v = byKey.get(key);
+      if (!v) {
+        errors.push(`${key}: unknown setting`);
+        continue;
+      }
+      const result = validate(v.valueType, raw);
+      if (!result.ok) {
+        errors.push(`${v.label}: ${result.reason}`);
+        continue;
+      }
+      updates.push({ key, value: result.value });
+    }
+
+    // All-or-nothing: a partial save would leave the operator guessing which
+    // of their edits landed.
+    if (errors.length > 0) return badRequest(c, errors.join('; '));
+
+    const now = new Date();
+    for (const batch of chunk(updates, 5)) {
+      for (const u of batch) {
+        await db
+          .update(schema.complianceConfig)
+          .set({ value: u.value, updatedBy: user.id, updatedAt: now })
+          .where(eq(schema.complianceConfig.configKey, u.key));
+      }
+    }
+
+    await logAudit(c.env, user.id, 'UPDATE', 'compliance_config', 'bulk', {
+      keys: updates.map((u) => u.key),
+    });
+
+    const after = await loadConfig(c.env);
+    return ok(c, {
+      updated: updates.length,
+      missingRequired: missingRequired(after).length,
+    });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * GET /api/agent/config/preview
+ *
+ * The exact compliance block that gets injected into the agent's system prompt.
+ * Worth exposing: the operator should be able to see what the agent will read,
+ * rather than trusting that their settings landed.
+ */
+agentRouter.get('/config/preview', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
+  try {
+    const vars = await loadConfig(c.env);
+    return ok(c, { prompt: renderComplianceContext(vars) });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * GET /api/agent/approvals
+ *
+ * What the agent is waiting on. These are the "crucial decisions" — opening an
+ * account, linking a ledger, running payroll — that it refuses to take alone.
+ */
+agentRouter.get('/approvals', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
+  try {
+    return ok(c, await listPending(c.env));
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/agent/approvals/:id
+ * Body: { decision: 'approved' | 'rejected' }
+ *
+ * Gated on edit, not view: approving is authorising a change to the books, and
+ * must be a deliberate act by someone entitled to make it.
+ */
+agentRouter.post('/approvals/:id', requireFeatureAccess('finance', 'agent', 'edit'), async (c) => {
+  try {
+    const user = c.get('user');
+    const { decision } = await c.req.json<{ decision: 'approved' | 'rejected' }>();
+    if (decision !== 'approved' && decision !== 'rejected') {
+      return badRequest(c, "decision must be 'approved' or 'rejected'");
+    }
+    // The origin lets the executor reach this Worker's own API. Approving now
+    // carries the action out; it used to only set a status and wait for the
+    // agent to retry, which it could never do.
+    const result = await decideApproval(
+      c.env,
+      c.req.param('id')!,
+      user.id,
+      decision,
+      new URL(c.req.url).origin,
+    );
+    if (!result.ok) return badRequest(c, result.reason);
+    return ok(c, {
+      id: c.req.param('id'),
+      decision,
+      executed: result.executed ?? false,
+      result: result.result,
+    });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/agent/chat
+ * Body: { message, thread? }
+ *
+ * The Accounting-department entry to the agent. Gated on `agent/reports` edit
+ * rather than view: a turn can request approvals and, once approved, change the
+ * books, so reading reports and driving the agent are different privileges.
+ *
+ * The turn runs as the caller. Every tool it invokes travels back through this
+ * Worker's own middleware with that identity, so the agent is bounded by what
+ * the person could do themselves — it cannot be used to borrow authority.
+ */
+agentRouter.post('/chat', requireFeatureAccess('finance', 'agent', 'edit'), async (c) => {
+  try {
+    const user = c.get('user');
+    const { message, thread } = await c.req.json<{ message: string; thread?: string }>();
+    if (!message || !message.trim()) return badRequest(c, 'message is required');
+
+    const db = getDb(c.env);
+    const account = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, user.id),
+      with: { employee: true },
+      columns: { name: true, email: true },
+    });
+    const operatorName =
+      (account as any)?.employee?.name || account?.name || account?.email || 'the operator';
+
+    const turn: AccountantTurn = {
+      actorUserId: user.id,
+      operatorName,
+      prompt: message.trim(),
+      origin: new URL(c.req.url).origin,
+      conversationId: thread ? `conv_${user.id}_${thread}` : undefined,
+    };
+
+    const id = c.env.PLEIADES_AGENT.idFromName(accountantKey(user.id, thread));
+    const stub = c.env.PLEIADES_AGENT.get(id);
+    const res = await stub.fetch('https://pleiades.internal/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(turn),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text();
+      console.error('[pleiades] turn failed:', res.status, detail);
+      return serverError(c, new Error('The agent could not complete that turn.'));
+    }
+
+    await logAudit(c.env, user.id, 'CREATE', 'conversation_turns', 'chat', {
+      thread: thread || 'default',
+    });
+    return ok(c, await res.json());
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+// ── Knowledge base ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/finance/agent/knowledge
+ *
+ * What is in the knowledge base, and what is sitting in the bucket waiting to be
+ * indexed. Both, because an un-indexed file and an indexed one look identical
+ * from the outside otherwise.
+ */
+agentRouter.get('/knowledge', requireFeatureAccess('finance', 'agent_config', 'view'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const indexed = await db.query.knowledgeDocuments.findMany();
+
+    let inBucket: { key: string; size: number; uploaded: string }[] = [];
+    if (c.env.COMPLIANCE_BUCKET) {
+      const listing = await c.env.COMPLIANCE_BUCKET.list({ limit: 200 });
+      inBucket = listing.objects.map((o) => ({
+        key: o.key,
+        size: o.size,
+        uploaded: o.uploaded.toISOString(),
+      }));
+    }
+
+    const indexedKeys = new Set(indexed.map((d) => d.r2Key));
+    return ok(c, {
+      documents: indexed,
+      unindexed: inBucket.filter((o) => !indexedKeys.has(o.key)),
+      vectorizeConfigured: !!c.env.VECTORIZE,
+      bucketConfigured: !!c.env.COMPLIANCE_BUCKET,
+    });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/finance/agent/knowledge/ingest
+ * Body: { r2Key, title? }
+ *
+ * Indexing decides what the agent will cite as procedure, so it sits behind
+ * agent_config edit alongside the rates.
+ */
+agentRouter.post('/knowledge/ingest', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const { r2Key, title } = await c.req.json<{ r2Key: string; title?: string }>();
+    if (!r2Key) return badRequest(c, 'r2Key is required');
+    if (!c.env.VECTORIZE) return badRequest(c, 'No Vectorize index is bound to this Worker.');
+
+    const existing = await db.query.knowledgeDocuments.findFirst({
+      where: eq(schema.knowledgeDocuments.r2Key, r2Key),
+    });
+    const docId = existing?.id ?? generateId('kdoc');
+    const docTitle = title || existing?.title || r2Key.split('/').pop() || r2Key;
+    const now = new Date();
+
+    if (!existing) {
+      await db.insert(schema.knowledgeDocuments).values({
+        id: docId, r2Key, title: docTitle, status: 'pending', createdAt: now,
+      });
+    }
+
+    try {
+      const result = await ingestDocument(c.env, { r2Key, title: docTitle, docId });
+      await db.update(schema.knowledgeDocuments).set({
+        title: docTitle,
+        chunkCount: result.chunks,
+        characters: result.characters,
+        status: 'indexed',
+        error: null,
+        ingestedBy: user.id,
+        ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+
+      await logAudit(c.env, user.id, 'CREATE', 'knowledge_documents', docId, {
+        r2Key, chunks: result.chunks,
+      });
+      return ok(c, { ...result, title: docTitle });
+    } catch (err) {
+      // Record the failure rather than only returning it: a knowledge base that
+      // failed to ingest looks exactly like an empty one from the agent's side.
+      const message = err instanceof Error ? err.message : String(err);
+      await db.update(schema.knowledgeDocuments).set({
+        status: 'failed', error: message, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      return badRequest(c, message);
+    }
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /api/finance/agent/knowledge/upload?filename=…
+ *
+ * Raw body upload straight into the compliance bucket, then indexed in the same
+ * request. One step on purpose: a file that is in the bucket but not indexed is
+ * invisible to the agent while looking, to the person who uploaded it, like it
+ * worked.
+ */
+agentRouter.post('/knowledge/upload', requireFeatureAccess('finance', 'agent_config', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    if (!c.env.COMPLIANCE_BUCKET) return badRequest(c, 'No compliance bucket is bound to this Worker.');
+    if (!c.env.VECTORIZE) return badRequest(c, 'No Vectorize index is bound to this Worker.');
+
+    const raw = c.req.query('filename');
+    if (!raw) return badRequest(c, 'filename is required');
+
+    // The key is caller-supplied, so it is constrained the same way asset
+    // uploads are: no traversal, no control characters, nothing that could
+    // escape the bucket prefix.
+    const filename = decodeURIComponent(raw).replace(/\\/g, '/').split('/').pop() || '';
+    // eslint-disable-next-line no-control-regex
+    if (!filename || filename.length > 200 || /[\x00-\x1f]/.test(filename) || filename.includes('..')) {
+      return badRequest(c, 'That filename is not usable.');
+    }
+    if (!/\.(pdf|docx?|md|markdown|txt|html?|csv)$/i.test(filename)) {
+      return badRequest(c, 'Supported types: PDF, DOC/DOCX, MD, TXT, HTML, CSV.');
+    }
+
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) return badRequest(c, 'That file is empty.');
+    // 25MB, matching the asset upload cap: a Worker holds the whole body in
+    // memory to reach R2.
+    if (body.byteLength > 25 * 1024 * 1024) return badRequest(c, 'That file is larger than 25MB.');
+
+    await c.env.COMPLIANCE_BUCKET.put(filename, body, {
+      httpMetadata: { contentType: c.req.header('Content-Type') || 'application/octet-stream' },
+    });
+
+    const existing = await db.query.knowledgeDocuments.findFirst({
+      where: eq(schema.knowledgeDocuments.r2Key, filename),
+    });
+    const docId = existing?.id ?? generateId('kdoc');
+    const now = new Date();
+    if (!existing) {
+      await db.insert(schema.knowledgeDocuments).values({
+        id: docId, r2Key: filename, title: filename, status: 'pending', createdAt: now,
+      });
+    }
+
+    try {
+      const result = await ingestDocument(c.env, { r2Key: filename, title: filename, docId });
+      await db.update(schema.knowledgeDocuments).set({
+        chunkCount: result.chunks, characters: result.characters,
+        status: 'indexed', error: null, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      await logAudit(c.env, user.id, 'CREATE', 'knowledge_documents', docId, {
+        r2Key: filename, chunks: result.chunks, via: 'upload',
+      });
+      return ok(c, { ...result, title: filename, uploaded: true });
+    } catch (err) {
+      // The file is in the bucket either way; record why indexing failed so it
+      // is visible rather than silently absent from the agent's knowledge.
+      const message = err instanceof Error ? err.message : String(err);
+      await db.update(schema.knowledgeDocuments).set({
+        status: 'failed', error: message, ingestedBy: user.id, ingestedAt: now,
+      }).where(eq(schema.knowledgeDocuments.id, docId));
+      return badRequest(c, `Uploaded, but could not index it: ${message}`);
+    }
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/** DELETE /api/finance/agent/knowledge/:id — drops its passages and the record. */
+agentRouter.delete('/knowledge/:id', requireFeatureAccess('finance', 'agent_config', 'delete'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id')!;
+    await removeDocument(c.env, id);
+    await db.delete(schema.knowledgeDocuments).where(eq(schema.knowledgeDocuments.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'knowledge_documents', id);
+    return ok(c, { id, removed: true });
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/** GET /api/finance/agent/knowledge/search?q= — try a query as the agent would. */
+agentRouter.get('/knowledge/search', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
+  try {
+    const q = c.req.query('q');
+    if (!q) return badRequest(c, 'q is required');
+    return ok(c, await searchKnowledge(c.env, q, { topK: Number(c.req.query('topK')) || 5 }));
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+/**
+ * GET /api/finance/agent/journal
+ *
+ * What the agent has done, and why. Exposed to people as well as to the agent:
+ * the reason a nil return was nil is exactly the question an accountant asks
+ * months later, and it should not be necessary to interrogate the agent to
+ * find out.
+ */
+agentRouter.get('/journal', requireFeatureAccess('finance', 'agent', 'view'), async (c) => {
+  try {
+    const result = await recallActions(c.env, {
+      query: c.req.query('q') || undefined,
+      actionType: c.req.query('type') || undefined,
+      periodLabel: c.req.query('period') || undefined,
+      limit: Number(c.req.query('limit')) || 25,
+    });
+    return ok(c, result);
+  } catch (err) {
+    return serverError(c, err);
+  }
+});
+
+export default agentRouter;

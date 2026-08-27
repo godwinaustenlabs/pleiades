@@ -1,0 +1,16 @@
+{
+  "name": "@ganova/database",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "generate": "echo \"drizzle-kit generate is not used here: its snapshot baseline stopped at 0019 and it would emit a migration numbered 0020, colliding with the hand-written 0020_role_based_access.sql. Migrations are hand-written in packages/database/migrations/. See CLAUDE.md > Database / migrations.\" && exit 1",
+    "migrate": "echo \"Run D1 migrations from the repo root: npx wrangler d1 migrations apply office-db --local|--remote\" && exit 1"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.30.10"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.20.14",
+    "typescript": "^5.0.0"
+  }
+}

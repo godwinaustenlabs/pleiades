@@ -1,0 +1,1 @@
+ALTER TABLE universal_tasks ADD `start_date` text;

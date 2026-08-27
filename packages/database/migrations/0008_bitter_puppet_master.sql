@@ -1,0 +1,1 @@
+ALTER TABLE invoices ADD `invoice_doc` text;

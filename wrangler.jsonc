@@ -1,0 +1,128 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "office",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-01-03",
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"VERBOSE": "true",
+		// One AI Gateway per agent. Shared would mean one request log mixing payroll
+		// runs with "what's on my calendar", which is a log nobody reads.
+		"AI_GATEWAY_PLEIADES": "pleiades-accounting-agent",
+		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
+		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
+		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
+		"AGENT_ID": "nova-mcp-agent",
+		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
+		
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "./apps/web/dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	// The accountant's twice-daily check: 06:00 and 17:00 UTC, which is 11am and
+	// 10pm in Pakistan — the start of the working day and after it ends. Cron
+	// rather than the Agents SDK's this.schedule() because the run is global,
+	// not per-conversation, and no Durable Object here wakes on a timer.
+	"triggers": {
+		"crons": [
+			"0 6 * * *",
+			"0 17 * * *"
+		]
+	},
+	// The Worker bound to itself. Agent tools call back into this Worker's own
+	// API so a tool request traverses exactly the same middleware chain
+	// (authMiddleware -> requireAppAccess -> requireFeatureAccess) as a browser
+	// request. A service binding dispatches in-process, so it does not leave the
+	// edge, does not depend on public DNS, and works under `wrangler dev` and in
+	// tests, where a loopback fetch to the Worker's own origin hangs.
+	"services": [
+		{
+			"binding": "SELF",
+			"service": "office"
+		}
+	],
+	// The Slack agent runs as a Durable Object via the Agents SDK: one instance
+	// per Slack conversation, so turns in a thread are serialised and the
+	// conversation keeps its own durable SQLite state.
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SLACK_AGENT",
+				"class_name": "SlackAgent"
+			},
+			{
+				"name": "PLEIADES_AGENT",
+				"class_name": "PleiadesAgent"
+			}
+		]
+	},
+	// SQLite-backed Durable Objects must be declared here or the class has no
+	// storage and `this.sql` throws at runtime.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"SlackAgent"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"PleiadesAgent"
+			]
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "2c0c6471-7fcb-4ce0-96fa-03a41d260201",
+			"database_name": "office-db",
+			"migrations_dir": "packages/database/migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "CLIENTS_KV_NAMESPACE",
+			"id": "669b10984a084d2d88f046a056d2ad4d"
+		},
+		{
+			"binding": "MEMORY_KV_NAMESPACE",
+			"id": "fe850a4d50b945ab84298100d85e9460"
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
+	"r2_buckets": [
+		{
+			"binding": "CRM_BUCKET",
+			"bucket_name": "office-crm-docs"
+		},
+		{
+			// Source documents for the accountant's knowledge base. Kept apart
+			// from CRM_BUCKET so a compliance manual can never be served through
+			// /api/assets, which is reachable by anyone with the right grant.
+			"binding": "COMPLIANCE_BUCKET",
+			"bucket_name": "office-compliance-docs"
+		}
+	],
+	// Retrieval over those documents. Rates never come from here — see
+	// src/agents/pleiades-accountant/knowledge.ts.
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "pleiades-compliance"
+		}
+	]
+}

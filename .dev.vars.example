@@ -1,0 +1,35 @@
+# Template for .dev.vars. Copy to .dev.vars and fill in real values.
+# This file is committed; .dev.vars is not.
+#
+# Every secret here must also exist in production (`npx wrangler secret put NAME`)
+# and vice versa; the names are kept in step deliberately so local and deployed
+# behaviour cannot diverge. Plaintext, non-sensitive config belongs in
+# wrangler.jsonc under `vars`, not here.
+#
+# See .dev.vars.example for what each one is and where it is read.
+
+# Signs and verifies staff and client-portal JWTs.
+# Read by: src/middleware/auth.ts, src/routes/auth.ts, src/routes/portal.ts
+JWT_SECRET=<random 32+ char string>
+
+# Gates the internal `x-agent-actor` identity header. Never leaves the Worker —
+# that is what makes the header unforgeable from outside (SECURITY.md #1).
+# Read by: src/middleware/auth.ts, src/agents/slack/index.ts
+AGENT_INTERNAL_SECRET=<random 32+ char string>
+
+# Slack app signing secret. Verifies the HMAC over the raw request body before
+# any Slack payload is trusted, with a 5-minute replay window (SECURITY.md #2).
+# Read by: src/agents/slack/lib/slack.ts
+SLACK_SIGNING_SECRET=<Slack app > Basic Information > Signing Secret>
+
+# Slack bot OAuth token (xoxb-...), for posting messages back into Slack.
+# Read by: src/agents/slack/index.ts, src/utils/slack.ts
+SLACK_BOT_OAUTH_TOKEN=xoxb-<Slack app > OAuth & Permissions>
+
+# Cloudflare AI Gateway token. Both agents route their Workers AI calls through
+# their own gateway (AI_GATEWAY_PLEIADES / AI_GATEWAY_SLACK in wrangler.jsonc),
+# and both gateways have Authenticated Gateway enabled — this is sent as
+# `cf-aig-authorization`. Without it the gateway refuses the call before Workers
+# AI sees it, so the agents fall back to the direct binding and log that they did.
+# Read by: src/utils/model.ts
+CF_AIG_TOKEN=<Cloudflare dashboard > AI Gateway > token>

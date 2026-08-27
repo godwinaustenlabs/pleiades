@@ -1,0 +1,1 @@
+-- ALTER TABLE `users_logins` DROP COLUMN `avatar_url`;

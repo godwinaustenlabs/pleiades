@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "lib": ["esnext", "webworker"],
+    "declaration": true,
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@ganova/database": ["packages/database/src/index.ts"]
+    },
+    "types": ["@cloudflare/workers-types/2023-07-01"]
+  },
+  // This config is the Cloudflare Worker's (webworker lib, no DOM/JSX).
+  // apps/web is a separate Vite project with its own tsconfig — including it
+  // here made every .tsx fail with "--jsx is not set".
+  "include": ["src/**/*.ts", "packages/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".next", "apps", "scratch"]
+}
