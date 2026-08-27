@@ -501,13 +501,20 @@ describe('conversation memory', () => {
 });
 
 describe('approvals execute on approval', () => {
-	const approvalRow = async (id: string, tool: string, payload: object) => {
+	// Seconds, because `mode: 'timestamp'` stores unix seconds. Bound as
+	// milliseconds, every fixture's expiry landed tens of thousands of years out
+	// and the expiry guard could never fire — these tests would have passed with
+	// it removed entirely.
+	const approvalRow = async (id: string, tool: string, payload: object, expiresInSeconds = 3600) => {
 		const hash = 'x'.repeat(64);
 		await env.DB.prepare(
 			`INSERT INTO agent_approvals
 			 (id, tool_name, payload, payload_hash, summary, status, requested_by, expires_at, created_at)
 			 VALUES (?, ?, ?, ?, 'test', 'pending', 'u_ceo', ?, 0)`,
-		).bind(id, tool, JSON.stringify(payload), hash, Date.now() + 3600_000).run();
+		).bind(
+			id, tool, JSON.stringify(payload), hash,
+			Math.floor(Date.now() / 1000) + expiresInSeconds,
+		).run();
 	};
 
 	const decide = async (id: string, decision: string) => {
@@ -567,6 +574,27 @@ describe('approvals execute on approval', () => {
 
 		const ledger = await env.DB.prepare(
 			"SELECT ledger_name FROM ledgers WHERE ledger_name = 'Never Created'",
+		).first();
+		expect(ledger).toBeNull();
+	});
+
+	it('refuses an approval that has expired', async () => {
+		// A stale "yes" must not still authorise. The window is an hour: the
+		// operator approved a specific change against the books as they were,
+		// and by tomorrow that is a different question.
+		await approvalRow('apr_stale', 'create_ledger', { ledgerName: 'Too Late' }, -60);
+		const res = await decide('apr_stale', 'approved');
+		expect(res.status).toBe(400);
+		expect((await res.json<any>()).error).toMatch(/expired/i);
+
+		const row = await env.DB.prepare(
+			'SELECT status, execution_status FROM agent_approvals WHERE id = ?',
+		).bind('apr_stale').first<any>();
+		expect(row.status).toBe('pending');
+		expect(row.execution_status).toBeNull();
+
+		const ledger = await env.DB.prepare(
+			"SELECT ledger_name FROM ledgers WHERE ledger_name = 'Too Late'",
 		).first();
 		expect(ledger).toBeNull();
 	});
