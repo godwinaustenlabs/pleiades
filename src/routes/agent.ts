@@ -273,8 +273,8 @@ agentRouter.post('/chat', requireFeatureAccess('finance', 'agent', 'edit'), asyn
       conversationId: thread ? `conv_${user.id}_${thread}` : undefined,
     };
 
-    const id = c.env.PLEIADES_AGENT.idFromName(accountantKey(user.id, thread));
-    const stub = c.env.PLEIADES_AGENT.get(id);
+    const id = c.env.ACCOUNTANT_AGENT.idFromName(accountantKey(user.id, thread));
+    const stub = c.env.ACCOUNTANT_AGENT.get(id);
     const res = await stub.fetch('https://pleiades.internal/turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

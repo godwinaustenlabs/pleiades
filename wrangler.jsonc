@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "office",
+	"name": "pleiades",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-01-03",
 	"observability": {
@@ -20,7 +20,7 @@
 		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
 		// Must match `name` below: the cron path has no inbound request to take an
 		// origin from, and this is what stops a preview deploy calling production.
-		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
+		"WORKER_ORIGIN": "https://pleiades.galabs.workers.dev",
 		"LLM_MODEL": "@cf/openai/gpt-oss-120b"
 	},
 	"compatibility_flags": [
@@ -50,7 +50,7 @@
 	"services": [
 		{
 			"binding": "SELF",
-			"service": "office"
+			"service": "pleiades"
 		}
 	],
 	// The Slack agent runs as a Durable Object via the Agents SDK: one instance
@@ -63,24 +63,22 @@
 				"class_name": "SlackAgent"
 			},
 			{
-				"name": "PLEIADES_AGENT",
-				"class_name": "PleiadesAgent"
+				"name": "ACCOUNTANT_AGENT",
+				"class_name": "AccountantAgent"
 			}
 		]
 	},
 	// SQLite-backed Durable Objects must be declared here or the class has no
 	// storage and `this.sql` throws at runtime.
+	// A brand-new script starts its DO migration history at v1. The old office
+	// script's v1/v2 tags are not carried across: tags are per-script, and this
+	// script has never had a Durable Object before.
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": [
-				"SlackAgent"
-			]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": [
-				"PleiadesAgent"
+				"SlackAgent",
+				"AccountantAgent"
 			]
 		}
 	],

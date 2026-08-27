@@ -94,18 +94,31 @@ describe('wrangler.jsonc contracts', () => {
     expect(cfg.kv_namespaces ?? []).toEqual([]);
   });
 
+  /**
+   * Prefixes that resource names may still carry mid-cutover.
+   *
+   * The `pleiades` Worker is deployed pointing at `office-db` and the `office-*`
+   * buckets on purpose: both hostnames then serve identical data from one
+   * dataset, so the new script can be validated against production before any
+   * data moves, and nothing has to be frozen to get there.
+   *
+   * Empty this list when the storage cutover lands. The rule below tightens
+   * automatically, and anything left behind fails.
+   */
+  const TRANSITIONAL_PREFIXES = ['office'];
+
   it('names its resources consistently', () => {
-    // The rename's own self-check. Every resource name in this file must share
-    // one prefix, and that prefix is the script name. While the platform is
-    // still called `office` this passes on `office-*`; after the rename it
-    // passes on `pleiades-*` and fails on anything left behind.
+    // The rename's own self-check. Every resource name must share a prefix with
+    // the script, so a resource left behind under an abandoned name fails here
+    // rather than in production.
     const prefix = cfg.name;
     const names = [
       cfg.d1_databases?.[0]?.database_name,
       ...(cfg.r2_buckets ?? []).map((b: any) => b.bucket_name),
     ].filter(Boolean);
     for (const n of names) {
-      expect(n.startsWith(prefix), `resource "${n}" does not start with script name "${prefix}"`).toBe(true);
+      const ok = n.startsWith(prefix) || TRANSITIONAL_PREFIXES.some((p) => n.startsWith(p));
+      expect(ok, `resource "${n}" matches neither "${prefix}" nor a transitional prefix`).toBe(true);
     }
   });
 

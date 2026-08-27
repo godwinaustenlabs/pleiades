@@ -94,8 +94,8 @@ export async function runDailyCheck(
     conversationId: `conv_runner_${now.toISOString().slice(0, 10)}_${slot}`,
   };
 
-  const id = env.PLEIADES_AGENT.idFromName(accountantKey(actorUserId, `runner-${slot}`));
-  const stub = env.PLEIADES_AGENT.get(id);
+  const id = env.ACCOUNTANT_AGENT.idFromName(accountantKey(actorUserId, `runner-${slot}`));
+  const stub = env.ACCOUNTANT_AGENT.get(id);
   const res = await stub.fetch('https://pleiades.internal/turn', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

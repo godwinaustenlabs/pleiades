@@ -42,7 +42,7 @@ export interface AccountantReply {
  * a queryable audit trail the operator and their accountant can read directly —
  * `this.sql` is private to the instance.
  */
-export class PleiadesAgent extends Agent<Env> {
+export class AccountantAgent extends Agent<Env> {
   private async ensureConversation(turn: AccountantTurn): Promise<string> {
     const db = getDb(this.env);
     const id = turn.conversationId || `conv_${this.name}`;

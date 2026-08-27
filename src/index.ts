@@ -27,7 +27,7 @@ import slackAgentRouter from './agents/slack';
 // Durable Object classes must be exported from the Worker entry point for
 // wrangler to bind them. One export per agent.
 export { SlackAgent } from './agents/slack';
-export { PleiadesAgent } from './agents/accountant/agent';
+export { AccountantAgent } from './agents/accountant/agent';
 
 /**
  * The Worker's environment.
@@ -94,7 +94,7 @@ export type Env = {
   /** The Slack agent Durable Object — one instance per Slack conversation. */
   SLACK_AGENT: DurableObjectNamespace;
   /** The accountant agent Durable Object — one instance per conversation. */
-  PLEIADES_AGENT: DurableObjectNamespace;
+  ACCOUNTANT_AGENT: DurableObjectNamespace;
 
   // ── Secrets (wrangler secret put / .dev.vars) ──────────────────────────────
   /**
@@ -158,7 +158,7 @@ app.use('*', cors({
 // ── Health Check (monitoring / uptime pings) ────────────────────
 app.get('/api/health', (c) => c.json({
   status: 'ok',
-  service: 'officeOS Office API',
+  service: 'Pleiades API',
   version: '2.0.0',
   timestamp: new Date().toISOString(),
   endpoints: ['/auth', '/core', '/hr', '/finance', '/legal', '/tech', '/acquisition', '/admin', '/crm', '/portal', '/dashboard'],

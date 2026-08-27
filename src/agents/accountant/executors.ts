@@ -48,7 +48,7 @@ export function buildExecutors(callApi: ApiCaller): Record<string, Executor> {
 /**
  * A caller that reaches the Worker's own API as a given user.
  *
- * The same construction `PleiadesAgent.apiCaller` uses, lifted out so the
+ * The same construction `AccountantAgent.apiCaller` uses, lifted out so the
  * approvals route can execute as the person who *requested* the action rather
  * than the one who approved it. Approval is authorisation, not impersonation:
  * attributing the write to the approver would put the wrong name on every

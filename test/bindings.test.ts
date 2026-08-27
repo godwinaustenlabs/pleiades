@@ -15,7 +15,7 @@ describe('bindings', () => {
     ['ASSETS', 'fetch'],
     ['SELF', 'fetch'],
     ['SLACK_AGENT', 'idFromName'],
-    ['PLEIADES_AGENT', 'idFromName'],
+    ['ACCOUNTANT_AGENT', 'idFromName'],
     ['CRM_BUCKET', 'get'],
     ['COMPLIANCE_BUCKET', 'get'],
     ['VECTORIZE', 'query'],
