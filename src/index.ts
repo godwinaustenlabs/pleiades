@@ -142,7 +142,10 @@ export type Env = {
   LLM_MODEL?: string;
 };
 
-const app = new Hono<{ Bindings: Env }>();
+// Exported so test/manifest.test.ts can enumerate the registered routes. The
+// route table is the thing a big refactor silently breaks — a router that stops
+// being mounted still compiles, still deploys, and just 404s.
+export const app = new Hono<{ Bindings: Env }>();
 
 // ── Global Middleware ───────────────────────────────────────────
 app.use('*', logger());

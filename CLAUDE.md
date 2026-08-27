@@ -19,9 +19,40 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — RBAC permission-matrix suite (see test/)
+npm test          # vitest — see test/ (14 files, 301 tests)
 npm run test:watch
 ```
+
+The suite is in four layers, and the two snapshot files are the load-bearing part:
+
+- `test/__snapshots__/routes.txt` — every registered route (`test/manifest.test.ts`).
+  A router that stops being mounted still compiles, still deploys, and just 404s;
+  nothing else notices.
+- `test/__snapshots__/responses.txt` — every GET route fetched as a superadmin and
+  reduced to status + response *shape*, never values (`test/smoke.test.ts`). It is
+  deterministic across runs by construction, so a byte-identical diff before and
+  after a refactor is proof that refactor changed no response anywhere in the API,
+  including the routes nobody wrote a test for. **Regenerate it deliberately, in the
+  same commit as the behaviour change, never to make a red build green.**
+- `test/modules.test.ts` — one create→read→update→delete per module. This is what the
+  response manifest cannot do: it proves the Drizzle column mapping matches the
+  production DDL, since a wrong column in an INSERT is invisible to a read-only sweep.
+- `test/config.test.ts`, `test/bindings.test.ts`, `test/schema-drift.test.ts` — contracts
+  on `wrangler.jsonc` and `Env`. Miniflare gives tests an ephemeral local D1, so a wrong
+  `database_name` or `bucket_name` cannot fail an ordinary test; it fails in production,
+  once. `config.test.ts` asserts `services[0].service === name`, that `WORKER_ORIGIN`
+  matches the script's own hostname, and that every D1/R2 resource name starts with the
+  script name — so the config verifies its own naming.
+
+Two facts the suite records rather than hides, both pre-existing:
+
+- `GET /api/tech/tasks` (and `/:id`) return `D1_ERROR: no such table: tasks`. Migration
+  0000 creates the table and `office-db` records that migration as applied, but the table
+  is not there — it was dropped by hand. `schema-drift.test.ts` names `tasks` as the one
+  known gap so it cannot silently become two.
+- `GET /api/admin/users/my-team` returns 404 for everyone. `/users/:id` is registered at
+  `admin.ts:137` and `my-team` at `admin.ts:259`, so the parameterised route shadows it
+  and the handler is unreachable. Registering the static path first fixes it.
 
 `npm run lint` passes (0 errors). It still reports ~290 **warnings**, which are tracked
 debt, not noise — see the commented rules in `apps/web/eslint.config.js` for why each is
