@@ -223,16 +223,26 @@ export async function searchKnowledge(
     docId: String(m.metadata?.doc_id ?? ''),
     title: String(m.metadata?.title ?? 'Untitled'),
     section: String(m.metadata?.section ?? ''),
-    namespace: String(m.metadata?.namespace ?? 'compliance'),
+    // Not defaulted to 'compliance'. Every writer sets this, but a vector that
+    // somehow lacks it must not be promoted to the more authoritative of the
+    // two kinds just because the field is missing.
+    namespace: String(m.metadata?.namespace ?? 'unlabelled'),
   }));
 
   return {
     passages,
+    // The note travels with the results rather than sitting in the system
+    // prompt: it is read at the moment the passages are, which is the moment
+    // the mistake it guards against would be made.
     note:
       passages.length === 0
-        ? 'Nothing in the reference material matched. Say so rather than answering from memory.'
-        : 'These passages explain rules and procedure. They are NOT the source of any rate: ' +
-          'every number comes from the compliance settings. If a passage states a figure that ' +
-          'contradicts the configured value, report the discrepancy — do not choose between them.',
+        ? 'Nothing indexed matched. Say so rather than answering from memory.'
+        : 'These passages explain rules and procedure, or record what you did before. Check the ' +
+          '`kind` on each: "reference" is the manual and may be cited; "own-note" is something you ' +
+          'wrote yourself and is evidence of what happened, never authority for what is correct; ' +
+          '"unlabelled" has no known origin and should not be relied on at all. ' +
+          'None of them is the source of any rate — every number comes from the compliance settings. If ' +
+          'a passage states a figure that contradicts the configured value, report the discrepancy ' +
+          '— do not choose between them.',
   };
 }

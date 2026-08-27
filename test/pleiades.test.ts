@@ -677,3 +677,37 @@ describe('the agent journal', () => {
 		expect(entries.map((e) => e.subject)).toEqual(['Recent action']);
 	}, REMOTE_EMBEDDING);
 });
+
+describe('knowledge search labels where a passage came from', () => {
+	/**
+	 * One index holds both the compliance manual and the agent's own journal,
+	 * and the search spans both on purpose — precedent is useful context. What
+	 * matters is that the agent can tell them apart, so it never cites something
+	 * it wrote itself back as though it were the rule it was following.
+	 */
+	const label = (namespace: string) =>
+		namespace === 'history' ? 'own-note' : namespace === 'compliance' ? 'reference' : 'unlabelled';
+
+	it('calls the manual a reference and its own journal a note', () => {
+		expect(label('compliance')).toBe('reference');
+		expect(label('history')).toBe('own-note');
+	});
+
+	it('does not promote a vector whose origin is unknown', () => {
+		// Defaulting a missing namespace to 'compliance' would quietly turn an
+		// unattributable passage into citable authority.
+		expect(label('unlabelled')).toBe('unlabelled');
+		expect(label('')).toBe('unlabelled');
+	});
+
+	it('tells the model what each kind is worth, alongside the passages', async () => {
+		// The guidance travels with the results rather than sitting in the system
+		// prompt, so it is read at the moment the mistake would be made.
+		const { searchKnowledge } = await import('../src/agents/pleiades-accountant/knowledge');
+		const { note } = await searchKnowledge(
+			{ ...env, VECTORIZE: undefined } as any,
+			'anything',
+		);
+		expect(note).toMatch(/compliance settings|no knowledge base/i);
+	});
+});

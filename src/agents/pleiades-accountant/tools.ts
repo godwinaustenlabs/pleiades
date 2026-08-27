@@ -98,10 +98,14 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     }),
 
     knowledge_search: tool({
-      description: 'Searches the indexed compliance documents for rules, procedures, formats and worked ' +
-                'examples. Use it to understand HOW something must be done or reported. It is NOT a source ' +
-                'of rates — every number comes from get_compliance_config. If a passage states a figure ' +
-                'that contradicts the configured value, report the discrepancy rather than choosing.',
+      description:
+        'Searches everything indexed — the compliance documents AND your own past actions — for rules, ' +
+        'procedures, formats, worked examples and precedent. Use it to understand HOW something must be ' +
+        'done, or whether you have handled something like it before. Each passage is labelled with its ' +
+        'kind: "reference" is the manual, "own-note" is something you wrote yourself. A note is a record ' +
+        'of what you did, never authority for what is correct — do not cite one as a rule. Neither is a ' +
+        'source of rates: every number comes from get_compliance_config. If a passage states a figure ' +
+        'that contradicts the configured value, report the discrepancy rather than choosing.',
       inputSchema: z.object({
                 query: z.string().describe('What you need to understand'),
                 top_k: z.number().optional().describe('How many passages, default 5'),
@@ -110,6 +114,16 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
               const result = await searchKnowledge(ctx.env, a.query, { topK: a.top_k });
               return JSON.stringify({
                 passages: result.passages.map((p) => ({
+                  // The search spans both namespaces on purpose — the manual and
+                  // the agent's own history are both useful context. Saying which
+                  // is which is what stops the agent citing its own past note back
+                  // as though it were the rule it was following.
+                  kind:
+                    p.namespace === 'history'
+                      ? 'own-note'
+                      : p.namespace === 'compliance'
+                        ? 'reference'
+                        : 'unlabelled',
                   source: `${p.title} › ${p.section}`,
                   relevance: Math.round(p.score * 100) / 100,
                   text: p.text,
