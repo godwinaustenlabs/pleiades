@@ -77,6 +77,50 @@ Note: `packages/database`'s own `migrate` script now refuses to run and points a
 the root-level command above — it used to name a database (`ganova-db`) that does
 not exist.
 
+#### Copying the database
+
+There is no rename for a D1 database, so moving one means export, create,
+import — and a plain `wrangler d1 export | wrangler d1 execute` **does not
+work**. Two things break it:
+
+1. A combined schema+data dump fails with `no such table: main.<table>`. Export
+   `--no-data` and `--no-schema` separately and import the schema first.
+2. The data half then fails with `FOREIGN KEY constraint failed`, because
+   `wrangler d1 export` emits INSERTs in `sqlite_master` order rather than
+   dependency order. The dump's own `PRAGMA defer_foreign_keys=TRUE` does not
+   save it: that pragma is per-transaction, and D1 runs an imported file
+   server-side in batches, so it never reaches the statements that need it.
+
+This reads exactly like data corruption and is not — it is statement order.
+`scripts/d1-order-dump.py` topologically sorts the INSERTs by foreign key and
+is the supported path:
+
+```bash
+npx wrangler d1 export  office-db  --remote --no-data   --output=cutover/schema.sql
+npx wrangler d1 export  office-db  --remote --no-schema --output=cutover/data.sql
+python3 scripts/d1-order-dump.py cutover/schema.sql cutover/data.sql cutover/ordered.sql
+npx wrangler d1 execute pleiades-db --remote --file=cutover/schema.sql  --yes
+npx wrangler d1 execute pleiades-db --remote --file=cutover/ordered.sql --yes
+```
+
+It also drops `sqlite_sequence`, which SQLite maintains itself; replaying the
+dump's copy leaves two rows for the same table and makes the next AUTOINCREMENT
+id unpredictable — here that would be `d1_migrations`, so the damage lands on
+migration bookkeeping.
+
+Verify a copy by row counts per table, a sorted diff of the two `--no-data`
+exports, and a sha256 of the sorted INSERT lines from each `--no-schema` export
+(excluding `sqlite_sequence`); the last is order-independent and proves every
+row survived. Note D1 caps compound `SELECT`s at **fewer than 8** `UNION ALL`
+terms, so a per-table count query has to be chunked.
+
+Do **not** rebuild a database by replaying `packages/database/migrations/`. The
+files no longer describe production: `0000_plain_shard.sql` creates a `tasks`
+table that `office-db` records as applied and does not have, and
+`fix_universal_tasks_fk.sql` is unnumbered, so wrangler's `parseInt` sort yields
+`NaN` and runs it last, after `0036`, where it references a column production
+lacks.
+
 Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
 workflow. Its snapshot baseline stopped at `0019` and still describes the
 pre-roles-only schema (`role_permissions`, `role_hierarchy`, `user_app_*`), so a
