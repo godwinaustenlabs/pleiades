@@ -1,7 +1,7 @@
 import { Agent } from 'agents';
 import { generateText, stepCountIs } from 'ai';
-import { createWorkersAI } from 'workers-ai-provider';
 import { Env } from '../../index';
+import { agentModel } from '../../utils/model';
 import { buildSystemPrompt } from './prompt';
 import { buildTools } from './tools';
 import { postToSlack, replyToSlashCommand } from './lib/slack';
@@ -104,17 +104,17 @@ export class SlackAgent extends Agent<Env> {
   async handleTurn(turn: SlackTurn): Promise<void> {
     this.record('user', turn, turn.prompt);
 
-    // Workers AI through the binding: no gateway token and no third-party
-    // quota, which matters for a Slack bot that answers on demand.
-    const workersai = createWorkersAI({ binding: this.env.AI as any });
-    const model = this.env.LLM_MODEL || '@cf/openai/gpt-oss-120b';
+    // Workers AI through the binding — no third-party quota, which matters for
+    // a bot that answers on demand — behind this agent's own AI Gateway, kept
+    // separate from the accountant's so neither log buries the other.
+    const model = agentModel(this.env, this.env.AI_GATEWAY_SLACK);
 
     const token = this.env.SLACK_BOT_OAUTH_TOKEN;
 
     let answer: string;
     try {
       const result = await generateText({
-        model: workersai(model as any),
+        model,
         system: buildSystemPrompt(turn.slackId),
         prompt: turn.prompt,
         tools: buildTools(this.apiCaller(turn)),

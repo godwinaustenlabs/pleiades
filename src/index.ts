@@ -97,7 +97,9 @@ export type Env = {
    */
   SLACK_BOT_OAUTH_TOKEN?: string;
   /**
-   * AI Gateway auth token, paired with CF_ACCOUNT_ID and CF_GATEWAY_NAME.
+   * AI Gateway auth token. These gateways have Authenticated Gateway enabled,
+   * so it is sent as `cf-aig-authorization` on every model call.
+   * Read by: src/utils/model.ts
    * Used in: src/agents/slack/index.ts.
    */
   CF_AIG_TOKEN?: string;
@@ -105,7 +107,10 @@ export type Env = {
   // ── Plaintext config (wrangler.jsonc `vars`) ───────────────────────────────
   /** AI Gateway account and gateway name — src/agents/slack/index.ts. */
   CF_ACCOUNT_ID?: string;
-  CF_GATEWAY_NAME?: string;
+  /** AI Gateway for the accountant. Read by: agents/pleiades-accountant/agent.ts */
+  AI_GATEWAY_PLEIADES?: string;
+  /** AI Gateway for the Slack assistant. Read by: agents/slack/agent.ts */
+  AI_GATEWAY_SLACK?: string;
   /** Model and provider for the agent pipeline — src/agents/slack/index.ts. */
   LLM_MODEL?: string;
   LLM_PROVIDER?: string;

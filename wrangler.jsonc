@@ -12,11 +12,15 @@
 	},
 	"vars": {
 		"VERBOSE": "true",
+		// One AI Gateway per agent. Shared would mean one request log mixing payroll
+		// runs with "what's on my calendar", which is a log nobody reads.
+		"AI_GATEWAY_PLEIADES": "pleiades-accounting-agent",
+		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
 		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
 		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
 		"AGENT_ID": "nova-mcp-agent",
 		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
-		"CF_GATEWAY_NAME": "testing-gateway"
+		
 	},
 	"compatibility_flags": [
 		"nodejs_compat"

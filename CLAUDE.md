@@ -206,8 +206,17 @@ exported from `src/index.ts` and bound in `wrangler.jsonc`.
 Both run their turn loop on the Vercel AI SDK (`generateText`, tools defined
 with `tool()` and zod schemas) over **Workers AI** via the `AI` binding —
 `LLM_MODEL` in `wrangler.jsonc`, currently `@cf/openai/gpt-oss-120b`. Using the
-binding rather than a third-party gateway means no external quota can stop a
-payroll run mid-way, and no gateway credential to rotate.
+binding rather than a third-party provider means no external quota can stop a
+payroll run mid-way.
+
+Each agent's calls are routed through **its own AI Gateway**
+(`AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`), built in `src/utils/model.ts`. One
+gateway per agent, because a single request log mixing payroll runs with
+"what's on my calendar" is a log nobody reads. Both gateways have Authenticated
+Gateway enabled, so `CF_AIG_TOKEN` goes out as `cf-aig-authorization` via
+`extraHeaders` — `GatewayOptions` has no field for it, since on the REST path
+the caller sets the header itself. With the token unset the agents log a warning
+and call the binding directly rather than 401 on every turn.
 
 Three rules hold for any agent added here:
 
@@ -250,13 +259,13 @@ differ silently:
 | `AGENT_INTERNAL_SECRET` | Gates the internal `x-agent-actor` header; never leaves the Worker | `middleware/auth.ts`, `agents/slack/index.ts` |
 | `SLACK_SIGNING_SECRET` | Verifies Slack's HMAC over the raw body | `agents/slack/lib/slack.ts` |
 | `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack/index.ts`, `utils/slack.ts` |
-| `CF_AIG_TOKEN` | AI Gateway auth, with the `CF_*` vars | `agents/slack/index.ts` |
+| `CF_AIG_TOKEN` | AI Gateway auth (`cf-aig-authorization`); both gateways require it | `utils/model.ts` |
 
 `.dev.vars.example` is the committed template listing all five with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
 
 Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`
-(`CF_ACCOUNT_ID`, `CF_GATEWAY_NAME`, `LLM_MODEL`, `AGENT_ID`, `VERBOSE`). The
+(`CF_ACCOUNT_ID`, `AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`, `AGENT_ID`, `VERBOSE`). The
 full surface is the `Env` type in `src/index.ts`, where every entry names the
 file that reads it — do not declare a binding nothing reads.
 

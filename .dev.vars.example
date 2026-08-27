@@ -26,7 +26,10 @@ SLACK_SIGNING_SECRET=<Slack app > Basic Information > Signing Secret>
 # Read by: src/agents/slack/index.ts, src/utils/slack.ts
 SLACK_BOT_OAUTH_TOKEN=xoxb-<Slack app > OAuth & Permissions>
 
-# Cloudflare AI Gateway auth token. Pairs with the CF_ACCOUNT_ID and
-# CF_GATEWAY_NAME vars in wrangler.jsonc.
-# Read by: src/agents/slack/index.ts
+# Cloudflare AI Gateway token. Both agents route their Workers AI calls through
+# their own gateway (AI_GATEWAY_PLEIADES / AI_GATEWAY_SLACK in wrangler.jsonc),
+# and both gateways have Authenticated Gateway enabled — this is sent as
+# `cf-aig-authorization`. Without it the gateway refuses the call before Workers
+# AI sees it, so the agents fall back to the direct binding and log that they did.
+# Read by: src/utils/model.ts
 CF_AIG_TOKEN=<Cloudflare dashboard > AI Gateway > token>

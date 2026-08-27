@@ -1,9 +1,9 @@
 import { Agent } from 'agents';
 import { generateText, stepCountIs } from 'ai';
-import { createWorkersAI } from 'workers-ai-provider';
 import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '@ganova/database';
 import { Env } from '../../index';
+import { agentModel } from '../../utils/model';
 import { generateId } from '../../utils/id';
 import { buildComplianceContext } from './config';
 import { buildPleiadesTools } from './tools';
@@ -126,16 +126,16 @@ export class PleiadesAgent extends Agent<Env> {
     // this whole design exists to prevent.
     const complianceContext = await buildComplianceContext(this.env);
 
-    // Workers AI through the binding — no gateway token, no per-provider quota
-    // to run into mid-payroll, and the model runs on the same platform as the
-    // data it is reasoning about.
-    const workersai = createWorkersAI({ binding: this.env.AI as any });
-    const model = this.env.LLM_MODEL || '@cf/openai/gpt-oss-120b';
+    // Workers AI through the binding — no per-provider quota to run into
+    // mid-payroll, and the model runs on the same platform as the data it is
+    // reasoning about — fronted by this agent's own AI Gateway for request
+    // logging, cost attribution and caching.
+    const model = agentModel(this.env, this.env.AI_GATEWAY_PLEIADES);
 
     let reply: string;
     try {
       const result = await generateText({
-        model: workersai(model as any),
+        model,
         system: buildSystemPrompt({
           complianceContext,
           operatorName: turn.operatorName,
