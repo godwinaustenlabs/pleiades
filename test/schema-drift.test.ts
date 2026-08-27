@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getTableName, is, Table } from 'drizzle-orm';
-import { schema } from '@ganova/database';
+import { schema } from '@pleiades/database';
 import schemaSql from './schema.sql?raw';
 
 /**

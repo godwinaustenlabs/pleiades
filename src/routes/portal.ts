@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and, or } from 'drizzle-orm';
 import { sign, verify } from 'hono/jwt';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
 import { ok, badRequest, notFound, serverError } from '../utils/response';

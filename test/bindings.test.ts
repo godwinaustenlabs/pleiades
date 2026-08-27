@@ -28,7 +28,7 @@ describe('bindings', () => {
     expect(typeof b[method], `binding ${name} has no ${method}()`).toBe('function');
   });
 
-  const vars = ['AI_GATEWAY_PLEIADES', 'AI_GATEWAY_SLACK', 'WORKER_ORIGIN', 'LLM_MODEL'];
+  const vars = ['AI_GATEWAY_ACCOUNTANT', 'AI_GATEWAY_SLACK', 'WORKER_ORIGIN', 'LLM_MODEL'];
 
   it.each(vars)('provides the var %s', (name) => {
     expect(typeof (env as Record<string, any>)[name], `var ${name} is not a string`).toBe('string');
@@ -38,7 +38,7 @@ describe('bindings', () => {
     // One request log mixing payroll runs with "what's on my calendar" is a log
     // nobody reads. This is the config-level half of that rule; the behavioural
     // half is in ai-gateway.test.ts.
-    expect(env.AI_GATEWAY_PLEIADES).not.toBe(env.AI_GATEWAY_SLACK);
+    expect(env.AI_GATEWAY_ACCOUNTANT).not.toBe(env.AI_GATEWAY_SLACK);
   });
 
   it('binds no KV namespace', () => {

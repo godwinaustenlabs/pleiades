@@ -1,8 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
-import { loadConfig } from '../agents/pleiades-accountant/config';
+import { loadConfig } from '../agents/accountant/config';
 import { StatementDoc } from './layout';
 import {
   assetsAndLiabilities,

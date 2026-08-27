@@ -54,7 +54,7 @@ describe('AI Gateway routing', () => {
 	it('is wired to the gateways this account actually has', () => {
 		// Pinned against wrangler.jsonc: a typo here is a 404 at the gateway and
 		// a dead agent, and nothing else in the suite would catch it.
-		expect(env.AI_GATEWAY_PLEIADES).toBe('pleiades-accounting-agent');
+		expect(env.AI_GATEWAY_ACCOUNTANT).toBe('pleiades-accounting-agent');
 		expect(env.AI_GATEWAY_SLACK).toBe('pleiades-slack-agent');
 	});
 });

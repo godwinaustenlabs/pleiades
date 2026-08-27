@@ -196,7 +196,7 @@ router.post('/things', async (c) => {
 
 `user_app_permissions` is the authorization table (see Authorization above).
 
-Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@ganova/database` (path-mapped in the root `tsconfig.json`).
+Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@pleiades/database` (path-mapped in the root `tsconfig.json`).
 
 Column names are snake_case in SQL, camelCase in TS, and primary keys are often *not* named `id` in SQL (e.g. `universalTasks.id` maps to the `task_id` column) — always check the schema file rather than assuming.
 
@@ -229,10 +229,14 @@ One directory per agent, no loose files. Both are Agents-SDK Durable Objects
 exported from `src/index.ts` and bound in `wrangler.jsonc`.
 
 - `slack/` — the Slack assistant, one instance per Slack conversation.
-- `pleiades/` — the accountant. One instance per conversation;
+- `accountant/` — the accountant. One instance per conversation;
   `compliance.ts` turns operator configuration into payroll components,
   `tools.ts` is the HR + accounting surface, `approvals.ts` is the
   human-in-the-loop gate, `access.ts` decides who may drive it.
+
+  It is called `accountant/`, not `pleiades/`, because Pleiades is the platform.
+  A directory — or a Durable Object class — named after the whole system, when
+  the system runs two agents, says nothing about which one it is.
 
 Both run their turn loop on the Vercel AI SDK (`generateText`, tools defined
 with `tool()` and zod schemas) over **Workers AI** via the `AI` binding —
@@ -241,7 +245,7 @@ binding rather than a third-party provider means no external quota can stop a
 payroll run mid-way.
 
 Each agent's calls are routed through **its own AI Gateway**
-(`AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`), built in `src/utils/model.ts`. One
+(`AI_GATEWAY_ACCOUNTANT`, `AI_GATEWAY_SLACK`), built in `src/utils/model.ts`. One
 gateway per agent, because a single request log mixing payroll runs with
 "what's on my calendar" is a log nobody reads. Both gateways have Authenticated
 Gateway enabled, so `CF_AIG_TOKEN` goes out as `cf-aig-authorization` via
@@ -286,7 +290,7 @@ either, and both namespaces were verified empty before the bindings were
 dropped. Pleiades keeps its memory in D1 and Vectorize, never KV.
 
 The `VECTORIZE` index carries three metadata indexes — `namespace`, `doc_id`
-and `section`. The `filter:` clauses in `agents/pleiades-accountant/knowledge.ts`
+and `section`. The `filter:` clauses in `agents/accountant/knowledge.ts`
 and `journal.ts` depend on them, and they exist only on the live index; nothing
 in this repo recreates them. If the index is ever rebuilt, recreate all three or
 filtering silently stops narrowing.
@@ -308,7 +312,7 @@ differ silently:
 where each is obtained; `.dev.vars` itself is gitignored.
 
 Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`:
-`AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`. The full
+`AI_GATEWAY_ACCOUNTANT`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`. The full
 surface is the `Env` type in `src/index.ts`, where every entry names the file
 that reads it — do not declare a binding nothing reads.
 

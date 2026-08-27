@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and, or } from 'drizzle-orm';
 import { sign } from 'hono/jwt';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
 import { checkFeaturePermission } from '../middleware/rbac';

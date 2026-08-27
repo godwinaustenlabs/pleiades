@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../../index';
 import { generateId } from '../../utils/id';
 import { logAudit } from '../../utils/audit';

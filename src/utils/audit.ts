@@ -1,5 +1,5 @@
-import { getDb } from '@ganova/database';
-import { schema } from '@ganova/database';
+import { getDb } from '@pleiades/database';
+import { schema } from '@pleiades/database';
 import { generateId } from './id';
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'READ' | 'LOGIN' | 'RESET' | 'PROVISION' | 'DEPROVISION';

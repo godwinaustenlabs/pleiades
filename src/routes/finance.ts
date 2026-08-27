@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and, gte, lte, lt, or } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 
 function formatDate(d: Date): string {
   const yyyy = d.getFullYear();

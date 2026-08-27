@@ -84,7 +84,7 @@ describe('wrangler.jsonc contracts', () => {
     // The other half of "do not declare a binding nothing reads": Env is
     // checked by tsc, but a var present only in wrangler.jsonc would be
     // invisible to it.
-    const known = ['AI_GATEWAY_PLEIADES', 'AI_GATEWAY_SLACK', 'WORKER_ORIGIN', 'LLM_MODEL'];
+    const known = ['AI_GATEWAY_ACCOUNTANT', 'AI_GATEWAY_SLACK', 'WORKER_ORIGIN', 'LLM_MODEL'];
     expect(Object.keys(cfg.vars).sort()).toEqual([...known].sort());
   });
 

@@ -2,8 +2,8 @@ import { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { verify } from 'hono/jwt';
 import { eq, and } from 'drizzle-orm';
-import { getDb } from '@ganova/database';
-import { schema } from '@ganova/database';
+import { getDb } from '@pleiades/database';
+import { schema } from '@pleiades/database';
 import { Env } from '../index';
 
 export type UserPayload = {

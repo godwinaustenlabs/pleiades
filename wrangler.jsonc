@@ -16,7 +16,7 @@
 	"vars": {
 		// One AI Gateway per agent. Shared would mean one request log mixing payroll
 		// runs with "what's on my calendar", which is a log nobody reads.
-		"AI_GATEWAY_PLEIADES": "pleiades-accounting-agent",
+		"AI_GATEWAY_ACCOUNTANT": "pleiades-accounting-agent",
 		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
 		// Must match `name` below: the cron path has no inbound request to take an
 		// origin from, and this is what stops a preview deploy calling production.

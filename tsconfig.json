@@ -14,7 +14,7 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@ganova/database": ["packages/database/src/index.ts"]
+      "@pleiades/database": ["packages/database/src/index.ts"]
     },
     "types": ["@cloudflare/workers-types/2023-07-01"]
   },

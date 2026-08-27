@@ -1,7 +1,7 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
 import { eq } from 'drizzle-orm';
-import { getDb } from '@ganova/database';
-import { schema } from '@ganova/database';
+import { getDb } from '@pleiades/database';
+import { schema } from '@pleiades/database';
 import { UserPayload } from './auth';
 import { Env } from '../index';
 

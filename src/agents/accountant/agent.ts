@@ -1,7 +1,7 @@
 import { Agent } from 'agents';
 import { generateText, stepCountIs } from 'ai';
 import { desc, eq } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../../index';
 import { agentModel } from '../../utils/model';
 import { generateId } from '../../utils/id';
@@ -130,7 +130,7 @@ export class PleiadesAgent extends Agent<Env> {
     // mid-payroll, and the model runs on the same platform as the data it is
     // reasoning about — fronted by this agent's own AI Gateway for request
     // logging, cost attribution and caching.
-    const model = agentModel(this.env, this.env.AI_GATEWAY_PLEIADES);
+    const model = agentModel(this.env, this.env.AI_GATEWAY_ACCOUNTANT);
 
     let reply: string;
     try {

@@ -1,5 +1,5 @@
 import { and, isNull, or, gt, lte, eq } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../../index';
 
 /** One compliance variable as the operator configured it. */

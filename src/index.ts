@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { getDb } from '@ganova/database';
+import { getDb } from '@pleiades/database';
 
 // Routers
 import authRouter from './routes/auth';
@@ -27,7 +27,7 @@ import slackAgentRouter from './agents/slack';
 // Durable Object classes must be exported from the Worker entry point for
 // wrangler to bind them. One export per agent.
 export { SlackAgent } from './agents/slack';
-export { PleiadesAgent } from './agents/pleiades-accountant/agent';
+export { PleiadesAgent } from './agents/accountant/agent';
 
 /**
  * The Worker's environment.
@@ -88,7 +88,7 @@ export type Env = {
   /**
    * Workers AI. Optional only so tests can stub it absent; every read site
    * calls it unguarded, so at runtime it is effectively required.
-   * Read by: src/utils/model.ts, agents/pleiades-accountant/{knowledge,journal}.ts
+   * Read by: src/utils/model.ts, agents/accountant/{knowledge,journal}.ts
    */
   AI?: Ai;
   /** The Slack agent Durable Object — one instance per Slack conversation. */
@@ -110,7 +110,7 @@ export type Env = {
    * missing secret surfaced as "every agent tool call 401s" rather than as a
    * misconfigured Worker. (It never opened a bypass — auth.ts refuses an empty
    * expected value — but it was a confusing way to fail.)
-   * Read by: src/middleware/auth.ts, agents/pleiades-accountant/executors.ts,
+   * Read by: src/middleware/auth.ts, agents/accountant/executors.ts,
    *          agents/slack/agent.ts
    */
   AGENT_INTERNAL_SECRET: string;
@@ -134,8 +134,8 @@ export type Env = {
   CF_AIG_TOKEN?: string;
 
   // ── Plaintext config (wrangler.jsonc `vars`) ───────────────────────────────
-  /** AI Gateway for the accountant. Read by: agents/pleiades-accountant/agent.ts */
-  AI_GATEWAY_PLEIADES?: string;
+  /** AI Gateway for the accountant. Read by: agents/accountant/agent.ts */
+  AI_GATEWAY_ACCOUNTANT?: string;
   /** AI Gateway for the Slack assistant. Read by: agents/slack/agent.ts */
   AI_GATEWAY_SLACK?: string;
   /** Model for the agent pipeline. Read by: src/utils/model.ts */
@@ -253,7 +253,7 @@ export default {
     // second sweep six hours later has nothing left to find.
     if (event.cron === '0 6 * * *') {
       try {
-        const { pruneJournalVectors } = await import('./agents/pleiades-accountant/journal');
+        const { pruneJournalVectors } = await import('./agents/accountant/journal');
         const { pruned, cutoff } = await pruneJournalVectors(env);
         if (pruned > 0) console.log(`[journal] pruned ${pruned} vector(s) older than ${cutoff}`);
       } catch (err) {
@@ -262,7 +262,7 @@ export default {
     }
 
     try {
-      const { runDailyCheck } = await import('./agents/pleiades-accountant/daily-runner');
+      const { runDailyCheck } = await import('./agents/accountant/daily-runner');
       // A scheduled run has no request to take an origin from. The var keeps a
       // preview deployment from calling back into production.
       const result = await runDailyCheck(env, env.WORKER_ORIGIN);

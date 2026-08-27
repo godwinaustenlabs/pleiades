@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { desc } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { requireFeatureAccess } from '../middleware/rbac';
 import { logAudit } from '../utils/audit';
