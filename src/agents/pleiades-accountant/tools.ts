@@ -291,7 +291,11 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
     }),
 
     list_statements: tool({
-      description: 'Statements already generated, newest first, with the figures each one reported.',
+      description:
+        'Statements that exist and can be downloaded, newest first, with the figures each one ' +
+        'reported. Reconciled against the document store, so anything whose file has been removed ' +
+        'is absent — if a period you expected is not here, its statement is gone and generating it ' +
+        'again is the right move. `missing` counts records whose file no longer exists.',
       inputSchema: z.object({}),
       execute: async () => callApi('GET', '/api/finance/statements'),
     }),

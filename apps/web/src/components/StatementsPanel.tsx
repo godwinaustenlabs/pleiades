@@ -55,6 +55,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [missing, setMissing] = useState(0);
 
   const [type, setType] = useState<(typeof TYPES)[number]['id']>('profit_and_loss');
   const [startDate, setStartDate] = useState(() => {
@@ -68,7 +69,11 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
       const res = await fetch(`${API}/finance/statements`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`Could not load statements (${res.status})`);
       const { data } = await res.json();
-      setDocs(data || []);
+      // Only statements whose PDF is still in the document store: the server
+      // reconciles the record against the bucket, so a file deleted there stops
+      // appearing here rather than leaving a button that cannot work.
+      setDocs(data.statements || []);
+      setMissing(data.missing || 0);
     } catch (e) { setError(errorMessage(e)); } finally { setLoading(false); }
   }, []);
 
@@ -206,7 +211,9 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
       ) : docs.length === 0 ? (
         <div className="glass-panel border border-white/10 rounded-2xl py-12 text-center text-textSecondary">
           <FileText className="w-6 h-6 mx-auto mb-2 opacity-50" />
-          No statements generated yet.
+          {missing > 0
+            ? 'No statements are in the document store. Generate one to replace them.'
+            : 'No statements generated yet.'}
         </div>
       ) : (
         <div className="space-y-2">
@@ -249,6 +256,17 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Distinguishes "never generated" from "generated, and since removed
+          from the bucket". The record of what was produced is kept either way;
+          only the downloadable ones are listed. */}
+      {missing > 0 && docs.length > 0 && (
+        <p className="text-[11px] text-textSecondary">
+          {missing} earlier {missing === 1 ? 'statement is' : 'statements are'} no longer in the
+          document store and {missing === 1 ? 'is' : 'are'} not listed. Generate the period again to
+          replace {missing === 1 ? 'it' : 'them'}.
+        </p>
       )}
     </div>
   );

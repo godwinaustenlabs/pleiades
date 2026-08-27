@@ -262,3 +262,44 @@ describe('downloading a generated statement', () => {
 		expect((await fetchDoc({})).status).toBe(401);
 	});
 });
+
+describe('listing what actually exists', () => {
+	it('omits a statement whose file has been deleted from the bucket', async () => {
+		const { data: made } = await (
+			await call('POST', '/statements', {
+				type: 'profit_and_loss', startDate: '2027-01-01', endDate: '2027-01-31',
+			})
+		).json<any>();
+
+		const before = await (await call('GET', '/statements')).json<any>();
+		expect(before.data.statements.map((d: any) => d.id)).toContain(made.docId);
+
+		// Somebody tidies the bucket. The record of what was produced stands;
+		// the document it points at does not.
+		await env.CRM_BUCKET.delete(made.r2Key);
+
+		const after = await (await call('GET', '/statements')).json<any>();
+		expect(after.data.statements.map((d: any) => d.id)).not.toContain(made.docId);
+		// Named, so "never generated" and "generated and since removed" do not
+		// look identical to whoever is reading.
+		expect(after.data.missing).toBeGreaterThan(0);
+	});
+
+	it('keeps the record in the database', async () => {
+		// generated_documents says a statement was produced, when, and from which
+		// figures. Deleting the file does not unmake that, and an audit trail
+		// that erases itself when a bucket is tidied is not an audit trail.
+		const row = await env.DB.prepare(
+			"SELECT COUNT(*) AS n FROM generated_documents WHERE period_label = '2027-01-01_to_2027-01-31'",
+		).first<any>();
+		expect(row.n).toBe(1);
+	});
+
+	it('still lists the statements that are present', async () => {
+		const res = await (await call('GET', '/statements')).json<any>();
+		expect(res.data.statements.length).toBeGreaterThan(0);
+		for (const d of res.data.statements) {
+			expect(await env.CRM_BUCKET.head(d.r2Key)).not.toBeNull();
+		}
+	});
+});
