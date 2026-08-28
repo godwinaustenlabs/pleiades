@@ -116,10 +116,11 @@ terms, so a per-table count query has to be chunked.
 
 Do **not** rebuild a database by replaying `packages/database/migrations/`. The
 files no longer describe production: `0000_plain_shard.sql` creates a `tasks`
-table that `office-db` records as applied and does not have, and
-`fix_universal_tasks_fk.sql` is unnumbered, so wrangler's `parseInt` sort yields
-`NaN` and runs it last, after `0036`, where it references a column production
-lacks.
+table that `office-db` records as applied and does not have. A second hazard,
+`fix_universal_tasks_fk.sql`, has since been deleted — being unnumbered,
+wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
+rebuilt `universal_tasks` around an `assignee_id` column production does not
+have (assignment lives in `task_assignments`).
 
 Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
 workflow. Its snapshot baseline stopped at `0019` and still describes the
