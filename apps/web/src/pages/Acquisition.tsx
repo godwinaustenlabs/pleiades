@@ -117,14 +117,14 @@ function Acquisition() {
   }, [TABS, permsLoaded]);
 
   if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
-  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-rose-400 animate-spin" /></div>;
+  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-module animate-spin" /></div>;
 
   if (TABS.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-8">
         <div className="glass-panel p-12 rounded-[2.5rem] text-center space-y-6 max-w-md border border-white/10 shadow-2xl">
-          <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto border border-rose-500/20">
-            <Lock className="w-10 h-10 text-rose-400" />
+          <div className="w-20 h-20 bg-module/10 rounded-full flex items-center justify-center mx-auto border border-module/20">
+            <Lock className="w-10 h-10 text-module" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Acquisition Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
@@ -194,21 +194,21 @@ function Acquisition() {
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
       <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="bg-rose-500/20 p-2 rounded-xl border border-rose-500/20 shadow-lg shadow-rose-500/5">
-            <Target className="w-5 h-5 md:w-6 h-6 text-rose-400" />
+          <div className="bg-module/20 p-2 rounded-xl border border-module/20 shadow-lg shadow-module/5">
+            <Target className="w-5 h-5 md:w-6 h-6 text-module" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-rose-400">ACQUISITION</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-module">ACQUISITION</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Growth & Acquisition</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-rose-400 hover:bg-rose-400/10 rounded-xl transition-all">
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-module hover:bg-module/10 rounded-xl transition-all">
             <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-rose-500/20 overflow-hidden">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-module to-module flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-module/20 overflow-hidden">
               {user.profilePhoto ? (
                 <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
@@ -221,7 +221,7 @@ function Acquisition() {
             </div>
           </button>
           <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
             <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
@@ -232,10 +232,10 @@ function Acquisition() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
-                ? 'border-rose-400 text-rose-400 bg-rose-400/5'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
-                }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-rose-400' : 'text-textSecondary'}`} />
+ ? 'border-module text-module bg-module/5'
+ : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
+ }`}>
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-module' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}

@@ -271,7 +271,7 @@ export default function UserDashboard() {
                 ) : (
                   <User className="w-6 h-6 md:w-8 md:h-8 text-white group-hover:scale-90 transition-transform" />
                 )}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute inset-0 flex items-center justify-center bg-surfaceAlt rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="w-4 h-4 text-white" />
                 </div>
               </div>
@@ -310,9 +310,9 @@ export default function UserDashboard() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id
-                    ? 'bg-primary text-white shadow-lg shadow-primary/25'
-                    : 'text-textSecondary hover:text-white hover:bg-white/5'
-                  }`}
+ ? 'bg-primary text-surface shadow-lg shadow-primary/25'
+ : 'text-textSecondary hover:text-surface hover:bg-white/5'
+ }`}
               >
                 <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 {tab.label}
@@ -327,10 +327,10 @@ export default function UserDashboard() {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { label: 'Total Tasks', value: data?.stats?.totalTasks, icon: BookOpen, color: 'text-blue-400' },
-                { label: 'Completed', value: data?.stats?.completedTasks, icon: CheckCircle2, color: 'text-emerald-400' },
-                { label: 'In Progress', value: data?.stats?.inProgressTasks, icon: Clock, color: 'text-amber-400' },
-                { label: 'Blocked', value: data?.stats?.blockedTasks, icon: AlertCircle, color: 'text-red-400' },
+                { label: 'Total Tasks', value: data?.stats?.totalTasks, icon: BookOpen, color: 'text-info' },
+                { label: 'Completed', value: data?.stats?.completedTasks, icon: CheckCircle2, color: 'text-success' },
+                { label: 'In Progress', value: data?.stats?.inProgressTasks, icon: Clock, color: 'text-warning' },
+                { label: 'Blocked', value: data?.stats?.blockedTasks, icon: AlertCircle, color: 'text-danger' },
               ].map((stat, i) => (
                 <div key={i} className="glass-panel p-6 rounded-3xl group hover:border-primary/30 transition-all">
                   <div className="flex items-start justify-between mb-4">
@@ -364,7 +364,7 @@ export default function UserDashboard() {
                   }).slice(0, 5).map((task: any) => (
                     <div key={task.id} className="glass-panel p-5 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all border border-white/5 group">
                       <div className="flex items-center gap-4">
-                        <div className={`w-1 h-10 rounded-full ${task.status === 'completed' ? 'bg-emerald-400' : task.status === 'blocked' ? 'bg-red-400' : task.status === 'in_progress' ? 'bg-yellow-400' : 'bg-primary'}`} />
+                        <div className={`w-1 h-10 rounded-full ${task.status === 'completed' ? 'bg-success' : task.status === 'blocked' ? 'bg-danger' : task.status === 'in_progress' ? 'bg-warning' : 'bg-primary'}`} />
                         <div>
                           <h4 className="font-bold text-sm group-hover:text-primary transition-colors">{task.title}</h4>
                           <div className="flex items-center gap-2 mt-1">
@@ -376,11 +376,11 @@ export default function UserDashboard() {
                       </div>
                       <div className="flex items-center gap-3">
                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md border ${
-                           task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                           task.status === 'blocked' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
-                           task.status === 'in_progress' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 
-                           'bg-primary/10 text-primary border-primary/20'
-                         }`}>{task.status}</span>
+ task.status === 'completed' ? 'bg-success/10 text-success border-success/20' : 
+ task.status === 'blocked' ? 'bg-danger/10 text-danger border-danger/20' : 
+ task.status === 'in_progress' ? 'bg-warning/10 text-warning border-warning/20' : 
+ 'bg-primary/10 text-primary border-primary/20'
+ }`}>{task.status}</span>
                       </div>
                     </div>
                   ))}
@@ -406,7 +406,7 @@ export default function UserDashboard() {
                     <div className="flex flex-col gap-4">
                       {attendanceToday ? (
                         <>
-                          <div className="flex items-center gap-3 bg-black/20 p-3 rounded-2xl border border-white/5">
+                          <div className="flex items-center gap-3 bg-surfaceAlt p-3 rounded-2xl border border-white/5">
                             <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary border border-primary/30">
                               <Clock className="w-5 h-5" />
                             </div>
@@ -422,8 +422,8 @@ export default function UserDashboard() {
                               <p className="text-2xl font-black text-white font-mono">{elapsedTime}</p>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-3 bg-black/20 p-3 rounded-2xl border border-white/5">
-                              <div className="w-10 h-10 rounded-xl bg-yellow-400/20 flex items-center justify-center text-yellow-400 border border-yellow-400/30">
+                            <div className="flex items-center gap-3 bg-surfaceAlt p-3 rounded-2xl border border-white/5">
+                              <div className="w-10 h-10 rounded-xl bg-warning/20 flex items-center justify-center text-warning border border-warning/30">
                                 <CheckCircle2 className="w-5 h-5" />
                               </div>
                               <div>
@@ -453,14 +453,14 @@ export default function UserDashboard() {
                       ) : (
                         <div className="text-center py-4">
                           <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
-                            <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />
+                            <div className="w-3 h-3 rounded-full bg-warning animate-pulse" />
                           </div>
                           <p className="text-sm font-bold text-white mb-1">Not Clocked In</p>
                           <p className="text-xs text-textSecondary mb-4">Start your workday to track time.</p>
                           <button
                             onClick={handleCheckIn}
                             disabled={attendanceLoading}
-                            className="w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-sm transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+                            className="w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-surface font-bold text-sm transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
                           >
                             {attendanceLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : 'Check In Now'}
                           </button>
@@ -585,7 +585,7 @@ export default function UserDashboard() {
                 </div>
                 <button 
                   onClick={() => window.location.href = `/crm?id=${cm.committeeId}`}
-                  className="w-full py-3 bg-white/5 hover:bg-primary hover:text-white rounded-2xl text-sm font-bold transition-all"
+                  className="w-full py-3 bg-white/5 hover:bg-primary hover:text-surface rounded-2xl text-sm font-bold transition-all"
                 >
                   Access Portal
                 </button>
@@ -632,7 +632,7 @@ export default function UserDashboard() {
                   setNewNote({ title: '', content: '' });
                   setShowNoteForm(true);
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+                className="flex items-center gap-2 px-6 py-3 bg-primary text-surface font-bold rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
               >
                 <Plus className="w-5 h-5" /> New Note
               </button>
@@ -644,8 +644,8 @@ export default function UserDashboard() {
                   <div className="flex items-start justify-between mb-4">
                     <h4 className="font-bold text-lg truncate flex-1 mr-2">{note.title}</h4>
                     <div className="flex items-center gap-2">
-                      <Star className={`w-4 h-4 ${note.pinned ? 'text-amber-400 fill-amber-400' : 'text-textSecondary'}`} />
-                      <button onClick={() => handleDeleteNote(note.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-all">
+                      <Star className={`w-4 h-4 ${note.pinned ? 'text-warning fill-warning' : 'text-textSecondary'}`} />
+                      <button onClick={() => handleDeleteNote(note.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-danger transition-all">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -685,7 +685,7 @@ export default function UserDashboard() {
 
             {/* View Note Modal */}
             {viewingNote && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
                 <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95">
                   <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
                     <div>
@@ -722,7 +722,7 @@ export default function UserDashboard() {
 
             {/* Note Form Modal (Create/Edit) */}
             {showNoteForm && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
                 <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95">
                   <div className="p-6 border-b border-white/10 flex items-center justify-between">
                     <h3 className="font-bold">{editingNote ? 'Edit Note' : 'Create New Note'}</h3>
@@ -734,18 +734,18 @@ export default function UserDashboard() {
                       placeholder="Note Title"
                       value={newNote.title}
                       onChange={e => setNewNote({ ...newNote, title: e.target.value })}
-                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
+                      className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
                     />
                     <textarea
                       placeholder="Content (Markdown supported)..."
                       rows={10}
                       value={newNote.content}
                       onChange={e => setNewNote({ ...newNote, content: e.target.value })}
-                      className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none font-mono"
+                      className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none font-mono"
                     />
                     <div className="flex justify-end gap-3 pt-2">
                       <button type="button" onClick={() => { setShowNoteForm(false); setEditingNote(null); }} className="px-6 py-2 text-sm font-bold text-textSecondary">Cancel</button>
-                      <button type="submit" className="px-6 py-2 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-all">
+                      <button type="submit" className="px-6 py-2 bg-primary text-surface font-bold rounded-xl hover:bg-primary/90 transition-all">
                         {editingNote ? 'Save Changes' : 'Create Note'}
                       </button>
                     </div>
@@ -758,7 +758,7 @@ export default function UserDashboard() {
       </main>
 
       {showSyncModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
           <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
               <div>
@@ -781,7 +781,7 @@ export default function UserDashboard() {
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-textSecondary ml-1">Your Unique Feed URL</label>
                   <div className="flex gap-2">
-                    <div className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-xs font-mono text-primary truncate">
+                    <div className="flex-1 bg-surfaceAlt border border-white/10 rounded-2xl px-4 py-3 text-xs font-mono text-primary truncate">
                       {`${window.location.protocol}//${window.location.host}/api/public/calendar/feed/${calToken}.ics`}
                     </div>
                     <button 
@@ -791,7 +791,7 @@ export default function UserDashboard() {
                         setCopied(true);
                         setTimeout(() => setCopied(false), 2000);
                       }}
-                      className="p-3 bg-primary text-white rounded-2xl hover:bg-primary/90 transition-all flex items-center justify-center min-w-[50px]"
+                      className="p-3 bg-primary text-surface rounded-2xl hover:bg-primary/90 transition-all flex items-center justify-center min-w-[50px]"
                     >
                     {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                   </button>
@@ -800,7 +800,7 @@ export default function UserDashboard() {
 
               <button 
                 onClick={resetCalToken}
-                className="w-full py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-textSecondary hover:text-red-400 transition-colors"
+                className="w-full py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-textSecondary hover:text-danger transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Reset Token
               </button>

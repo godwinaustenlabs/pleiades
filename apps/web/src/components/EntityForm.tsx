@@ -54,7 +54,7 @@ function StagesEditor({ value, onChange }: { value: any, onChange: (val: string)
   };
 
   return (
-    <div className="space-y-3 p-4 bg-black/20 rounded-2xl border border-white/5">
+    <div className="space-y-3 p-4 bg-surfaceAlt rounded-2xl border border-white/5">
       {stages.map((stage, i) => (
         <div key={i} className="flex items-center gap-3 bg-surface/50 p-2.5 rounded-xl border border-white/10 group transition-all hover:border-primary/50">
           <GripVertical className="w-4 h-4 text-white/20 cursor-move" />
@@ -72,7 +72,7 @@ function StagesEditor({ value, onChange }: { value: any, onChange: (val: string)
               type="number" 
               value={stage.value || ''} 
               onChange={e => updateStage(i, 'value', e.target.value ? Number(e.target.value) : undefined)} 
-              className="w-1/2 bg-transparent border-none text-sm text-emerald-400 font-bold focus:outline-none placeholder:text-emerald-400/20" 
+              className="w-1/2 bg-transparent border-none text-sm text-success font-bold focus:outline-none placeholder:text-success/20" 
               placeholder="KPI Value (optional)" 
             />
           </div>
@@ -80,7 +80,7 @@ function StagesEditor({ value, onChange }: { value: any, onChange: (val: string)
           <button 
             type="button"
             onClick={() => removeStage(i)} 
-            className="p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 rounded-lg transition-all"
+            className="p-2 opacity-0 group-hover:opacity-100 hover:bg-danger/20 text-danger rounded-lg transition-all"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -200,8 +200,8 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md md:p-4" onClick={onClose}>
-      <div className="glass-panel w-full h-full md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl overflow-hidden shadow-2xl border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim md:p-4" onClick={onClose}>
+      <div className="modal-panel w-full h-full md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl overflow-hidden shadow-2xl border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 md:p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-lg md:text-xl font-bold text-white">{title}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
@@ -211,7 +211,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
 
         <form onSubmit={handleSubmit} className="flex-1 p-5 md:p-6 overflow-y-auto space-y-5 custom-scrollbar min-h-0">
           {error && (
-            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-sm text-danger">
               {error}
             </div>
           )}
@@ -256,7 +256,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     {formData[field.key] ? (
                       <div className="space-y-2">
                         {formData[field.key].match(/\.(jpg|jpeg|png|gif|webp)$|^data:image/i) && (
-                          <div className="w-full aspect-video rounded-xl overflow-hidden border border-white/10 bg-black/20">
+                          <div className="w-full aspect-video rounded-xl overflow-hidden border border-white/10 bg-surfaceAlt">
                             <img 
                               src={formData[field.key].startsWith('/api/') ? `${formData[field.key]}?token=${authToken()}` : formData[field.key]} 
                               alt="Preview" 
@@ -272,7 +272,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                           <button 
                             type="button" 
                             onClick={() => setFormData({ ...formData, [field.key]: null })}
-                            className="p-1.5 hover:bg-red-400/20 text-red-400 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-danger/20 text-danger rounded-lg transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -334,7 +334,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
           <button
             onClick={handleSubmit}
             disabled={loading || externalLoading || !!uploading}
-            className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+            className="flex-1 py-3 rounded-xl bg-primary text-surface text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
           >
             {loading || externalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Save Record</>}
           </button>

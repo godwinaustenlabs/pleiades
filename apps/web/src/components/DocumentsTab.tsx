@@ -160,7 +160,7 @@ export default function DocumentsTab({
 				{canEdit && (
 					<button
 						onClick={() => setShowWizard(true)}
-						className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+						className="flex items-center gap-2 px-6 py-3 bg-primary text-surface rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
 					>
 						<Plus className="w-4 h-4" /> Upload Document
 					</button>
@@ -168,7 +168,7 @@ export default function DocumentsTab({
 			</div>
 
 			{error && (
-				<div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-bold flex items-center justify-between">
+				<div className="p-4 rounded-2xl bg-danger/10 border border-danger/20 text-danger text-sm font-bold flex items-center justify-between">
 					<span>{error}</span>
 					<button onClick={() => setError(null)} className="text-xs underline hover:no-underline">Dismiss</button>
 				</div>
@@ -198,7 +198,7 @@ export default function DocumentsTab({
 							{canDelete && (
 								<button
 									onClick={() => handleDelete(doc.id)}
-									className="p-2 bg-white/5 text-textSecondary rounded-xl hover:bg-red-500/20 hover:text-red-400 transition-all"
+									className="p-2 bg-white/5 text-textSecondary rounded-xl hover:bg-danger/20 hover:text-danger transition-all"
 								>
 									<Trash2 className="w-4 h-4" />
 								</button>
@@ -217,7 +217,7 @@ export default function DocumentsTab({
 			</div>
 
 			{showWizard && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in duration-200">
 					<div className="w-full max-w-lg bg-surface border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
 						<h3 className="text-xl font-bold text-white mb-6">Upload Document</h3>
 						<form onSubmit={handleUpload} className="space-y-6">
@@ -263,7 +263,7 @@ export default function DocumentsTab({
 								<button
 									type="submit"
 									disabled={uploading}
-									className="flex-1 py-3 px-4 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+									className="flex-1 py-3 px-4 bg-primary text-surface font-bold rounded-xl hover:bg-primary/90 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50"
 								>
 									{uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</> : 'Upload'}
 								</button>

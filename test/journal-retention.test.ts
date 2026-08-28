@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env } from 'cloudflare:test';
 import { resetDatabase } from './helpers';
-import { pruneJournalVectors } from '../src/agents/pleiades-accountant/journal';
+import { pruneJournalVectors } from '../src/agents/accountant/journal';
 
 /**
  * A year of semantic history, and a permanent dated record.

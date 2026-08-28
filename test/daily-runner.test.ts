@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { env } from 'cloudflare:test';
 import { resetDatabase } from './helpers';
-import { promptFor, runDailyCheck } from '../src/agents/pleiades-accountant/daily-runner';
+import { promptFor, runDailyCheck } from '../src/agents/accountant/daily-runner';
 
 /**
  * The scheduled check.

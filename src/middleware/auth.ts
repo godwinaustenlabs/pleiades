@@ -2,8 +2,8 @@ import { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { verify } from 'hono/jwt';
 import { eq, and } from 'drizzle-orm';
-import { getDb } from '@ganova/database';
-import { schema } from '@ganova/database';
+import { getDb } from '@pleiades/database';
+import { schema } from '@pleiades/database';
 import { Env } from '../index';
 
 export type UserPayload = {
@@ -82,7 +82,7 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
   const actorId = c.req.header('x-agent-actor');
   if (actorId) {
     const presented = c.req.header('x-agent-secret') || '';
-    const expected = c.env.AGENT_INTERNAL_SECRET || '';
+    const expected = c.env.AGENT_INTERNAL_SECRET;
 
     // Present-but-invalid always denies. It must never fall through to another
     // identity source, or a bad secret would silently downgrade to anonymous.

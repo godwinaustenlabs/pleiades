@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, or, and } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
 import { generateId } from '../utils/id';

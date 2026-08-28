@@ -159,180 +159,180 @@ export default function HRReports(_props: HRReportsProps) {
 
     if (report.id === 'emp_dir') {
       tableHeaders = `
-        <th>ID</th>
-        <th>Name</th>
-        <th>Department</th>
-        <th>Designation</th>
-        <th>Status</th>
-        <th>Joining Date</th>
-      `;
+ <th>ID</th>
+ <th>Name</th>
+ <th>Department</th>
+ <th>Designation</th>
+ <th>Status</th>
+ <th>Joining Date</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td>${r.id.substring(0, 8)}...</td>
-          <td><strong>${r.name}</strong></td>
-          <td>${r.department || '—'}</td>
-          <td>${r.designation || '—'}</td>
-          <td><span class="badge ${r.employmentStatus}">${r.employmentStatus}</span></td>
-          <td>${r.hireDate || '—'}</td>
-        </tr>
-      `).join('');
+ <tr>
+ <td>${r.id.substring(0, 8)}...</td>
+ <td><strong>${r.name}</strong></td>
+ <td>${r.department || '—'}</td>
+ <td>${r.designation || '—'}</td>
+ <td><span class="badge ${r.employmentStatus}">${r.employmentStatus}</span></td>
+ <td>${r.hireDate || '—'}</td>
+ </tr>
+ `).join('');
     } else if (report.id === 'att_rep') {
       tableHeaders = `
-        <th>Employee</th>
-        <th>Date</th>
-        <th>Check In</th>
-        <th>Check Out</th>
-        <th>Status</th>
-        <th>Hours</th>
-      `;
+ <th>Employee</th>
+ <th>Date</th>
+ <th>Check In</th>
+ <th>Check Out</th>
+ <th>Status</th>
+ <th>Hours</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td><strong>${getEmpName(r.employeeId)}</strong></td>
-          <td>${r.date}</td>
-          <td>${r.checkIn || '—'}</td>
-          <td>${r.checkOut || '—'}</td>
-          <td><span class="badge ${r.status?.toLowerCase()}">${r.status || '—'}</span></td>
-          <td class="mono">${r.totalHours ? r.totalHours.toFixed(1) : '0.0'}</td>
-        </tr>
-      `).join('');
+ <tr>
+ <td><strong>${getEmpName(r.employeeId)}</strong></td>
+ <td>${r.date}</td>
+ <td>${r.checkIn || '—'}</td>
+ <td>${r.checkOut || '—'}</td>
+ <td><span class="badge ${r.status?.toLowerCase()}">${r.status || '—'}</span></td>
+ <td class="mono">${r.totalHours ? r.totalHours.toFixed(1) : '0.0'}</td>
+ </tr>
+ `).join('');
     } else if (report.id === 'leave_rep') {
       tableHeaders = `
-        <th>Employee</th>
-        <th>Leave Type</th>
-        <th>Start Date</th>
-        <th>End Date</th>
-        <th>Status</th>
-      `;
+ <th>Employee</th>
+ <th>Leave Type</th>
+ <th>Start Date</th>
+ <th>End Date</th>
+ <th>Status</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td><strong>${getEmpName(r.employeeId)}</strong></td>
-          <td>${r.leaveType}</td>
-          <td>${r.startDate}</td>
-          <td>${r.endDate}</td>
-          <td><span class="badge ${r.status?.toLowerCase()}">${r.status}</span></td>
-        </tr>
-      `).join('');
+ <tr>
+ <td><strong>${getEmpName(r.employeeId)}</strong></td>
+ <td>${r.leaveType}</td>
+ <td>${r.startDate}</td>
+ <td>${r.endDate}</td>
+ <td><span class="badge ${r.status?.toLowerCase()}">${r.status}</span></td>
+ </tr>
+ `).join('');
     } else if (report.id === 'pay_sum') {
       tableHeaders = `
-        <th>Employee</th>
-        <th>Month</th>
-        <th>Gross</th>
-        <th>Withholding Tax</th>
-        <th>Other Deductions</th>
-        <th>Net Pay</th>
-      `;
+ <th>Employee</th>
+ <th>Month</th>
+ <th>Gross</th>
+ <th>Withholding Tax</th>
+ <th>Other Deductions</th>
+ <th>Net Pay</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td><strong>${getEmpName(r.employeeId)}</strong></td>
-          <td>${r.payrollMonth}</td>
-          <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
-          <td class="mono text-red">$${r.withholdingTax?.toLocaleString()}</td>
-          <td class="mono text-red">$${r.otherDeductions?.toLocaleString()}</td>
-          <td class="mono font-bold">$${r.netPay?.toLocaleString()}</td>
-        </tr>
-      `).join('');
+ <tr>
+ <td><strong>${getEmpName(r.employeeId)}</strong></td>
+ <td>${r.payrollMonth}</td>
+ <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
+ <td class="mono text-red">$${r.withholdingTax?.toLocaleString()}</td>
+ <td class="mono text-red">$${r.otherDeductions?.toLocaleString()}</td>
+ <td class="mono font-bold">$${r.netPay?.toLocaleString()}</td>
+ </tr>
+ `).join('');
     } else if (report.id === 'tax_rep') {
       tableHeaders = `
-        <th>Employee</th>
-        <th>Month</th>
-        <th>Gross Salary</th>
-        <th>Withholding Tax</th>
-      `;
+ <th>Employee</th>
+ <th>Month</th>
+ <th>Gross Salary</th>
+ <th>Withholding Tax</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td><strong>${getEmpName(r.employeeId)}</strong></td>
-          <td>${r.payrollMonth}</td>
-          <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
-          <td class="mono font-bold text-red">$${r.withholdingTax?.toLocaleString()}</td>
-        </tr>
-      `).join('');
+ <tr>
+ <td><strong>${getEmpName(r.employeeId)}</strong></td>
+ <td>${r.payrollMonth}</td>
+ <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
+ <td class="mono font-bold text-red">$${r.withholdingTax?.toLocaleString()}</td>
+ </tr>
+ `).join('');
     } else if (report.id === 'asset_reg') {
       tableHeaders = `
-        <th>Asset Name</th>
-        <th>Type</th>
-        <th>Assigned To</th>
-        <th>Condition</th>
-        <th>Status</th>
-      `;
+ <th>Asset Name</th>
+ <th>Type</th>
+ <th>Assigned To</th>
+ <th>Condition</th>
+ <th>Status</th>
+ `;
       tableRows = data.map(r => `
-        <tr>
-          <td><strong>${r.assetName}</strong></td>
-          <td>${r.assetType}</td>
-          <td>${getEmpName(r.assignedTo)}</td>
-          <td>${r.condition || '—'}</td>
-          <td><span class="badge ${r.status?.toLowerCase()}">${r.status}</span></td>
-        </tr>
-      `).join('');
+ <tr>
+ <td><strong>${r.assetName}</strong></td>
+ <td>${r.assetType}</td>
+ <td>${getEmpName(r.assignedTo)}</td>
+ <td>${r.condition || '—'}</td>
+ <td><span class="badge ${r.status?.toLowerCase()}">${r.status}</span></td>
+ </tr>
+ `).join('');
     }
 
     printWindow.document.write(`
-      <html>
-        <head>
-          <title>${report.name} — Godwin Austen Labs</title>
-          <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, system-ui, sans-serif; padding: 40px; color: #111; background: #fff; }
-            .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 20px; margin-bottom: 24px; }
-            .company { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
-            .title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #555; margin-top: 4px; }
-            .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
-            .meta-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: #888; letter-spacing: 1px; }
-            .meta-val { font-size: 12px; font-weight: 700; margin-top: 3px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { text-align: left; background: #111; color: #fff; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; padding: 10px 12px; }
-            td { font-size: 12px; padding: 10px 12px; border-bottom: 1px solid #eee; }
-            .mono { font-family: monospace; font-size: 12px; }
-            .font-bold { font-weight: 700; }
-            .text-red { color: #dc2626; }
-            .badge { display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-            .badge.active, .badge.present, .badge.approved { background: #dcfce7; color: #15803d; }
-            .badge.pending, .badge.late { background: #fef9c3; color: #a16207; }
-            .badge.inactive, .badge.absent, .badge.rejected { background: #fee2e2; color: #b91c1c; }
-            .footer { margin-top: 50px; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 15px; text-align: right; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <p class="company">Godwin Austen Labs</p>
-              <p class="title">${report.name}</p>
-            </div>
-            <div style="text-align: right;">
-              <p style="font-size: 11px; font-weight: 600;">Report Type: PDF Document</p>
-              <p style="font-size: 10px; color: #666; margin-top: 4px;">Generated: ${new Date().toLocaleDateString()}</p>
-            </div>
-          </div>
-          
-          <div class="meta">
-            <div>
-              <p class="meta-label">Selected Employee</p>
-              <p class="meta-val">${getEmpName(employeeId)}</p>
-            </div>
-            <div>
-              <p class="meta-label">Period Start</p>
-              <p class="meta-val">${startDate}</p>
-            </div>
-            <div>
-              <p class="meta-label">Period End</p>
-              <p class="meta-val">${endDate}</p>
-            </div>
-          </div>
+ <html>
+ <head>
+ <title>${report.name} — Godwin Austen Labs</title>
+ <style>
+ * { box-sizing: border-box; margin: 0; padding: 0; }
+ body { font-family: -apple-system, system-ui, sans-serif; padding: 40px; color: #111; background: #fff; }
+ .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 20px; margin-bottom: 24px; }
+ .company { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
+ .title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #555; margin-top: 4px; }
+ .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
+ .meta-label { font-size: 8px; font-weight: 800; text-transform: uppercase; color: #888; letter-spacing: 1px; }
+ .meta-val { font-size: 12px; font-weight: 700; margin-top: 3px; }
+ table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+ th { text-align: left; background: #111; color: #fff; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; padding: 10px 12px; }
+ td { font-size: 12px; padding: 10px 12px; border-bottom: 1px solid #eee; }
+ .mono { font-family: monospace; font-size: 12px; }
+ .font-bold { font-weight: 700; }
+ .text-red { color: #dc2626; }
+ .badge { display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+ .badge.active, .badge.present, .badge.approved { background: #dcfce7; color: #15803d; }
+ .badge.pending, .badge.late { background: #fef9c3; color: #a16207; }
+ .badge.inactive, .badge.absent, .badge.rejected { background: #fee2e2; color: #b91c1c; }
+ .footer { margin-top: 50px; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 15px; text-align: right; }
+ </style>
+ </head>
+ <body>
+ <div class="header">
+ <div>
+ <p class="company">Godwin Austen Labs</p>
+ <p class="title">${report.name}</p>
+ </div>
+ <div style="text-align: right;">
+ <p style="font-size: 11px; font-weight: 600;">Report Type: PDF Document</p>
+ <p style="font-size: 10px; color: #666; margin-top: 4px;">Generated: ${new Date().toLocaleDateString()}</p>
+ </div>
+ </div>
+ 
+ <div class="meta">
+ <div>
+ <p class="meta-label">Selected Employee</p>
+ <p class="meta-val">${getEmpName(employeeId)}</p>
+ </div>
+ <div>
+ <p class="meta-label">Period Start</p>
+ <p class="meta-val">${startDate}</p>
+ </div>
+ <div>
+ <p class="meta-label">Period End</p>
+ <p class="meta-val">${endDate}</p>
+ </div>
+ </div>
 
-          <table>
-            <thead>
-              <tr>${tableHeaders}</tr>
-            </thead>
-            <tbody>
-              ${data.length === 0 ? `<tr><td colspan="10" style="text-align: center; color: #888; padding: 30px;">No records match the specified filters.</td></tr>` : tableRows}
-            </tbody>
-          </table>
+ <table>
+ <thead>
+ <tr>${tableHeaders}</tr>
+ </thead>
+ <tbody>
+ ${data.length === 0 ? `<tr><td colspan="10" style="text-align: center; color: #888; padding: 30px;">No records match the specified filters.</td></tr>` : tableRows}
+ </tbody>
+ </table>
 
-          <div class="footer">
-            <p>This is a system-generated corporate report · GAnovaOS Human Resources Platform</p>
-          </div>
-        </body>
-      </html>
-    `);
+ <div class="footer">
+ <p>This is a system-generated corporate report · GAnovaOS Human Resources Platform</p>
+ </div>
+ </body>
+ </html>
+ `);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -356,7 +356,7 @@ export default function HRReports(_props: HRReportsProps) {
             
             <button
               onClick={() => setSelectedReport(report)}
-              className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+              className="w-full py-2.5 rounded-xl bg-primary text-surface text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
             >
               <FileText className="w-4 h-4" /> Configure & Export
             </button>
@@ -366,8 +366,8 @@ export default function HRReports(_props: HRReportsProps) {
 
       {/* PARAMETERS WIZARD MODAL */}
       {selectedReport && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={() => setSelectedReport(null)}>
-          <div className="glass-panel rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center scrim p-4" onClick={() => setSelectedReport(null)}>
+          <div className="modal-panel rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
               <div>
@@ -417,14 +417,14 @@ export default function HRReports(_props: HRReportsProps) {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-xl">
+                <div className="p-3 bg-danger/10 border border-danger/20 text-danger text-xs font-bold rounded-xl">
                   {error}
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="p-6 border-t border-white/10 bg-black/20 flex gap-3">
+            <div className="p-6 border-t border-white/10 bg-surfaceAlt flex gap-3">
               <button
                 onClick={() => setSelectedReport(null)}
                 className="flex-1 py-3 rounded-xl border border-white/10 text-sm font-bold text-textSecondary hover:bg-white/5 transition-all"
@@ -434,7 +434,7 @@ export default function HRReports(_props: HRReportsProps) {
               <button
                 onClick={handleGenerateReport}
                 disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                className="flex-1 py-3 rounded-xl bg-primary text-surface text-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Querying...</>

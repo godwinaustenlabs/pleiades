@@ -1,0 +1,308 @@
+/api/acquisition/activity
+    200 ok data=array<empty>
+/api/acquisition/activity/:id
+    404 err="Record not found"
+/api/acquisition/campaigns
+    200 ok data=array<empty>
+/api/acquisition/campaigns/:id
+    404 err="Record not found"
+/api/acquisition/contacts
+    200 ok data=array<empty>
+/api/acquisition/contacts/:id
+    404 err="Record not found"
+/api/acquisition/content
+    200 ok data=array<empty>
+/api/acquisition/content/:id
+    404 err="Record not found"
+/api/acquisition/deal-pipelines
+    200 ok data=array<empty>
+/api/acquisition/deal-stages
+    200 ok data=array<empty>
+/api/acquisition/deals
+    200 ok data=array<empty>
+/api/acquisition/funnels
+    200 ok data=array<empty>
+/api/acquisition/funnels/:id
+    404 err="Record not found"
+/api/acquisition/outreach
+    200 ok data=array<empty>
+/api/acquisition/outreach/:id
+    404 err="Record not found"
+/api/acquisition/sprints
+    200 ok data=array<empty>
+/api/acquisition/sprints/:id
+    404 err="Record not found"
+/api/acquisition/tasks
+    200 ok data=array<empty>
+/api/acquisition/tasks/:id
+    404 err="Record not found"
+/api/acquisition/users
+    200 ok data=array<{email,id,name}>
+/api/admin/api-keys
+    200 ok data=array<empty>
+/api/admin/audit-logs
+    200 ok data=array<empty>
+/api/admin/pending-resets
+    200 ok data=array<empty>
+/api/admin/permissions
+    200 ok data=array<empty>
+/api/admin/users
+    200 ok data=array<{createdAt,createdByUserId,email,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,ownership,passwordUpdatedAt,permissions,phone,username}>
+/api/admin/users/:id
+    404 err="Record not found"
+/api/admin/users/:id/permissions
+    200 ok data=array<empty>
+/api/admin/users/my-team
+    404 err="Record not found"
+/api/auth/profile
+    200 ok data={createdAt,createdByUserId,email,employee,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,passwordUpdatedAt,phone,profilePhoto,username}
+/api/auth/whoami
+    200 ok data={employeeId,id,isSuperadmin,name,title,type,username}
+/api/core/clients
+    200 ok data=array<empty>
+/api/core/clients/:id
+    404 err="Record not found"
+/api/core/clients/:id/portal-status
+    200 ok data={hasLogin}
+/api/core/committees
+    200 ok data=array<empty>
+/api/core/committees/:id
+    404 err="Record not found"
+/api/core/committees/:id/members
+    200 ok data=array<empty>
+/api/core/docs
+    200 ok data=array<empty>
+/api/core/docs/:id
+    404 err="Record not found"
+/api/core/employee-lab/:employeeId
+    200 ok data=array<empty>
+/api/core/employees
+    200 ok data=array<{address,assignedOffice,bankDetails,baseSalary,cnic,confirmationDate,contactInfo,contractEndDate,contractStartDate,createdAt,department,designation,dob,efficiencyScore,email,emergencyContact,employmentStatus,employmentType,gender,hireDate,id,name,notes,phone,profilePhoto,reportingManagerId,role,sectorId,slackId,taxInformation,updatedAt}>
+/api/core/employees/:id
+    404 err="Record not found"
+/api/core/labs
+    200 ok data=array<empty>
+/api/core/labs/:id
+    404 err="Record not found"
+/api/core/monthly-reports
+    200 ok data=array<empty>
+/api/core/monthly-reports/:id
+    404 err="Record not found"
+/api/crm/committees/:id/documents
+    200 ok data=array<empty>
+/api/crm/committees/:id/planner
+    200 ok data=array<empty>
+/api/crm/committees/:id/tickets
+    200 ok data=array<empty>
+/api/crm/my-committees
+    200 ok data=array<empty>
+/api/crm/tickets/:id
+    404 err="Record not found"
+/api/crm/tickets/:id/notes
+    200 ok data=array<empty>
+/api/dashboard/attendance/today
+    200 ok data=null
+/api/dashboard/calendar/token
+    200 ok data={token}
+/api/dashboard/me
+    200 ok data={appointments,calendarToken,committees,employee,preferences,stats,tasks,user}
+/api/dashboard/notes
+    200 ok data=array<empty>
+/api/dashboard/preferences
+    200 ok data={}
+/api/finance/accounts
+    200 ok data=array<empty>
+/api/finance/accounts/:id
+    404 err="Record not found"
+/api/finance/agent/approvals
+    200 ok data=array<empty>
+/api/finance/agent/config
+    200 ok data={groups,missingRequired,total}
+/api/finance/agent/config/preview
+    200 ok data={prompt}
+/api/finance/agent/journal
+    200 ok data={entries,mode}
+/api/finance/agent/knowledge
+    200 ok data={bucketConfigured,documents,unindexed,vectorizeConfigured}
+/api/finance/agent/knowledge/search
+    400 err="q is required"
+/api/finance/assets
+    200 ok data={asOf,assets,totals}
+/api/finance/assets/:id
+    404 err="Record not found"
+/api/finance/assets/classes
+    200 ok data=array<{defaultLifeMonths,key}>
+/api/finance/assets/depreciation
+    200 ok data={lines,period,postable,total}
+/api/finance/documents
+    200 ok data=array<{createdAt,department,documentType,id,title,uploadedBy,url}>
+/api/finance/export/journals
+    200 text/csv
+/api/finance/export/ledgers
+    200 text/csv
+/api/finance/fund-requests
+    200 ok data=array<empty>
+/api/finance/fund-requests/:id
+    404 err="Record not found"
+/api/finance/invoices
+    200 ok data=array<empty>
+/api/finance/invoices/:id
+    404 err="Record not found"
+/api/finance/journals
+    200 ok data=array<empty>
+/api/finance/journals/:id
+    404 err="Record not found"
+/api/finance/ledger-view
+    400 raw={error}
+/api/finance/ledgers
+    200 ok data=array<empty>
+/api/finance/ledgers/:id
+    404 err="Record not found"
+/api/finance/pl-reports
+    200 ok data=array<empty>
+/api/finance/pl-reports/:id
+    404 err="Record not found"
+/api/finance/statements
+    200 ok data={missing,statements}
+/api/finance/transactions
+    200 ok data=array<empty>
+/api/finance/transactions/:id
+    404 err="Record not found"
+/api/finance/trial-balance
+    200 ok data={balances,isBalanced,totalCredit,totalDebit}
+/api/health
+    200 raw={endpoints,service,status,timestamp,version}
+/api/hr/appointments
+    200 ok data=array<empty>
+/api/hr/appointments/:id
+    404 err="Record not found"
+/api/hr/assets
+    200 ok data=array<empty>
+/api/hr/attendance
+    200 ok data=array<empty>
+/api/hr/company-documents
+    200 ok data=array<{createdAt,department,documentType,id,title,uploadedBy,url}>
+/api/hr/documents
+    200 ok data=array<empty>
+/api/hr/employees/:id/permissions
+    200 ok data=array<empty>
+/api/hr/leave-balances
+    200 ok data=array<empty>
+/api/hr/leave-requests
+    200 ok data=array<empty>
+/api/hr/legal-tracker
+    200 ok data=array<empty>
+/api/hr/legal-tracker/:id
+    404 err="Record not found"
+/api/hr/loans
+    200 ok data=array<empty>
+/api/hr/payroll
+    200 ok data=array<empty>
+/api/hr/payroll/:id
+    404 err="Record not found"
+/api/hr/performance
+    200 ok data=array<empty>
+/api/hr/salary-structures
+    200 ok data=array<empty>
+/api/hr/salary-structures/:employeeId/active
+    200 ok data=null
+/api/hr/salary-structures/:employeeId/calculate
+    404 err="Record not found"
+/api/hr/sectors
+    200 ok data=array<empty>
+/api/hr/sectors/:id
+    404 err="Record not found"
+/api/legal/agreements
+    200 ok data=array<empty>
+/api/legal/agreements/:id
+    404 err="Record not found"
+/api/legal/agreements/:id/parties
+    200 ok data=array<empty>
+/api/legal/compliance
+    200 ok data=array<empty>
+/api/legal/compliance/:id
+    404 err="Record not found"
+/api/legal/ip
+    200 ok data=array<empty>
+/api/legal/ip/:id
+    404 err="Record not found"
+/api/legal/parties
+    200 ok data=array<empty>
+/api/legal/parties/:id
+    404 err="Record not found"
+/api/legal/requests
+    200 ok data=array<empty>
+/api/legal/requests/:id
+    404 err="Record not found"
+/api/legal/sops
+    200 ok data=array<empty>
+/api/legal/sops/:id
+    404 err="Record not found"
+/api/legal/templates
+    200 ok data=array<empty>
+/api/legal/templates/:id
+    404 err="Record not found"
+/api/messages
+    200 ok data=array<empty>
+/api/notifications
+    200 ok data=array<empty>
+/api/ops/committees
+    200 ok data=array<empty>
+/api/ops/docs
+    200 ok data=array<empty>
+/api/ops/labs
+    200 ok data=array<empty>
+/api/ops/reports
+    200 ok data=array<empty>
+/api/permissions/app-features
+    200 ok data={acquisition,admin,core,crm,dashboard,finance,hr,legal,ops,tech}
+/api/permissions/me
+    200 ok data=array<{appName,canDelete,canEdit,canView,feature}>
+/api/permissions/user/:userId
+    200 ok data=array<{appName,canDelete,canEdit,canView,feature}>
+/api/portal/committees
+    401 raw={error}
+/api/portal/tickets
+    401 raw={error}
+/api/portal/tickets/:id
+    401 raw={error}
+/api/portal/whoami
+    401 raw={error}
+/api/public/calendar/feed/:token
+    404 text/plain
+/api/tasks
+    200 ok data=array<{appointmentId,assignments,boardPosition,committeeId,completedAt,createdAt,creatorId,department,description,dueDate,estimatedHours,id,priority,relatedEntityId,relatedEntityType,startDate,status,taskType,title,updatedAt}>
+/api/tasks/:id/attachments
+    200 ok data=array<empty>
+/api/tech/deployments
+    200 ok data=array<empty>
+/api/tech/deployments/:id
+    404 err="Record not found"
+/api/tech/environments
+    200 ok data=array<empty>
+/api/tech/environments/:id
+    404 err="Record not found"
+/api/tech/epics
+    200 ok data=array<empty>
+/api/tech/epics/:id
+    404 err="Record not found"
+/api/tech/issues
+    200 ok data=array<empty>
+/api/tech/issues/:id
+    404 err="Record not found"
+/api/tech/projects
+    200 ok data=array<empty>
+/api/tech/projects/:id
+    404 err="Record not found"
+/api/tech/releases
+    200 ok data=array<empty>
+/api/tech/releases/:id
+    404 err="Record not found"
+/api/tech/stories
+    200 ok data=array<empty>
+/api/tech/stories/:id
+    404 err="Record not found"
+/api/tech/tasks
+    500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"
+/api/tech/tasks/:id
+    500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"

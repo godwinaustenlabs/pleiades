@@ -166,7 +166,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
           <select 
             value={selectedPipelineId || ''} 
             onChange={(e) => setSelectedPipelineId(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold text-white focus:outline-none focus:border-rose-400 min-w-[200px]"
+            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold text-white focus:outline-none focus:border-module min-w-[200px]"
           >
             {pipelines.length === 0 && <option value="">No Pipelines</option>}
             {pipelines.map(p => (
@@ -185,7 +185,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
             </button>
           )}
           {canDelete && selectedPipelineId && (
-            <button onClick={() => handleDeletePipeline(selectedPipelineId)} className="p-2 text-textSecondary hover:text-red-400 transition-all">
+            <button onClick={() => handleDeletePipeline(selectedPipelineId)} className="p-2 text-textSecondary hover:text-danger transition-all">
               <Trash2 className="w-4 h-4" />
             </button>
           )}
@@ -196,7 +196,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
               setCustomPipelineName('');
               setCustomStages([{name: 'Lead In'}, {name: 'Contact Made'}, {name: 'Proposal'}, {name: 'Closed Won'}]);
               setShowPipelineForm(true); 
-            }} className="flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl hover:bg-rose-500/20 transition-all text-xs font-bold uppercase tracking-wider">
+            }} className="flex items-center gap-2 px-3 py-1.5 bg-module/10 text-module border border-module/20 rounded-xl hover:bg-module/20 transition-all text-xs font-bold uppercase tracking-wider">
               <Plus className="w-3 h-3" /> New Pipeline
             </button>
           )}
@@ -207,7 +207,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
             <button onClick={() => { setEditingStage(null); setShowStageForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all text-sm font-bold text-white">
               <Plus className="w-4 h-4" /> Add Stage
             </button>
-            <button onClick={() => { setEditingDeal(null); setShowDealForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-400 hover:to-pink-400 border border-rose-500/50 shadow-lg shadow-rose-500/20 rounded-xl transition-all text-sm font-bold text-white">
+            <button onClick={() => { setEditingDeal(null); setShowDealForm(true); }} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-module to-module hover:from-module hover:to-module border border-module/50 shadow-lg shadow-module/20 rounded-xl transition-all text-sm font-bold text-white">
               <Plus className="w-4 h-4" /> New Deal
             </button>
           </div>
@@ -218,7 +218,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
       <div className="flex-1 overflow-x-auto p-4 md:p-8 hide-scrollbar">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-8 h-8 text-rose-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-module animate-spin" />
           </div>
         ) : !selectedPipeline ? (
           <div className="flex flex-col items-center justify-center h-full text-textSecondary">
@@ -229,7 +229,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
           <div className="flex flex-col items-center justify-center h-full text-textSecondary">
             <p className="mb-4">This pipeline has no stages.</p>
             {canEdit && (
-              <button onClick={() => { setEditingStage(null); setShowStageForm(true); }} className="px-6 py-2 bg-rose-500/20 text-rose-400 rounded-xl font-bold">
+              <button onClick={() => { setEditingStage(null); setShowStageForm(true); }} className="px-6 py-2 bg-module/20 text-module rounded-xl font-bold">
                 Add First Stage
               </button>
             )}
@@ -250,12 +250,12 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                   <div className="p-4 border-b border-white/5 flex items-center justify-between group">
                     <div>
                       <h3 className="font-black text-sm uppercase tracking-widest text-white">{stage.stageName} <span className="text-textSecondary ml-1">({stageDeals.length})</span></h3>
-                      <p className="text-rose-400 font-bold text-xs mt-1 flex items-center"><DollarSign className="w-3 h-3 mr-0.5" />{stageTotal.toLocaleString()}</p>
+                      <p className="text-module font-bold text-xs mt-1 flex items-center"><DollarSign className="w-3 h-3 mr-0.5" />{stageTotal.toLocaleString()}</p>
                     </div>
                     {canEdit && (
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                         <button onClick={() => { setEditingStage(stage); setShowStageForm(true); }} className="p-1.5 text-textSecondary hover:text-white rounded-lg hover:bg-white/5"><Edit2 className="w-3 h-3" /></button>
-                        <button onClick={() => handleDeleteStage(stage.id)} className="p-1.5 text-textSecondary hover:text-red-400 rounded-lg hover:bg-white/5"><Trash2 className="w-3 h-3" /></button>
+                        <button onClick={() => handleDeleteStage(stage.id)} className="p-1.5 text-textSecondary hover:text-danger rounded-lg hover:bg-white/5"><Trash2 className="w-3 h-3" /></button>
                       </div>
                     )}
                   </div>
@@ -266,7 +266,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                         key={deal.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, deal.id)}
-                        className="bg-surface/50 border border-white/10 p-4 rounded-2xl cursor-grab active:cursor-grabbing hover:border-rose-500/50 hover:shadow-lg hover:shadow-rose-500/10 transition-all group"
+                        className="bg-surface/50 border border-white/10 p-4 rounded-2xl cursor-grab active:cursor-grabbing hover:border-module/50 hover:shadow-lg hover:shadow-module/10 transition-all group"
                       >
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-bold text-sm text-white line-clamp-2">{deal.dealName}</h4>
@@ -274,12 +274,12 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 -mt-1 -mr-1">
                               <button onClick={() => { setEditingDeal(deal); setShowDealForm(true); }} className="p-1 text-textSecondary hover:text-white" title="Edit Deal"><Edit2 className="w-3 h-3" /></button>
                               {canDelete && (
-                                <button onClick={() => handleDeleteDeal(deal.id)} className="p-1 text-textSecondary hover:text-red-400" title="Delete Deal"><Trash2 className="w-3 h-3" /></button>
+                                <button onClick={() => handleDeleteDeal(deal.id)} className="p-1 text-textSecondary hover:text-danger" title="Delete Deal"><Trash2 className="w-3 h-3" /></button>
                               )}
                             </div>
                           )}
                         </div>
-                        <p className="text-emerald-400 font-bold text-sm flex items-center mb-3"><DollarSign className="w-3 h-3 mr-0.5" />{(deal.amount || 0).toLocaleString()}</p>
+                        <p className="text-success font-bold text-sm flex items-center mb-3"><DollarSign className="w-3 h-3 mr-0.5" />{(deal.amount || 0).toLocaleString()}</p>
                         
                         {(deal.contact || deal.owner || deal.closeDate) && (
                           <div className="pt-3 border-t border-white/5 space-y-1.5">
@@ -305,8 +305,8 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
 
       {/* Forms */}
       {showPipelineForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="glass-panel w-full max-w-lg rounded-3xl border border-white/10 p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <div className="fixed inset-0 scrim z-[100] flex items-center justify-center p-4">
+          <div className="modal-panel w-full max-w-lg rounded-3xl border border-white/10 p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <h2 className="text-2xl font-black mb-6">{editingPipeline ? "Edit Pipeline Setup" : "Create New Pipeline"}</h2>
             
             <div className="space-y-6">
@@ -316,7 +316,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                   type="text" 
                   value={customPipelineName}
                   onChange={(e) => setCustomPipelineName(e.target.value)}
-                  className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-400 transition-colors"
+                  className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-module transition-colors"
                   placeholder="e.g. Enterprise Sales"
                 />
               </div>
@@ -337,12 +337,12 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                           newStages[i].name = e.target.value;
                           setCustomStages(newStages);
                         }}
-                        className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-rose-400 transition-colors"
+                        className="flex-1 bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-module transition-colors"
                         placeholder="Stage Name"
                       />
                       <button 
                         onClick={() => setCustomStages(customStages.filter((_, idx) => idx !== i))}
-                        className="p-2 text-textSecondary hover:text-red-400 hover:bg-white/5 rounded-xl transition-colors shrink-0"
+                        className="p-2 text-textSecondary hover:text-danger hover:bg-white/5 rounded-xl transition-colors shrink-0"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -350,7 +350,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                   ))}
                   <button 
                     onClick={() => setCustomStages([...customStages, {name: ''}])}
-                    className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 mt-2 px-2"
+                    className="flex items-center gap-2 text-sm font-bold text-module hover:text-module mt-2 px-2"
                   >
                     <Plus className="w-4 h-4" /> Add Stage
                   </button>
@@ -407,7 +407,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                     }
                   }}
                   disabled={isSubmittingPipeline}
-                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-rose-500 hover:bg-rose-600 text-white transition-colors flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-xl font-bold text-sm bg-module hover:bg-moduleHover text-surface transition-colors flex items-center gap-2"
                 >
                   {isSubmittingPipeline && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editingPipeline ? "Save Changes" : "Create Pipeline"}

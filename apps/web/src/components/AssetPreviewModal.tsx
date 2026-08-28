@@ -83,10 +83,10 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center scrim p-4 animate-in fade-in duration-300">
       <button 
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all z-10"
+        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-onScrim transition-all z-10"
       >
         <X className="w-6 h-6" />
       </button>
@@ -95,7 +95,7 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
       <div className="w-full h-full flex flex-col items-center justify-center overflow-hidden isolate" style={{ colorScheme: 'light' }}>
         {type === 'pdf' ? (
           <div className="flex flex-col items-center w-full h-full pt-16">
-            {error && <div className="text-red-500 bg-white p-4 rounded mb-4 z-20">{error}</div>}
+            {error && <div className="text-danger bg-white p-4 rounded mb-4 z-20">{error}</div>}
             
             {/* Enabled scrolling here */}
             <div className="flex-1 overflow-y-auto w-full flex justify-center items-start p-4">
@@ -110,7 +110,7 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
             </div>
             
             {numPages && (
-              <div className="flex items-center gap-4 mt-4 mb-4 bg-white/10 p-2 rounded-full text-white px-6">
+              <div className="flex items-center gap-4 mt-4 mb-4 bg-white/10 p-2 rounded-full text-onScrim px-6">
                 <button 
                   disabled={pageNumber <= 1} 
                   onClick={() => setPageNumber(pageNumber - 1)}
@@ -142,7 +142,7 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
           </div>
         ) : type === 'text' || type === 'markdown' ? (
           <div className="w-full h-full flex flex-col items-center pt-16 pb-4">
-            <div className="flex items-center gap-3 mb-3 text-white/80 text-xs font-black uppercase tracking-widest">
+            <div className="flex items-center gap-3 mb-3 text-onScrim/80 text-xs font-black uppercase tracking-widest">
               <FileText className="w-4 h-4" />
               <span className="truncate max-w-[50vw]">{filenameOf(url)}</span>
               {type === 'markdown' && (
@@ -155,13 +155,13 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
                   {showSource ? 'Formatted' : 'Source'}
                 </button>
               )}
-              <button onClick={handleDownload} className="p-1 hover:text-white" title="Download">
+              <button onClick={handleDownload} className="p-1 hover:text-onScrim" title="Download">
                 <Download className="w-4 h-4" />
               </button>
             </div>
             <div className="flex-1 overflow-auto w-full max-w-4xl bg-white text-black rounded-xl shadow-2xl px-8 py-7">
               {textError ? (
-                <div className="text-red-600 text-sm">{textError}</div>
+                <div className="text-dangerHover text-sm">{textError}</div>
               ) : text === null ? (
                 <div className="flex items-center gap-2 text-sm text-black/60">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
@@ -192,7 +192,7 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
             </p>
             <button
               onClick={handleDownload}
-              className="flex items-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-black uppercase tracking-widest"
+              className="flex items-center gap-2 px-5 py-2 rounded-full bg-onScrim text-background text-xs font-black uppercase tracking-widest"
             >
               <Download className="w-4 h-4" /> Download
             </button>

@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Download, FileText } from 'lucide-react';
+import { token } from '../lib/auth';
 
 /**
  * Renders markdown for the asset previewer and the accountant chat.
@@ -15,6 +17,84 @@ import remarkGfm from 'remark-gfm';
  * enabling it would turn any uploaded .md into stored XSS on this origin, which
  * is the same hole the Content-Type hardening closed for downloads.
  */
+
+const ASSET_PREFIX = '/api/assets/download/';
+
+/** Last path segment, tolerating the %2F-encoded keys the agent emits. */
+function fileNameOf(path: string): string {
+  const clean = path.split('?')[0];
+  let decoded = clean;
+  try {
+    decoded = decodeURIComponent(clean);
+  } catch {
+    /* a stray % is not worth failing the render over */
+  }
+  return decoded.split('/').filter(Boolean).pop() || 'file';
+}
+
+/**
+ * Turns a bare asset path into a real download control.
+ *
+ * The token has to ride in the query string: the JWT lives in localStorage and
+ * nothing sets the `auth_token` cookie that `middleware/auth.ts` also accepts,
+ * so a plain <a href> to this endpoint answers 401. `?token=` is the documented
+ * path for exactly this case and is what TaskBoard already does for its
+ * attachments.
+ */
+function AssetDownload({ href }: { href: string }) {
+  const name = fileNameOf(href.slice(ASSET_PREFIX.length));
+  const ext = (name.includes('.') ? name.split('.').pop() : '')?.toUpperCase();
+  const sep = href.includes('?') ? '&' : '?';
+
+  return (
+    <a
+      href={`${href}${sep}token=${encodeURIComponent(token() || '')}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={name}
+      className="not-prose my-3 no-underline inline-flex items-center gap-3 max-w-full rounded-xl border border-border bg-surfaceAlt hover:bg-surface hover:border-primary/40 px-4 py-3 transition-all duration-300 group"
+    >
+      <span className="w-9 h-9 shrink-0 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center">
+        <FileText className="w-4 h-4" />
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className="block text-[13px] font-semibold text-textPrimary truncate">{name}</span>
+        <span className="block text-[11px] text-textTertiary">{ext ? `${ext} · ` : ''}Click to download</span>
+      </span>
+      <Download className="w-4 h-4 ml-1 shrink-0 text-textTertiary group-hover:text-primary transition-colors" />
+    </a>
+  );
+}
+
+/**
+ * Promotes bare asset paths to markdown links so the `a` override can render
+ * them as buttons. The model tends to emit the path as plain or bolded text
+ * rather than a link, so relying on it to produce link syntax is not enough.
+ *
+ * The alternation matches an existing markdown link first and returns it
+ * untouched, which is what keeps already-linked paths from being rewritten.
+ */
+function linkifyAssets(src: string): string {
+  return src.replace(
+    /\[[^\]]*\]\([^)]*\)|\*{0,2}(\/api\/assets\/download\/[^\s*)\]]+)\*{0,2}/g,
+    (match, path?: string) => (path ? `[${fileNameOf(path)}](${path})` : match),
+  );
+}
+
+/** Uploaded documents can link anywhere, so treat every link as untrusted. */
+function PlainLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="text-infoHover underline underline-offset-2 hover:text-infoHover break-words"
+    >
+      {children}
+    </a>
+  );
+}
+
 const components: Components = {
   h1: ({ children }) => (
     <h1 className="text-2xl font-black tracking-tight mt-8 mb-3 pb-2 border-b border-current/10 first:mt-0">{children}</h1>
@@ -27,17 +107,7 @@ const components: Components = {
     <h4 className="text-sm font-bold uppercase tracking-wider text-current/70 mt-5 mb-2 first:mt-0">{children}</h4>
   ),
   p: ({ children }) => <p className="my-3 leading-7 text-[15px]">{children}</p>,
-  a: ({ href, children }) => (
-    // Uploaded documents can link anywhere, so treat every link as untrusted.
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer nofollow"
-      className="text-blue-700 underline underline-offset-2 hover:text-blue-900 break-words"
-    >
-      {children}
-    </a>
-  ),
+  a: PlainLink,
   ul: ({ children }) => <ul className="my-3 pl-6 list-disc space-y-1.5 marker:text-current/40">{children}</ul>,
   ol: ({ children }) => <ol className="my-3 pl-6 list-decimal space-y-1.5 marker:text-current/40">{children}</ol>,
   li: ({ children }) => <li className="leading-7 text-[15px] pl-1">{children}</li>,
@@ -60,7 +130,7 @@ const components: Components = {
     );
   },
   pre: ({ children }) => (
-    <pre className="my-4 bg-[#1e1e2e] text-[#e5e7eb] rounded-xl p-4 overflow-x-auto shadow-inner">{children}</pre>
+    <pre className="my-4 bg-surfaceSunken text-textPrimary border border-border rounded-xl p-4 overflow-x-auto shadow-inner custom-scrollbar">{children}</pre>
   ),
   // Tables come from remark-gfm. Wrapped so a wide table scrolls inside itself
   // rather than stretching the whole pane.
@@ -86,11 +156,40 @@ const components: Components = {
   ),
 };
 
-export default function MarkdownView({ source }: { source: string }) {
+export default function MarkdownView({
+  source,
+  assetDownloads = false,
+}: {
+  source: string;
+  /**
+   * Render `/api/assets/download/...` paths as download buttons. Opt-in, and
+   * deliberately off for uploaded documents: a .md any user can upload should
+   * not be able to draw a convincing download control on this origin.
+   */
+  assetDownloads?: boolean;
+}) {
+  const body = assetDownloads ? linkifyAssets(source) : source;
+
+  const merged = React.useMemo<Components>(
+    () =>
+      assetDownloads
+        ? {
+            ...components,
+            a: ({ href, children }) =>
+              href?.startsWith(ASSET_PREFIX) ? (
+                <AssetDownload href={href} />
+              ) : (
+                <PlainLink href={href}>{children}</PlainLink>
+              ),
+          }
+        : components,
+    [assetDownloads],
+  );
+
   return (
     <div className="text-current/85">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {source}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={merged}>
+        {body}
       </ReactMarkdown>
     </div>
   );

@@ -98,8 +98,8 @@ describe('compliance calculators', () => {
 	// The heart of it: these must refuse rather than approximate.
 
 	it('refuses salary withholding when no slab table is configured', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/accountant/compliance');
 		const result = calcSalaryWithholding(await loadConfig(env as any), 2_400_000);
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.missingKeys).toContain('salary_withholding_slabs');
@@ -111,8 +111,8 @@ describe('compliance calculators', () => {
 			{ from: 600000, to: 1200000, rate_pct: 5 },
 			{ from: 1200000, to: null, rate_pct: 15, base_tax: 30000 },
 		]));
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/accountant/compliance');
 		const r = calcSalaryWithholding(await loadConfig(env as any), 1_000_000);
 		expect(r.ok).toBe(true);
 		// 5% of the 400,000 above the bracket floor.
@@ -124,16 +124,16 @@ describe('compliance calculators', () => {
 			{ from: 0, to: 600000, rate_pct: 0 },
 			{ from: 600000, to: 1200000, rate_pct: 5 },
 		]));
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcSalaryWithholding } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcSalaryWithholding } = await import('../src/agents/accountant/compliance');
 		const r = calcSalaryWithholding(await loadConfig(env as any), 5_000_000);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.reason).toMatch(/stops at/);
 	});
 
 	it('refuses EOBI until the notified wage base is set', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcEobi } = await import('../src/agents/accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 12);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.missingKeys).toContain('eobi_notified_min_wage');
@@ -141,8 +141,8 @@ describe('compliance calculators', () => {
 
 	it('assesses EOBI on the notified wage, not actual salary', async () => {
 		await setVar('eobi_notified_min_wage', '37000');
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcEobi } = await import('../src/agents/accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 12);
 		expect(r.ok).toBe(true);
 		if (r.ok) {
@@ -152,8 +152,8 @@ describe('compliance calculators', () => {
 	});
 
 	it('does not apply EOBI below the employee threshold', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcEobi } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcEobi } = await import('../src/agents/accountant/compliance');
 		const r = calcEobi(await loadConfig(env as any), 3);
 		expect(r.ok).toBe(true);
 		if (r.ok) {
@@ -163,8 +163,8 @@ describe('compliance calculators', () => {
 	});
 
 	it('always refuses PESSI/SESSI while unconfigured', async () => {
-		const { loadConfig } = await import('../src/agents/pleiades-accountant/config');
-		const { calcPessiSessi } = await import('../src/agents/pleiades-accountant/compliance');
+		const { loadConfig } = await import('../src/agents/accountant/config');
+		const { calcPessiSessi } = await import('../src/agents/accountant/compliance');
 		const r = calcPessiSessi(await loadConfig(env as any), 100000);
 		expect(r.ok).toBe(false);
 	});
@@ -172,7 +172,7 @@ describe('compliance calculators', () => {
 
 describe('compliance context injected into the prompt', () => {
 	it('names unset required settings instead of omitting them', async () => {
-		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades-accountant/config');
+		const { loadConfig, renderComplianceContext } = await import('../src/agents/accountant/config');
 		const prompt = renderComplianceContext(await loadConfig(env as any));
 		// A silently absent rate invites the model to supply one from memory.
 		expect(prompt).toContain('NOT CONFIGURED');
@@ -181,7 +181,7 @@ describe('compliance context injected into the prompt', () => {
 	});
 
 	it('carries the operator-configured values', async () => {
-		const { loadConfig, renderComplianceContext } = await import('../src/agents/pleiades-accountant/config');
+		const { loadConfig, renderComplianceContext } = await import('../src/agents/accountant/config');
 		const prompt = renderComplianceContext(await loadConfig(env as any));
 		expect(prompt).toContain('0.25%');
 		expect(prompt).toContain('29%');
@@ -276,7 +276,7 @@ describe('SPA routing', () => {
 
 describe('knowledge base', () => {
 	it('chunks markdown on headings rather than fixed width', async () => {
-		const { chunkMarkdown } = await import('../src/agents/pleiades-accountant/knowledge');
+		const { chunkMarkdown } = await import('../src/agents/accountant/knowledge');
 		const doc = `# Manual
 
 ## Salary withholding
@@ -298,13 +298,13 @@ ${'More filler to make this a real section. '.repeat(20)}`;
 	});
 
 	it('drops fragments too small to be worth retrieving', async () => {
-		const { chunkMarkdown } = await import('../src/agents/pleiades-accountant/knowledge');
+		const { chunkMarkdown } = await import('../src/agents/accountant/knowledge');
 		expect(chunkMarkdown('# A\n\n## B\n\n## C')).toHaveLength(0);
 	});
 
 	it('degrades to a stated refusal when no index is bound', async () => {
 		// An absent binding must behave like an unset rate: say so, do not guess.
-		const { searchKnowledge } = await import('../src/agents/pleiades-accountant/knowledge');
+		const { searchKnowledge } = await import('../src/agents/accountant/knowledge');
 		const res = await searchKnowledge({ ...env, VECTORIZE: undefined } as any, 'anything');
 		expect(res.passages).toHaveLength(0);
 		expect(res.note).toMatch(/no knowledge base is configured/i);
@@ -392,7 +392,7 @@ describe('knowledge upload', () => {
 
 describe('agent journal', () => {
 	it('records an action with its reasoning', async () => {
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		await recordAction(env as any, {
 			actionType: 'statement_generated',
 			subject: 'Monthly sales tax return',
@@ -411,7 +411,7 @@ describe('agent journal', () => {
 	});
 
 	it('answers an exact filter exactly, not by similarity', async () => {
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		await recordAction(env as any, {
 			actionType: 'payroll_generated', subject: 'July payroll',
 			summary: 'Ran payroll for 2026-07.', periodLabel: '2026-07', actorUserId: 'u_ceo',
@@ -423,7 +423,7 @@ describe('agent journal', () => {
 	});
 
 	it('returns newest first', async () => {
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		await recordAction(env as any, {
 			actionType: 'journal_posted', subject: 'Older', summary: 'a',
 			actorUserId: 'u_ceo', occurredAt: new Date('2026-01-01'),
@@ -439,7 +439,7 @@ describe('agent journal', () => {
 	it('keeps the record even when it cannot be embedded', async () => {
 		// A journal that silently drops entries is worse than none: it looks
 		// complete. Losing recall is a degradation; losing the row is a hole.
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		const res = await recordAction({ ...env, VECTORIZE: undefined } as any, {
 			actionType: 'refused', subject: 'Withholding figure',
 			summary: 'Refused to compute.', rationale: 'Slab table not configured.',
@@ -661,7 +661,7 @@ describe('the agent journal', () => {
 	const REMOTE_EMBEDDING = 20_000;
 
 	it('returns the records an action touched, not just prose', async () => {
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		await recordAction(env as any, {
 			actionType: 'test_entities',
 			subject: 'Filed something',
@@ -679,7 +679,7 @@ describe('the agent journal', () => {
 	}, REMOTE_EMBEDDING);
 
 	it('honours a date range over similarity', async () => {
-		const { recordAction, recallActions } = await import('../src/agents/pleiades-accountant/journal');
+		const { recordAction, recallActions } = await import('../src/agents/accountant/journal');
 		await recordAction(env as any, {
 			actionType: 'dated_test',
 			subject: 'Old action',
@@ -731,7 +731,7 @@ describe('knowledge search labels where a passage came from', () => {
 	it('tells the model what each kind is worth, alongside the passages', async () => {
 		// The guidance travels with the results rather than sitting in the system
 		// prompt, so it is read at the moment the mistake would be made.
-		const { searchKnowledge } = await import('../src/agents/pleiades-accountant/knowledge');
+		const { searchKnowledge } = await import('../src/agents/accountant/knowledge');
 		const { note } = await searchKnowledge(
 			{ ...env, VECTORIZE: undefined } as any,
 			'anything',

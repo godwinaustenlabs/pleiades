@@ -161,15 +161,15 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
                   </div>
                 ) : (
                   messages.map(msg => (
-                    <div key={msg.id} className={`p-4 rounded-2xl border transition-all ${msg.isResolved ? 'bg-black/20 border-white/5 opacity-60' : 'bg-white/5 border-white/10 hover:border-primary/30 shadow-lg'}`}>
+                    <div key={msg.id} className={`p-4 rounded-2xl border transition-all ${msg.isResolved ? 'bg-surfaceAlt border-white/5 opacity-60' : 'bg-white/5 border-white/10 hover:border-primary/30 shadow-lg'}`}>
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="flex items-center gap-2">
-                          {msg.type === 'flag' ? <AlertTriangle className="w-3.5 h-3.5 text-red-400" /> : msg.type === 'request' ? <Send className="w-3.5 h-3.5 text-blue-400" /> : <Info className="w-3.5 h-3.5 text-emerald-400" />}
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${msg.type === 'flag' ? 'text-red-400' : 'text-primary'}`}>{msg.type}</span>
+                          {msg.type === 'flag' ? <AlertTriangle className="w-3.5 h-3.5 text-danger" /> : msg.type === 'request' ? <Send className="w-3.5 h-3.5 text-info" /> : <Info className="w-3.5 h-3.5 text-success" />}
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${msg.type === 'flag' ? 'text-danger' : 'text-primary'}`}>{msg.type}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] font-black text-textSecondary uppercase tracking-widest">From {msg.senderApp}</span>
-                          <button onClick={() => handleDelete(msg.id)} className="p-1 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+                          <button onClick={() => handleDelete(msg.id)} className="p-1 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -243,7 +243,7 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
                 <button 
                   type="submit"
                   disabled={sending || !targetApp}
-                  className="w-full py-3 md:py-4 bg-primary text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                  className="w-full py-3 md:py-4 bg-primary text-surface text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
                 >
                   {sending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Dispatch Message'}
                 </button>
@@ -256,11 +256,11 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
       {/* Toggle */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center transition-all shadow-2xl relative ${isOpen ? 'bg-white text-black' : 'bg-primary text-white hover:scale-105 active:scale-95 shadow-primary/30'}`}
+        className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center transition-all shadow-2xl relative ${isOpen ? 'bg-white text-black' : 'bg-primary text-surface hover:scale-105 active:scale-95 shadow-primary/30'}`}
       >
         {isOpen ? <X className="w-6 h-6 md:w-7 md:h-7" /> : <Bell className="w-6 h-6 md:w-7 md:h-7" />}
         {unreadCount > 0 && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 bg-red-500 text-white text-[9px] md:text-[10px] font-black rounded-full border-2 md:border-4 border-background flex items-center justify-center animate-bounce">
+          <span className="absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 bg-danger text-surface text-[9px] md:text-[10px] font-black rounded-full border-2 md:border-4 border-background flex items-center justify-center animate-bounce">
             {unreadCount}
           </span>
         )}

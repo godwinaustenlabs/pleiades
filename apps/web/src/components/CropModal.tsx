@@ -126,10 +126,10 @@ export default function CropModal({ image, onClose, onSave }: CropModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-4 animate-in fade-in duration-300" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center scrim p-4 animate-in fade-in duration-300" onClick={e => e.stopPropagation()}>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-2">
-          <h3 className="text-xl font-bold text-white">Crop Profile Photo</h3>
+          <h3 className="text-xl font-bold text-onScrim">Crop Profile Photo</h3>
           <p className="text-sm text-textSecondary">Drag to position, use slider to zoom</p>
         </div>
 
@@ -186,7 +186,7 @@ export default function CropModal({ image, onClose, onSave }: CropModalProps) {
               <button 
                 onClick={handleSave} 
                 disabled={uploading || imgSize.width === 0} 
-                className="flex-1 py-4 bg-primary hover:bg-primary/90 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-3 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                className="flex-1 py-4 bg-primary hover:bg-primary/90 text-surface rounded-2xl text-sm font-bold flex items-center justify-center gap-3 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
               >
                 {uploading ? (
                   <>

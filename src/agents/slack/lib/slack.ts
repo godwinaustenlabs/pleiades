@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../../../index';
 
 /** Slack rejects/retries requests older than this; we mirror it to stop replays. */

@@ -19,9 +19,40 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — RBAC permission-matrix suite (see test/)
+npm test          # vitest — see test/ (14 files, 301 tests)
 npm run test:watch
 ```
+
+The suite is in four layers, and the two snapshot files are the load-bearing part:
+
+- `test/__snapshots__/routes.txt` — every registered route (`test/manifest.test.ts`).
+  A router that stops being mounted still compiles, still deploys, and just 404s;
+  nothing else notices.
+- `test/__snapshots__/responses.txt` — every GET route fetched as a superadmin and
+  reduced to status + response *shape*, never values (`test/smoke.test.ts`). It is
+  deterministic across runs by construction, so a byte-identical diff before and
+  after a refactor is proof that refactor changed no response anywhere in the API,
+  including the routes nobody wrote a test for. **Regenerate it deliberately, in the
+  same commit as the behaviour change, never to make a red build green.**
+- `test/modules.test.ts` — one create→read→update→delete per module. This is what the
+  response manifest cannot do: it proves the Drizzle column mapping matches the
+  production DDL, since a wrong column in an INSERT is invisible to a read-only sweep.
+- `test/config.test.ts`, `test/bindings.test.ts`, `test/schema-drift.test.ts` — contracts
+  on `wrangler.jsonc` and `Env`. Miniflare gives tests an ephemeral local D1, so a wrong
+  `database_name` or `bucket_name` cannot fail an ordinary test; it fails in production,
+  once. `config.test.ts` asserts `services[0].service === name`, that `WORKER_ORIGIN`
+  matches the script's own hostname, and that every D1/R2 resource name starts with the
+  script name — so the config verifies its own naming.
+
+Two facts the suite records rather than hides, both pre-existing:
+
+- `GET /api/tech/tasks` (and `/:id`) return `D1_ERROR: no such table: tasks`. Migration
+  0000 creates the table and `office-db` records that migration as applied, but the table
+  is not there — it was dropped by hand. `schema-drift.test.ts` names `tasks` as the one
+  known gap so it cannot silently become two.
+- `GET /api/admin/users/my-team` returns 404 for everyone. `/users/:id` is registered at
+  `admin.ts:137` and `my-team` at `admin.ts:259`, so the parameterised route shadows it
+  and the handler is unreachable. Registering the static path first fixes it.
 
 `npm run lint` passes (0 errors). It still reports ~290 **warnings**, which are tracked
 debt, not noise — see the commented rules in `apps/web/eslint.config.js` for why each is
@@ -45,6 +76,50 @@ npx wrangler d1 execute office-db --local --command="..."
 Note: `packages/database`'s own `migrate` script now refuses to run and points at
 the root-level command above — it used to name a database (`ganova-db`) that does
 not exist.
+
+#### Copying the database
+
+There is no rename for a D1 database, so moving one means export, create,
+import — and a plain `wrangler d1 export | wrangler d1 execute` **does not
+work**. Two things break it:
+
+1. A combined schema+data dump fails with `no such table: main.<table>`. Export
+   `--no-data` and `--no-schema` separately and import the schema first.
+2. The data half then fails with `FOREIGN KEY constraint failed`, because
+   `wrangler d1 export` emits INSERTs in `sqlite_master` order rather than
+   dependency order. The dump's own `PRAGMA defer_foreign_keys=TRUE` does not
+   save it: that pragma is per-transaction, and D1 runs an imported file
+   server-side in batches, so it never reaches the statements that need it.
+
+This reads exactly like data corruption and is not — it is statement order.
+`scripts/d1-order-dump.py` topologically sorts the INSERTs by foreign key and
+is the supported path:
+
+```bash
+npx wrangler d1 export  office-db  --remote --no-data   --output=cutover/schema.sql
+npx wrangler d1 export  office-db  --remote --no-schema --output=cutover/data.sql
+python3 scripts/d1-order-dump.py cutover/schema.sql cutover/data.sql cutover/ordered.sql
+npx wrangler d1 execute pleiades-db --remote --file=cutover/schema.sql  --yes
+npx wrangler d1 execute pleiades-db --remote --file=cutover/ordered.sql --yes
+```
+
+It also drops `sqlite_sequence`, which SQLite maintains itself; replaying the
+dump's copy leaves two rows for the same table and makes the next AUTOINCREMENT
+id unpredictable — here that would be `d1_migrations`, so the damage lands on
+migration bookkeeping.
+
+Verify a copy by row counts per table, a sorted diff of the two `--no-data`
+exports, and a sha256 of the sorted INSERT lines from each `--no-schema` export
+(excluding `sqlite_sequence`); the last is order-independent and proves every
+row survived. Note D1 caps compound `SELECT`s at **fewer than 8** `UNION ALL`
+terms, so a per-table count query has to be chunked.
+
+Do **not** rebuild a database by replaying `packages/database/migrations/`. The
+files no longer describe production: `0000_plain_shard.sql` creates a `tasks`
+table that `office-db` records as applied and does not have, and
+`fix_universal_tasks_fk.sql` is unnumbered, so wrangler's `parseInt` sort yields
+`NaN` and runs it last, after `0036`, where it references a column production
+lacks.
 
 Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
 workflow. Its snapshot baseline stopped at `0019` and still describes the
@@ -165,7 +240,7 @@ router.post('/things', async (c) => {
 
 `user_app_permissions` is the authorization table (see Authorization above).
 
-Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@ganova/database` (path-mapped in the root `tsconfig.json`).
+Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@pleiades/database` (path-mapped in the root `tsconfig.json`).
 
 Column names are snake_case in SQL, camelCase in TS, and primary keys are often *not* named `id` in SQL (e.g. `universalTasks.id` maps to the `task_id` column) — always check the schema file rather than assuming.
 
@@ -198,10 +273,14 @@ One directory per agent, no loose files. Both are Agents-SDK Durable Objects
 exported from `src/index.ts` and bound in `wrangler.jsonc`.
 
 - `slack/` — the Slack assistant, one instance per Slack conversation.
-- `pleiades/` — the accountant. One instance per conversation;
+- `accountant/` — the accountant. One instance per conversation;
   `compliance.ts` turns operator configuration into payroll components,
   `tools.ts` is the HR + accounting surface, `approvals.ts` is the
   human-in-the-loop gate, `access.ts` decides who may drive it.
+
+  It is called `accountant/`, not `pleiades/`, because Pleiades is the platform.
+  A directory — or a Durable Object class — named after the whole system, when
+  the system runs two agents, says nothing about which one it is.
 
 Both run their turn loop on the Vercel AI SDK (`generateText`, tools defined
 with `tool()` and zod schemas) over **Workers AI** via the `AI` binding —
@@ -210,7 +289,7 @@ binding rather than a third-party provider means no external quota can stop a
 payroll run mid-way.
 
 Each agent's calls are routed through **its own AI Gateway**
-(`AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`), built in `src/utils/model.ts`. One
+(`AI_GATEWAY_ACCOUNTANT`, `AI_GATEWAY_SLACK`), built in `src/utils/model.ts`. One
 gateway per agent, because a single request log mixing payroll runs with
 "what's on my calendar" is a log nobody reads. Both gateways have Authenticated
 Gateway enabled, so `CF_AIG_TOKEN` goes out as `cf-aig-authorization` via
@@ -244,9 +323,21 @@ Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_
 
 ### Bindings and secrets
 
-`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `CLIENTS_KV_NAMESPACE`,
-`MEMORY_KV_NAMESPACE`, `AI`, and `CRM_BUCKET` (R2, `office-crm-docs`, used by
-`/api/assets` for uploads/downloads).
+`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `SELF` (this Worker,
+bound to itself), `AI`, `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
+`office-crm-docs`, used by `/api/assets` for uploads/downloads),
+`COMPLIANCE_BUCKET` (R2 `office-compliance-docs`), and the two Durable Object
+bindings `SLACK_AGENT` / `PLEIADES_AGENT`.
+
+`CLIENTS_KV_NAMESPACE` and `MEMORY_KV_NAMESPACE` were removed: nothing read
+either, and both namespaces were verified empty before the bindings were
+dropped. Pleiades keeps its memory in D1 and Vectorize, never KV.
+
+The `VECTORIZE` index carries three metadata indexes — `namespace`, `doc_id`
+and `section`. The `filter:` clauses in `agents/accountant/knowledge.ts`
+and `journal.ts` depend on them, and they exist only on the live index; nothing
+in this repo recreates them. If the index is ever rebuilt, recreate all three or
+filtering silently stops narrowing.
 
 There are exactly **five secrets**, and the same five exist both in production
 (`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
@@ -264,10 +355,25 @@ differ silently:
 `.dev.vars.example` is the committed template listing all five with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
 
-Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`
-(`CF_ACCOUNT_ID`, `AI_GATEWAY_PLEIADES`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`, `AGENT_ID`, `VERBOSE`). The
-full surface is the `Env` type in `src/index.ts`, where every entry names the
-file that reads it — do not declare a binding nothing reads.
+Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`:
+`AI_GATEWAY_ACCOUNTANT`, `AI_GATEWAY_SLACK`, `WORKER_ORIGIN`, `LLM_MODEL`. The full
+surface is the `Env` type in `src/index.ts`, where every entry names the file
+that reads it — do not declare a binding nothing reads.
+
+That rule is now enforced. `Env` used to open with an `[x: string]: any` index
+signature, which made `env.ANYTHING` type-check and let six dead entries
+accumulate unnoticed (`CLIENTS_KV_NAMESPACE`, `MEMORY_KV_NAMESPACE`, `AGENT_ID`,
+`VERBOSE`, `CF_ACCOUNT_ID`, `LLM_PROVIDER`). The index signature is gone and an
+unknown `env.*` key is a compile error. Do not reintroduce it.
+
+`WORKER_ORIGIN` and `AGENT_INTERNAL_SECRET` are **required**, not optional.
+`WORKER_ORIGIN` used to fall back to a hardcoded `https://office.galabs.workers.dev`
+duplicated in `src/index.ts`, so a renamed or preview deployment would silently
+call back into production; it must equal the deployed origin. `AGENT_INTERNAL_SECRET`
+used to be defaulted to `''` by both senders — that never opened a bypass
+(`middleware/auth.ts` refuses an empty expected value) but it made a missing
+secret surface as "every agent tool call 401s" instead of "the Worker is
+misconfigured".
 
 ## Gotchas
 

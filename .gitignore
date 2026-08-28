@@ -200,3 +200,7 @@ graphify-out/
 # d1_migrations and the production DDL). The live set is
 # packages/database/migrations/; a second tracked copy invites applying the wrong one.
 migrations_backup/
+
+# Production D1 dumps taken during the pleiades cutover. Full data,
+# including password hashes — never commit.
+cutover/

@@ -85,7 +85,7 @@ export class SlackAgent extends Agent<Env> {
           headers: {
             'Content-Type': 'application/json',
             'x-agent-actor': turn.actorUserId,
-            'x-agent-secret': this.env.AGENT_INTERNAL_SECRET || '',
+            'x-agent-secret': this.env.AGENT_INTERNAL_SECRET,
           },
           ...(body ? { body: JSON.stringify(body) } : {}),
         });

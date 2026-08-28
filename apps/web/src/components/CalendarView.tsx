@@ -286,7 +286,7 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
           <div>
             <h2 className="text-xl md:text-3xl font-black tracking-tight text-white">{monthName} <span className="text-white/40">{currentDate.getFullYear()}</span></h2>
             <div className="flex items-center gap-2 mt-0.5 md:mt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               <p className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] text-textSecondary">Unified Production Timeline</p>
             </div>
           </div>
@@ -322,12 +322,12 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                     {week.map((d, di) => {
                       const isToday = new Date().toDateString() === new Date(d.year, d.month, d.day).toDateString();
                       return (
-                        <div key={di} className={`p-2 md:p-3 border-r border-white/5 h-10 md:h-12 ${!d.currentMonth ? 'bg-black/20' : ''}`}>
+                        <div key={di} className={`p-2 md:p-3 border-r border-white/5 h-10 md:h-12 ${!d.currentMonth ? 'bg-surfaceAlt' : ''}`}>
                           <span className={`text-[10px] md:text-[11px] font-black w-6 h-6 md:w-7 md:h-7 inline-flex items-center justify-center transition-all ${
-                            isToday 
-                              ? 'bg-primary text-white rounded-lg shadow-lg shadow-primary/30 scale-110' 
-                              : d.currentMonth ? 'text-white/80' : 'text-white/20'
-                          }`}>
+ isToday 
+ ? 'bg-primary text-surface rounded-lg shadow-lg shadow-primary/30 scale-110' 
+ : d.currentMonth ? 'text-surface/80' : 'text-surface/20'
+ }`}>
                             {d.day}
                           </span>
                         </div>
@@ -362,18 +362,18 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                             <div 
                               style={{ gridColumn: `${startCol + 1} / span ${span}` }}
                               className={`relative group/item px-3 py-1.5 rounded-lg text-[9px] font-bold leading-tight cursor-pointer transition-colors border shadow-sm ${
-                                isPreview ? 'opacity-50 scale-[0.98] z-50 shadow-xl' : ''
-                              } ${
-                                event.type === 'appt' 
-                                  ? 'bg-accent/20 text-accent border-accent/30 hover:bg-accent/30' 
-                                  : event.status === 'completed' 
-                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
-                                    : event.status === 'blocked'
-                                      ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
-                                      : event.status === 'in_progress'
-                                        ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/30'
-                                        : 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
-                              } ${!event.isStart && !isPreview ? 'rounded-l-none border-l-transparent' : ''} ${!event.isEnd && !isPreview ? 'rounded-r-none border-r-transparent' : ''}`}
+ isPreview ? 'opacity-50 scale-[0.98] z-50 shadow-xl' : ''
+ } ${
+ event.type === 'appt' 
+ ? 'bg-accent/20 text-accent border-accent/30 hover:bg-accent/30' 
+ : event.status === 'completed' 
+ ? 'bg-success/20 text-success border-success/30 hover:bg-success/30'
+ : event.status === 'blocked'
+ ? 'bg-danger/20 text-danger border-danger/30 hover:bg-danger/30'
+ : event.status === 'in_progress'
+ ? 'bg-warning/20 text-warning border-warning/30 hover:bg-warning/30'
+ : 'bg-primary/20 text-primary border-primary/30 hover:bg-primary/30'
+ } ${!event.isStart && !isPreview ? 'rounded-l-none border-l-transparent' : ''} ${!event.isEnd && !isPreview ? 'rounded-r-none border-r-transparent' : ''}`}
                               onClick={() => {
                                 if (isTask && !wasDragged) onEditTask?.(event);
                               }}
@@ -384,8 +384,8 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                               <div className="flex items-center gap-1.5 overflow-hidden select-none pointer-events-none">
                                 {event.isStart && (
                                   <div className={`w-1 h-1 rounded-full flex-shrink-0 ${
-                                    event.type === 'appt' ? 'bg-accent' : event.status === 'completed' ? 'bg-emerald-400' : event.status === 'blocked' ? 'bg-red-400' : event.status === 'in_progress' ? 'bg-yellow-400' : 'bg-primary'
-                                  }`} />
+ event.type === 'appt' ? 'bg-accent' : event.status === 'completed' ? 'bg-success' : event.status === 'blocked' ? 'bg-danger' : event.status === 'in_progress' ? 'bg-warning' : 'bg-primary'
+ }`} />
                                 )}
                                 <span className="truncate">{event.title || event.roleOrTitle}</span>
                               </div>
@@ -439,16 +439,16 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                   if (isTask) onEditTask?.(event);
                 }}
                 className={`glass-panel p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all active:scale-[0.98] cursor-pointer ${
-                  event.type === 'appt' 
-                    ? 'bg-accent/5 border-accent/20 hover:bg-accent/10' 
-                    : event.status === 'completed' 
-                      ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
-                      : event.status === 'blocked'
-                        ? 'bg-red-500/5 border-red-500/20 hover:bg-red-500/10'
-                        : event.status === 'in_progress'
-                          ? 'bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10'
-                          : 'bg-primary/5 border-primary/20 hover:bg-primary/10'
-                }`}
+ event.type === 'appt' 
+ ? 'bg-accent/5 border-accent/20 hover:bg-accent/10' 
+ : event.status === 'completed' 
+ ? 'bg-success/5 border-success/20 hover:bg-success/10'
+ : event.status === 'blocked'
+ ? 'bg-danger/5 border-danger/20 hover:bg-danger/10'
+ : event.status === 'in_progress'
+ ? 'bg-warning/5 border-warning/20 hover:bg-warning/10'
+ : 'bg-primary/5 border-primary/20 hover:bg-primary/10'
+ }`}
               >
                 <div className="flex items-center gap-4 min-w-0">
                   {/* Date Block */}
@@ -461,19 +461,19 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                        event.type === 'appt'
-                          ? 'bg-accent/10 text-accent border border-accent/20'
-                          : 'bg-primary/10 text-primary border border-primary/20'
-                      }`}>
+ event.type === 'appt'
+ ? 'bg-accent/10 text-accent border border-accent/20'
+ : 'bg-primary/10 text-primary border border-primary/20'
+ }`}>
                         {event.type === 'appt' ? 'Appointment' : 'Task'}
                       </span>
                       
                       {isTask && (
                         <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                          event.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                          event.status === 'blocked' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                          'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                        }`}>
+ event.status === 'completed' ? 'bg-success/10 text-success border border-success/20' :
+ event.status === 'blocked' ? 'bg-danger/10 text-danger border border-danger/20' :
+ 'bg-warning/10 text-warning border border-warning/20'
+ }`}>
                           {event.status}
                         </span>
                       )}
@@ -492,16 +492,16 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
 
                 <div className="flex-shrink-0">
                   <div className={`w-2 h-2 rounded-full ${
-                    event.type === 'appt' 
-                      ? 'bg-accent' 
-                      : event.status === 'completed' 
-                        ? 'bg-emerald-400' 
-                        : event.status === 'blocked' 
-                          ? 'bg-red-400' 
-                          : event.status === 'in_progress'
-                            ? 'bg-yellow-400'
-                            : 'bg-primary'
-                  }`} />
+ event.type === 'appt' 
+ ? 'bg-accent' 
+ : event.status === 'completed' 
+ ? 'bg-success' 
+ : event.status === 'blocked' 
+ ? 'bg-danger' 
+ : event.status === 'in_progress'
+ ? 'bg-warning'
+ : 'bg-primary'
+ }`} />
                 </div>
               </div>
             );

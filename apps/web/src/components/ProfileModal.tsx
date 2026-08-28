@@ -137,8 +137,8 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
+      <div className="modal-panel rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/20">
@@ -175,7 +175,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
                       </div>
                     )}
                   </div>
-                  <label className="absolute bottom-0 right-0 p-2 bg-primary text-white rounded-full cursor-pointer hover:bg-primary/90 shadow-lg transition-transform hover:scale-110">
+                  <label className="absolute bottom-0 right-0 p-2 bg-primary text-surface rounded-full cursor-pointer hover:bg-primary/90 shadow-lg transition-transform hover:scale-110">
                     <Camera className="w-4 h-4" />
                     <input 
                       type="file" 
@@ -201,8 +201,8 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-              {error && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">{error}</div>}
-              {success && <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-sm text-green-400">{success}</div>}
+              {error && <div className="p-3 rounded-xl bg-danger/10 border border-danger/20 text-sm text-danger">{error}</div>}
+              {success && <div className="p-3 rounded-xl bg-success/10 border border-success/20 text-sm text-success">{success}</div>}
 
               <div>
                 <label className="block text-xs font-bold text-textSecondary uppercase tracking-wider mb-1.5 ml-1">Full Name</label>
@@ -244,10 +244,10 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
                         window.dispatchEvent(new StorageEvent('storage', { key: 'theme' }));
                       }}
                       className={`p-2 rounded-lg transition-all ${
-                        theme === option.id 
-                          ? 'bg-primary text-white shadow-lg' 
-                          : 'text-textSecondary hover:text-textPrimary hover:bg-white/5'
-                      }`}
+ theme === option.id 
+ ? 'bg-primary text-surface shadow-lg' 
+ : 'text-textSecondary hover:text-textPrimary hover:bg-white/5'
+ }`}
                       title={option.label}
                     >
                       <option.icon className="w-4 h-4" />
@@ -267,7 +267,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
               </div>
 
               <div className="pt-4">
-                <button type="submit" disabled={saving} className="w-full py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                <button type="submit" disabled={saving} className="w-full py-3 rounded-xl bg-primary text-surface text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Save Changes</>}
                 </button>
               </div>

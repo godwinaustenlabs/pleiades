@@ -1,4 +1,4 @@
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { depreciationAsOf, type DepreciableAsset } from '../utils/depreciation';
 

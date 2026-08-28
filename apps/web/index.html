@@ -6,10 +6,26 @@
   <link rel="icon" type="image" href="/pleiades_logo_dark.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pleiades Portal</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#FBFAF7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0C110E" media="(prefers-color-scheme: dark)" />
+  <!-- Outfit was already named first in --font-sans but was never loaded, so every
+       heading silently fell back to Inter. Both are loaded now: Outfit for display,
+       Inter for UI text, JetBrains Mono for ids and figures. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
 </head>
 
 <body>
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme') || 'system';
+      var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (dark) document.documentElement.classList.add('dark');
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

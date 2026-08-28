@@ -3,6 +3,7 @@ import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, C
 import AssetPreviewModal from './AssetPreviewModal';
 import { previewTypeFor } from '../lib/preview';
 import { token } from '../lib/auth';
+import { statusChipClass, statusTone } from '../lib/status';
 
 export interface Column {
   key: string;
@@ -90,12 +91,12 @@ export default function GAGrid({
         return (
           <div className="flex flex-wrap gap-1 max-w-[200px]">
             {tags.slice(0, 3).map((v, i) => (
-              <span key={i} className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">
+              <span key={i} className={`chip chip-${statusTone(v)}`}>
                 {v}
               </span>
             ))}
             {tags.length > 3 && (
-              <span className="px-2 py-1 rounded-full text-[9px] font-black bg-white/5 text-textSecondary border border-white/10 whitespace-nowrap">
+              <span className="chip chip-neutral">
                 +{tags.length - 3}
               </span>
             )}
@@ -103,16 +104,10 @@ export default function GAGrid({
         );
       }
       case 'status':
-        return (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-            String(value || '').toLowerCase().includes('active') || String(value || '').toLowerCase().includes('paid') || String(value || '').toLowerCase().includes('approved')
-              ? 'bg-green-500/20 text-green-400'
-              : String(value || '').toLowerCase().includes('pending') || String(value || '').toLowerCase().includes('paused')
-              ? 'bg-yellow-500/20 text-yellow-400'
-              : 'bg-red-500/20 text-red-400'
-          }`}>
-            {value}
-          </span>
+        return value ? (
+          <span className={statusChipClass(value)}>{String(value).replace(/_/g, ' ')}</span>
+        ) : (
+          <span className="text-textTertiary text-xs">—</span>
         );
       case 'avatar': {
         const photoUrl = record.profilePhoto || record.photoUrl;
@@ -153,8 +148,8 @@ export default function GAGrid({
               className="relative w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-white/5 cursor-pointer group/thumb shadow-sm hover:border-primary/50 transition-all"
             >
               <img src={authenticatedUrl} alt="Thumbnail" className="w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-110" />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
-                <Maximize2 className="w-4 h-4 text-white" />
+              <div className="absolute inset-0 scrim opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                <Maximize2 className="w-4 h-4 text-onScrim" />
               </div>
             </div>
           );
@@ -229,7 +224,7 @@ export default function GAGrid({
           {onAdd && canAdd && (
             <button 
               onClick={onAdd}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-surface text-sm font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" /> <span>Add {entityName}</span>
             </button>
@@ -307,7 +302,7 @@ export default function GAGrid({
                             </button>
                           )}
                           {onDelete && canDelete && (
-                            <button onClick={(e) => { e.stopPropagation(); onDelete(record); }} className="p-2 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all" title="Delete">
+                            <button onClick={(e) => { e.stopPropagation(); onDelete(record); }} className="p-2 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-lg transition-all" title="Delete">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
@@ -371,7 +366,7 @@ export default function GAGrid({
                       </button>
                     )}
                     {onDelete && canDelete && (
-                      <button onClick={() => onDelete(record)} className="p-2.5 bg-red-400/10 text-red-400 rounded-xl transition-all active:scale-95">
+                      <button onClick={() => onDelete(record)} className="p-2.5 bg-danger/10 text-danger rounded-xl transition-all active:scale-95">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}

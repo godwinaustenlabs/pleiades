@@ -187,12 +187,12 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
   return (
     <div className="space-y-5">
       {error && (
-        <div className="flex items-start gap-2 border border-red-500/30 bg-red-500/5 rounded-xl p-3 text-sm text-red-500">
+        <div className="flex items-start gap-2 border border-danger/30 bg-danger/5 rounded-xl p-3 text-sm text-danger">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
         </div>
       )}
       {notice && (
-        <div className="flex items-start justify-between gap-2 border border-emerald-500/30 bg-emerald-500/5 rounded-xl p-3 text-sm text-emerald-500">
+        <div className="flex items-start justify-between gap-2 border border-success/30 bg-success/5 rounded-xl p-3 text-sm text-success">
           <span>{notice}</span>
           <button onClick={() => setNotice(null)}><X className="w-4 h-4" /></button>
         </div>
@@ -215,7 +215,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
       </div>
 
       {!!totals?.unposted && (
-        <div className="flex items-center gap-2 text-sm text-amber-500 border border-amber-500/30 bg-amber-500/5 rounded-xl p-3">
+        <div className="flex items-center gap-2 text-sm text-warning border border-warning/30 bg-warning/5 rounded-xl p-3">
           <TrendingDown className="w-4 h-4 shrink-0" />
           {money(totals.unposted)} of depreciation has accrued but is not in the ledger yet.
         </div>
@@ -232,7 +232,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
             type="month"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="bg-black/20 border border-white/10 rounded-xl px-3 py-1.5 text-sm"
+            className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-1.5 text-sm"
           />
           <button
             onClick={previewRun}
@@ -243,7 +243,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
           <button
             onClick={post}
             disabled={!canEdit || posting}
-            className="px-4 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+            className="px-4 py-1.5 rounded-xl bg-success/20 text-success border border-success/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
           >
             {posting ? 'Posting…' : 'Post to journal'}
           </button>
@@ -261,7 +261,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
                       <span className="truncate">{l.assetName}</span>
                       <span className="flex items-center gap-3 shrink-0">
                         {l.blocked && (
-                          <span className="text-[10px] text-amber-500 uppercase tracking-wider">{l.blocked}</span>
+                          <span className="text-[10px] text-warning uppercase tracking-wider">{l.blocked}</span>
                         )}
                         <span className="tabular-nums">{money(l.charge)}</span>
                       </span>
@@ -291,7 +291,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
         <button
           onClick={() => setShowForm((v) => !v)}
           disabled={!canEdit}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-success/20 text-success border border-success/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
         >
           <Plus className="w-3.5 h-3.5" /> Add asset
         </button>
@@ -315,7 +315,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
                   type={type}
                   value={(draft as any)[key]}
                   onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-                  className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                  className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
                 />
               </label>
             ))}
@@ -324,7 +324,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
               <select
                 value={draft.assetClass}
                 onChange={(e) => setDraft((d) => ({ ...d, assetClass: e.target.value }))}
-                className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
               >
                 {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -338,7 +338,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
                 <select
                   value={(draft as any)[key]}
                   onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-                  className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                  className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
                 >
                   <option value="">— not set —</option>
                   {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
@@ -354,7 +354,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
             <button
               onClick={create}
               disabled={saving || !draft.assetName}
-              className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+              className="px-4 py-2 rounded-xl bg-success/20 text-success border border-success/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -405,7 +405,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
                   <td className="px-4 py-3 text-right tabular-nums">
                     {money(a.accumulatedPosted)}
                     {a.unpostedDepreciation > 0 && (
-                      <div className="text-[10px] text-amber-500">+{money(a.unpostedDepreciation)} unposted</div>
+                      <div className="text-[10px] text-warning">+{money(a.unpostedDepreciation)} unposted</div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold">{money(a.writtenDownValue)}</td>
@@ -424,7 +424,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
                       onClick={() => remove(a)}
                       disabled={!canDelete}
                       title="Delete"
-                      className="p-1.5 rounded-lg border border-white/10 text-red-500 ml-1.5 disabled:opacity-30"
+                      className="p-1.5 rounded-lg border border-white/10 text-danger ml-1.5 disabled:opacity-30"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

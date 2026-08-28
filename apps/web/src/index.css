@@ -2,114 +2,554 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Evergreen + Copper
+   ─────────────────────────────────────────────────────────────────────────
+   Two schemes, one token layer. Every colour below is referenced through a
+   CSS custom property, so the light/dark blocks further down are the only
+   place a hue is chosen — components never name a raw colour.
+
+   The brand is green, which collides with green-as-"success" in status UI.
+   The collision is resolved by hue separation, not by hoping: the brand sits
+   at ~163deg (a cool, deep evergreen) while `success` sits at ~95deg (a warm
+   grass green). Sixty-eight degrees apart and one warm / one cool, so a
+   "Paid" chip never reads as a primary button. `warning` is a bright yellow
+   amber rather than the accent's muted terracotta, for the same reason.
+   ───────────────────────────────────────────────────────────────────────── */
+
 @theme {
   --color-background: var(--bg);
   --color-surface: var(--surface);
+  --color-surfaceAlt: var(--surface-alt);
+  --color-surfaceSunken: var(--surface-sunken);
   --color-primary: var(--primary);
+  --color-primaryHover: var(--primary-hover);
+  --color-primarySoft: var(--primary-soft);
   --color-accent: var(--accent);
+  --color-accentSoft: var(--accent-soft);
   --color-textPrimary: var(--text-main);
   --color-textSecondary: var(--text-sec);
-  /* Three components — AccountantPanel, PermissionMatrix and Admin — were
-     already styling with `bg-surfaceAlt` and `border-border`, but neither token
-     was ever defined, so those panels rendered with no background and no
-     visible border. Defining them here fixes all three at once. */
-  --color-surfaceAlt: var(--surface-alt);
+  --color-textTertiary: var(--text-ter);
   --color-border: var(--border);
+  --color-borderStrong: var(--border-strong);
+
+  /* Semantic status. These replace the hardcoded green-500/yellow-400/red-400
+     chips, which were pale-on-pale — and therefore unreadable — in light mode. */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-successHover: var(--success-hover);
+  --color-warningHover: var(--warning-hover);
+  --color-dangerHover: var(--danger-hover);
+  --color-infoHover: var(--info-hover);
+
+  /* The accent of whichever module the subtree belongs to. Set once per page
+     root by `.module-theme` + an inline `--module`; every descendant — including
+     shared components like OutreachTracker, which appears under two different
+     modules — then picks up the right hue with no prop threading. Falls back to
+     the brand so an un-themed subtree still renders. */
+  --color-module: var(--module, var(--primary));
+  --color-moduleHover: var(--module-hover, var(--primary-hover));
+
+  /* `white` and `black` are deliberately theme-inverting: `text-white` means
+     "the strongest foreground", `bg-white/5` means "a faint scrim". Around a
+     thousand call sites across the app depend on this. Do not make them literal. */
+  /* Foreground for content sitting on a `.scrim`, which is dark in both
+     themes — `text-white` inverts and would go black in light mode. */
+  --color-onScrim: #FFFFFF;
+
   --color-white: var(--dynamic-white);
   --color-black: var(--dynamic-black);
-  --font-sans: "Outfit", "Inter", sans-serif;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --radius-card: 1.25rem;
+  --radius-panel: 1.75rem;
+  --radius-bento: 2rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @layer base {
   :root {
-    --bg: #F8FAFC;
+    /* Warm stone neutrals. A pure-grey light mode next to an evergreen brand
+       reads cold and clinical; lifting the neutrals a few degrees toward the
+       copper accent is what makes the two schemes feel like one family. */
+    --bg: #FBFAF7;
     --surface: #FFFFFF;
-    --primary: #1267ea;
-    --accent: #4b8efa;
-    --text-main: #0F172A;
-    --text-sec: #64748B;
-    --glass-border: rgba(18, 103, 234, 0.1);
-    --glass-shadow: rgba(18, 103, 234, 0.05);
-    --glass-bg: rgba(255, 255, 255, 0.7);
-    --glass-bg-heavy: rgba(255, 255, 255, 0.95);
-    --gradient-start: hsla(217, 91%, 95%, 1);
-    --gradient-end: hsla(217, 91%, 98%, 1);
-    --surface-alt: #F1F5F9;
-    --border: #E2E8F0;
-    --dynamic-white: #0F172A;
+    --surface-alt: #F3F1EC;
+    --surface-sunken: #EFEDE6;
+    --border: #E5E1D8;
+    --border-strong: #D3CDBF;
+
+    --primary: #047857;
+    --primary-hover: #036049;
+    --primary-soft: #D8F0E5;
+    --accent: #C2703D;
+    --accent-soft: #F7E7DB;
+
+    --text-main: #16201A;
+    --text-sec: #5F6A62;
+    --text-ter: #6E786F;
+
+    /* Chip foregrounds are the *dark* end of each ramp in light mode, so
+       tinted-background chips actually meet contrast. */
+    --success: #3F7D20;
+    --warning: #A16207;
+    --danger: #B3261E;
+    --info: #1F6FB2;
+    --success-hover: color-mix(in oklab, var(--success) 84%, #000);
+    --warning-hover: color-mix(in oklab, var(--warning) 84%, #000);
+    --danger-hover: color-mix(in oklab, var(--danger) 84%, #000);
+    --info-hover: color-mix(in oklab, var(--info) 84%, #000);
+
+    --glass-border: rgba(4, 120, 87, 0.12);
+    --glass-shadow: rgba(31, 41, 33, 0.06);
+    --glass-bg: rgba(255, 255, 255, 0.72);
+    --glass-bg-heavy: rgba(255, 255, 255, 0.94);
+
+    --mesh-1: rgba(4, 120, 87, 0.10);
+    --mesh-2: rgba(194, 112, 61, 0.09);
+    --mesh-3: rgba(4, 120, 87, 0.05);
+
+    --shadow-sm: 0 1px 2px rgba(31, 41, 33, 0.05);
+    --shadow-md: 0 4px 14px rgba(31, 41, 33, 0.07), 0 1px 3px rgba(31, 41, 33, 0.05);
+    --shadow-lg: 0 12px 32px rgba(31, 41, 33, 0.09), 0 2px 8px rgba(31, 41, 33, 0.05);
+    --shadow-xl: 0 24px 60px rgba(31, 41, 33, 0.13), 0 4px 16px rgba(31, 41, 33, 0.06);
+    --tile-sheen: rgba(255, 255, 255, 0.85);
+    --scrim: rgba(22, 32, 26, 0.45);
+
+
+    /* Per-app tile hues. Each module owns one, so the home grid reads as a set
+       of distinct places. Spread deliberately around the wheel — the closest
+       pair (indigo/violet) is 25deg apart, and nothing sits within 25deg of the
+       evergreen brand except the brand tile itself. Light mode takes the 600-700
+       end of each ramp so the hue stays legible against white. */
+    --app-dashboard: #047857;
+    --app-admin: #9333EA;
+    --app-hr: #7C3AED;
+    --app-legal: #4F46E5;
+    --app-tech: #0369A1;
+    --app-finance: #0E7490;
+    --app-ops: #B45309;
+    --app-acquisition: #BE123C;
+    --app-crm: #C2703D;
+    --app-portal: #4F46E5;
+
+    --dynamic-white: #16201A;
     --dynamic-black: #FFFFFF;
+
+    color-scheme: light;
   }
 
   .dark {
-    --bg: #0F172A;
-    --surface: #1E293B;
-    --primary: #1267ea;
-    --accent: #4b8efa;
-    --text-main: #F8FAFC;
-    --text-sec: #94A3B8;
-    --glass-border: rgba(255, 255, 255, 0.05);
-    --glass-shadow: rgba(0, 0, 0, 0.3);
-    --glass-bg: rgba(15, 23, 42, 0.4);
-    --glass-bg-heavy: rgba(15, 23, 42, 0.8);
-    --gradient-start: hsla(217, 33%, 10%, 1);
-    --gradient-end: hsla(217, 33%, 5%, 1);
-    --surface-alt: #273449;
-    --border: #334155;
-    --dynamic-white: #ffffff;
+    --bg: #0C110E;
+    --surface: #141B16;
+    --surface-alt: #1D2620;
+    --surface-sunken: #10160F;
+    --border: #2C3830;
+    --border-strong: #3E4C43;
+
+    --primary: #10B981;
+    --primary-hover: #34D399;
+    --primary-soft: #123A2C;
+    --accent: #E08D57;
+    --accent-soft: #3A2519;
+
+    --text-main: #F2F5F1;
+    --text-sec: #97A69C;
+    --text-ter: #6B7A71;
+
+    /* The *light* end of each ramp on dark tints, mirroring the inversion above. */
+    --success: #8FCB3F;
+    --warning: #F0B429;
+    --danger: #F87171;
+    --info: #6BA8E8;
+    --success-hover: color-mix(in oklab, var(--success) 82%, #fff);
+    --warning-hover: color-mix(in oklab, var(--warning) 82%, #fff);
+    --danger-hover: color-mix(in oklab, var(--danger) 82%, #fff);
+    --info-hover: color-mix(in oklab, var(--info) 82%, #fff);
+
+    --glass-border: rgba(242, 245, 241, 0.07);
+    --glass-shadow: rgba(0, 0, 0, 0.45);
+    --glass-bg: rgba(20, 27, 22, 0.55);
+    --glass-bg-heavy: rgba(12, 17, 14, 0.88);
+
+    --mesh-1: rgba(16, 185, 129, 0.10);
+    --mesh-2: rgba(224, 141, 87, 0.07);
+    --mesh-3: rgba(16, 185, 129, 0.05);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
+    --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+    --tile-sheen: rgba(242, 245, 241, 0.10);
+    --scrim: rgba(0, 0, 0, 0.72);
+
+
+    /* The 400 end of the same ramps, for contrast against the forest ground. */
+    --app-dashboard: #10B981;
+    --app-admin: #C084FC;
+    --app-hr: #A78BFA;
+    --app-legal: #818CF8;
+    --app-tech: #38BDF8;
+    --app-finance: #22D3EE;
+    --app-ops: #FBBF24;
+    --app-acquisition: #FB7185;
+    --app-crm: #E08D57;
+    --app-portal: #818CF8;
+
+    --dynamic-white: #FFFFFF;
     --dynamic-black: #000000;
+
+    color-scheme: dark;
   }
 
   body {
-    @apply bg-background text-textPrimary antialiased selection:bg-primary/30 overflow-x-hidden;
-    background-image: 
-      radial-gradient(at 0% 0%, var(--gradient-start) 0, transparent 50%),
-      radial-gradient(at 100% 100%, var(--gradient-end) 0, transparent 50%);
+    @apply bg-background text-textPrimary antialiased selection:bg-primary/25 selection:text-textPrimary overflow-x-hidden;
+    font-family: var(--font-sans);
+    /* A three-point mesh rather than the previous two hard blobs: the corners
+       carry brand and accent, the centre stays quiet so content sits on calm
+       ground instead of on top of a gradient. */
+    background-image:
+      radial-gradient(ellipse 80% 55% at 8% -5%, var(--mesh-1) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 50% at 100% 8%, var(--mesh-2) 0%, transparent 55%),
+      radial-gradient(ellipse 90% 60% at 50% 108%, var(--mesh-3) 0%, transparent 60%);
+    background-attachment: fixed;
     min-height: 100vh;
     width: 100%;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  /* Digits line up in tables and money columns. */
+  table, .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* There was no visible focus ring anywhere — inputs only shifted their
+     border colour, which keyboard users cannot follow. One ring, everywhere. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  ::placeholder {
+    color: var(--text-ter);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer utilities {
+  /* ── Module theming ───────────────────────────────────────────────────── */
+
+  /* Pair with an inline `--module` (e.g. `var(--app-legal)`) on a page root.
+     `--module-hover` has to be derived here rather than at `:root`, because a
+     custom property declared at `:root` resolves its own `var(--module)` at
+     `:root` scope and would ignore the page-level value entirely. */
+  /* `--color-module` has to be re-declared *here*, on the same element that
+     carries the inline `--module`, not left to the `@theme` entry. A custom
+     property containing `var()` is substituted at the scope where it is
+     declared: the `@theme` copy lives on `:root`, resolves `--module` there
+     (undefined), and every descendant then inherits the already-resolved
+     fallback. Declaring it alongside the inline value is what makes the page
+     accent actually reach the subtree. The `@theme` entries remain so Tailwind
+     still emits `bg-module`, `text-module`, … and so an un-wrapped subtree
+     falls back to the brand. */
+  .module-theme {
+    --module-hover: color-mix(in oklab, var(--module, var(--primary)) 84%, #000);
+    --color-module: var(--module, var(--primary));
+    --color-moduleHover: var(--module-hover);
+  }
+  .dark .module-theme {
+    --module-hover: color-mix(in oklab, var(--module, var(--primary)) 82%, #fff);
+  }
+
+  /* Modal backdrop. Previously spelled `bg-black/60`, which inverts with the
+     `--color-black` token and therefore rendered a *white* wash over a white
+     page in light mode — no dimming at all. A scrim must darken in both themes,
+     so it is its own token rather than an alpha on a theme colour. */
+  .scrim {
+    background-color: var(--scrim);
+    @apply backdrop-blur-sm;
+  }
+
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+
   .glass-panel {
     background-color: var(--glass-bg);
     border-color: var(--glass-border);
-    @apply backdrop-blur-xl border border-solid shadow-[0_8px_32px_0_var(--glass-shadow)];
+    @apply backdrop-blur-xl border border-solid;
+    box-shadow: var(--shadow-md);
   }
-  
+
   .glass-panel-heavy {
     background-color: var(--glass-bg-heavy);
     border-color: var(--glass-border);
-    @apply backdrop-blur-2xl border border-solid shadow-2xl;
+    @apply backdrop-blur-2xl border border-solid;
+    box-shadow: var(--shadow-xl);
   }
 
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  /* The opaque counterpart, for anything that scrolls behind other content —
+     blur over a moving backdrop costs a repaint per frame. */
+  .solid-panel {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
   }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
+  /* A dialog sits on top of the scrim, so it must be opaque. `glass-panel` is
+     72% alpha, which let the scrim bleed through and turned every modal a muddy
+     grey instead of a clean surface. */
+  .modal-panel {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xl);
   }
 
+  .elev-sm { box-shadow: var(--shadow-sm); }
+  .elev-md { box-shadow: var(--shadow-md); }
+  .elev-lg { box-shadow: var(--shadow-lg); }
+  .elev-xl { box-shadow: var(--shadow-xl); }
+
+  /* ── Bento tiles ──────────────────────────────────────────────────────── */
+
+  /* Each tile carries its own hue through `--tile`, set inline per app, so the
+     grid reads as a set of related places rather than nine identical blocks.
+     Tailwind cannot generate a class per hue at build time — a custom property
+     is what makes the variation possible without a class explosion. */
+  .bento-tile {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-bento);
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform 0.5s var(--ease-out-expo),
+      box-shadow 0.5s var(--ease-out-expo),
+      border-color 0.4s ease;
+  }
+
+  .bento-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--tile, var(--primary)) 9%, transparent) 0%,
+      transparent 55%
+    );
+    opacity: 0.85;
+    transition: opacity 0.5s ease;
+  }
+
+  /* The cursor spotlight. `--mx`/`--my` are written by a pointermove handler;
+     with no handler attached it falls back to the tile centre and simply
+     behaves as a static glow. */
+  .bento-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(
+      380px circle at var(--mx, 50%) var(--my, 50%),
+      color-mix(in oklab, var(--tile, var(--primary)) 16%, transparent) 0%,
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.45s ease;
+  }
+
+  .bento-tile:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in oklab, var(--tile, var(--primary)) 40%, var(--border));
+    box-shadow: var(--shadow-lg);
+  }
+
+  .bento-tile:hover::after { opacity: 1; }
+  .bento-tile:hover::before { opacity: 1; }
+
+  /* The oversized watermark glyph that bleeds off each tile's corner. */
+  .tile-ghost {
+    position: absolute;
+    right: -1.5rem;
+    bottom: -2rem;
+    z-index: -1;
+    color: var(--tile, var(--primary));
+    opacity: 0.07;
+    pointer-events: none;
+    transition: transform 0.7s var(--ease-out-expo), opacity 0.5s ease;
+  }
+
+  .bento-tile:hover .tile-ghost {
+    transform: translate(-0.5rem, -0.75rem) rotate(-8deg) scale(1.08);
+    opacity: 0.13;
+  }
+
+  .tile-badge {
+    background-color: color-mix(in oklab, var(--tile, var(--primary)) 14%, transparent);
+    color: var(--tile, var(--primary));
+    border: 1px solid color-mix(in oklab, var(--tile, var(--primary)) 28%, transparent);
+  }
+
+  .tile-accent-text { color: var(--tile, var(--primary)); }
+
+  .tile-cta {
+    background-color: color-mix(in oklab, var(--tile, var(--primary)) 12%, transparent);
+    border: 1px solid color-mix(in oklab, var(--tile, var(--primary)) 25%, transparent);
+    color: var(--tile, var(--primary));
+    transition: all 0.4s var(--ease-out-expo);
+  }
+
+  .bento-tile:hover .tile-cta {
+    background-color: var(--tile, var(--primary));
+    border-color: var(--tile, var(--primary));
+    color: var(--surface);
+  }
+
+  /* ── Status chips ─────────────────────────────────────────────────────── */
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap border;
+  }
+
+  .chip-dot::before {
+    content: "";
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: currentColor;
+    flex: none;
+  }
+
+  .chip-success { background-color: color-mix(in oklab, var(--success) 14%, transparent); color: var(--success); border-color: color-mix(in oklab, var(--success) 30%, transparent); }
+  .chip-warning { background-color: color-mix(in oklab, var(--warning) 14%, transparent); color: var(--warning); border-color: color-mix(in oklab, var(--warning) 30%, transparent); }
+  .chip-danger  { background-color: color-mix(in oklab, var(--danger)  14%, transparent); color: var(--danger);  border-color: color-mix(in oklab, var(--danger)  30%, transparent); }
+  .chip-info    { background-color: color-mix(in oklab, var(--info)    14%, transparent); color: var(--info);     border-color: color-mix(in oklab, var(--info)    30%, transparent); }
+  .chip-neutral { background-color: var(--surface-alt); color: var(--text-sec); border-color: var(--border); }
+
+  /* ── Controls ─────────────────────────────────────────────────────────── */
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-300;
+    background-color: var(--primary);
+    color: var(--surface);
+    box-shadow: 0 4px 14px color-mix(in oklab, var(--primary) 30%, transparent);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px color-mix(in oklab, var(--primary) 38%, transparent);
+  }
+  .btn-primary:disabled { opacity: 0.5; }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-300;
+    background-color: var(--surface-alt);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--border-strong); background-color: var(--surface-sunken); }
+
+  .field {
+    @apply w-full rounded-xl px-4 py-3 text-sm transition-all duration-200;
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+  }
+  .field:hover { border-color: var(--border-strong); }
+  .field:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: var(--surface);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 16%, transparent);
+  }
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+
+  .text-gradient {
+    background-image: linear-gradient(135deg, var(--text-main) 15%, var(--primary) 65%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-[0.24em];
+    color: var(--text-ter);
+  }
+
+  .hairline { border-color: var(--border); }
+
+  /* ── Scrollbars ───────────────────────────────────────────────────────── */
+
+  .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+    background-color: var(--border-strong);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
   }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-ter);
+    background-clip: content-box;
+  }
+  .custom-scrollbar { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
-/* Animations */
+/* ── Motion ───────────────────────────────────────────────────────────────
+   Staggerable entrances. `.animate-rise` with an inline animation-delay is
+   how lists and grids come in without every child arriving at once. */
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0) }
+  50%      { transform: translateY(-10px) }
+}
+
+@keyframes shimmer {
+  from { background-position: -180% 0 }
+  to   { background-position: 180% 0 }
+}
+
+.animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+.animate-rise    { animation: riseIn 0.6s var(--ease-out-expo) both; }
+.animate-float   { animation: floatSlow 7s ease-in-out infinite; }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-alt) 25%, var(--surface-sunken) 50%, var(--surface-alt) 75%);
+  background-size: 220% 100%;
+  animation: shimmer 1.6s linear infinite;
 }

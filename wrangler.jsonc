@@ -4,23 +4,24 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "office",
+	"name": "pleiades",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-01-03",
 	"observability": {
 		"enabled": true
 	},
+	// Every var here is read by the Worker. VERBOSE, AGENT_ID and CF_ACCOUNT_ID
+	// used to sit alongside these and were read by nothing — see the note on the
+	// Env type in src/index.ts for why that went unnoticed for so long.
 	"vars": {
-		"VERBOSE": "true",
 		// One AI Gateway per agent. Shared would mean one request log mixing payroll
 		// runs with "what's on my calendar", which is a log nobody reads.
-		"AI_GATEWAY_PLEIADES": "pleiades-accounting-agent",
+		"AI_GATEWAY_ACCOUNTANT": "pleiades-accounting-agent",
 		"AI_GATEWAY_SLACK": "pleiades-slack-agent",
-		"WORKER_ORIGIN": "https://office.galabs.workers.dev",
-		"LLM_MODEL": "@cf/openai/gpt-oss-120b",
-		"AGENT_ID": "nova-mcp-agent",
-		"CF_ACCOUNT_ID": "ec758d282b2c89b4a1a147b64f445849",
-		
+		// Must match `name` below: the cron path has no inbound request to take an
+		// origin from, and this is what stops a preview deploy calling production.
+		"WORKER_ORIGIN": "https://pleiades.galabs.workers.dev",
+		"LLM_MODEL": "@cf/openai/gpt-oss-120b"
 	},
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -49,7 +50,7 @@
 	"services": [
 		{
 			"binding": "SELF",
-			"service": "office"
+			"service": "pleiades"
 		}
 	],
 	// The Slack agent runs as a Durable Object via the Agents SDK: one instance
@@ -62,43 +63,31 @@
 				"class_name": "SlackAgent"
 			},
 			{
-				"name": "PLEIADES_AGENT",
-				"class_name": "PleiadesAgent"
+				"name": "ACCOUNTANT_AGENT",
+				"class_name": "AccountantAgent"
 			}
 		]
 	},
 	// SQLite-backed Durable Objects must be declared here or the class has no
 	// storage and `this.sql` throws at runtime.
+	// A brand-new script starts its DO migration history at v1. The old office
+	// script's v1/v2 tags are not carried across: tags are per-script, and this
+	// script has never had a Durable Object before.
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": [
-				"SlackAgent"
-			]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": [
-				"PleiadesAgent"
+				"SlackAgent",
+				"AccountantAgent"
 			]
 		}
 	],
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_id": "2c0c6471-7fcb-4ce0-96fa-03a41d260201",
-			"database_name": "office-db",
+			"database_id": "f075010c-d41b-4c3e-b859-9981b3e7aad1",
+			"database_name": "pleiades-db",
 			"migrations_dir": "packages/database/migrations"
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "CLIENTS_KV_NAMESPACE",
-			"id": "669b10984a084d2d88f046a056d2ad4d"
-		},
-		{
-			"binding": "MEMORY_KV_NAMESPACE",
-			"id": "fe850a4d50b945ab84298100d85e9460"
 		}
 	],
 	"ai": {
@@ -107,14 +96,14 @@
 	"r2_buckets": [
 		{
 			"binding": "CRM_BUCKET",
-			"bucket_name": "office-crm-docs"
+			"bucket_name": "pleiades-docs"
 		},
 		{
 			// Source documents for the accountant's knowledge base. Kept apart
 			// from CRM_BUCKET so a compliance manual can never be served through
 			// /api/assets, which is reachable by anyone with the right grant.
 			"binding": "COMPLIANCE_BUCKET",
-			"bucket_name": "office-compliance-docs"
+			"bucket_name": "pleiades-compliance-docs"
 		}
 	],
 	// Retrieval over those documents. Rates never come from here — see

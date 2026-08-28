@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { eq, and, desc, inArray } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess, APP_FEATURES, checkFeaturePermission } from '../middleware/rbac';

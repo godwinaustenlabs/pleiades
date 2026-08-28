@@ -272,16 +272,16 @@ export default function OutreachTracker() {
     if (loading) return null;
     if (saveStatus === 'saving') return (
       <span className="text-sm font-semibold text-textSecondary flex items-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin text-rose-400" /> Saving…
+        <Loader2 className="w-4 h-4 animate-spin text-module" /> Saving…
       </span>
     );
     if (saveStatus === 'saved') return (
-      <span className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+      <span className="text-sm font-semibold text-success flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4" /> Saved to database
       </span>
     );
     if (saveStatus === 'error') return (
-      <span className="text-sm font-semibold text-rose-400 flex items-center gap-2">
+      <span className="text-sm font-semibold text-module flex items-center gap-2">
         <AlertCircle className="w-4 h-4" /> Save failed — retry?
         <button onClick={doSave} className="underline hover:no-underline ml-1">Retry</button>
       </span>
@@ -299,10 +299,10 @@ export default function OutreachTracker() {
             key={v}
             onClick={() => setView(v)}
             className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-              view === v
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
-                : 'bg-white/5 text-textSecondary hover:bg-white/10'
-            }`}
+ view === v
+ ? 'bg-module text-surface shadow-lg shadow-module/25'
+ : 'bg-white/5 text-textSecondary hover:bg-white/10'
+ }`}
           >
             {v === 'daily' ? 'Daily Tracker' : 'Overview & Reports'}
           </button>
@@ -327,12 +327,12 @@ export default function OutreachTracker() {
                       key={i}
                       onClick={() => setSelectedDate(d)}
                       className={`flex flex-col items-center justify-center w-12 h-16 md:w-14 md:h-16 rounded-xl transition-all ${
-                        isSelected
-                          ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border border-rose-400'
-                          : isToday
-                          ? 'bg-white/10 text-textPrimary border border-rose-500/30'
-                          : 'bg-white/5 hover:bg-white/10 text-textSecondary border border-transparent'
-                      }`}
+ isSelected
+ ? 'bg-module text-surface shadow-lg shadow-module/25 border border-module'
+ : isToday
+ ? 'bg-white/10 text-textPrimary border border-module/30'
+ : 'bg-white/5 hover:bg-white/10 text-textSecondary border border-transparent'
+ }`}
                     >
                       <span className="text-[10px] font-bold uppercase tracking-widest">{format(d, 'EEE')}</span>
                       <span className={`text-lg font-black ${isSelected ? 'text-white' : 'text-textPrimary'}`}>{format(d, 'd')}</span>
@@ -346,12 +346,12 @@ export default function OutreachTracker() {
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-sm font-bold">
-                <CalendarIcon className="w-4 h-4 text-rose-400" />
+                <CalendarIcon className="w-4 h-4 text-module" />
                 {format(selectedDate, 'MMMM yyyy')}
               </div>
               <button
                 onClick={() => setSelectedDate(new Date())}
-                className="px-4 py-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 rounded-full font-bold text-sm transition-all"
+                className="px-4 py-2 bg-module/20 text-module hover:bg-module/30 rounded-full font-bold text-sm transition-all"
               >
                 Today
               </button>
@@ -360,12 +360,12 @@ export default function OutreachTracker() {
 
           {/* Error Banner */}
           {fetchError && (
-            <div className="glass-panel p-4 rounded-2xl border border-rose-500/30 bg-rose-500/5 flex items-center gap-3 text-rose-400">
+            <div className="glass-panel p-4 rounded-2xl border border-module/30 bg-module/5 flex items-center gap-3 text-module">
               <AlertCircle className="w-5 h-5 shrink-0" />
               <span className="text-sm font-semibold flex-1">Could not load data: {fetchError}</span>
               <button
                 onClick={() => fetchOutreach(selectedDate)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 rounded-full text-xs font-bold transition-all"
+                className="flex items-center gap-2 px-3 py-1.5 bg-module/20 hover:bg-module/30 rounded-full text-xs font-bold transition-all"
               >
                 <RefreshCw className="w-3 h-3" /> Retry
               </button>
@@ -376,7 +376,7 @@ export default function OutreachTracker() {
           {loading ? (
             <div className="glass-panel p-12 rounded-2xl flex justify-center items-center border border-white/5">
               <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 text-rose-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-module animate-spin" />
                 <span className="text-textSecondary text-sm font-semibold">Loading outreach data…</span>
               </div>
             </div>
@@ -397,7 +397,7 @@ export default function OutreachTracker() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Any notable insights, wins, or objections today?"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm focus:outline-none focus:border-rose-500/50 min-h-[120px] resize-none transition-all"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm focus:outline-none focus:border-module/50 min-h-[120px] resize-none transition-all"
                 />
               </div>
 
@@ -405,9 +405,9 @@ export default function OutreachTracker() {
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2 text-xs text-textSecondary">
                   {record ? (
-                    <><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Record ID: {record.id}</>
+                    <><CheckCircle2 className="w-3.5 h-3.5 text-success" /> Record ID: {record.id}</>
                   ) : (
-                    <><Target className="w-3.5 h-3.5 text-amber-400" /> New record for {format(selectedDate, 'MMM d, yyyy')}</>
+                    <><Target className="w-3.5 h-3.5 text-warning" /> New record for {format(selectedDate, 'MMM d, yyyy')}</>
                   )}
                 </div>
                 <div className="flex items-center gap-4">
@@ -415,7 +415,7 @@ export default function OutreachTracker() {
                   <button
                     onClick={doSave}
                     disabled={saveStatus === 'saving'}
-                    className="px-5 py-2 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-rose-500/25"
+                    className="px-5 py-2 bg-module hover:bg-moduleHover disabled:opacity-50 text-surface rounded-full font-bold text-sm transition-all shadow-lg shadow-module/25"
                   >
                     Save Now
                   </button>
@@ -442,7 +442,7 @@ export default function OutreachTracker() {
                     type="date"
                     value={value}
                     onChange={(e) => setter(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-rose-500/50 transition-all"
+                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-module/50 transition-all"
                   />
                 </div>
               ))}
@@ -456,7 +456,7 @@ export default function OutreachTracker() {
             <button
               onClick={downloadCSV}
               disabled={reportData.length === 0}
-              className="px-6 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-rose-500/25 flex items-center gap-2 w-full md:w-auto justify-center"
+              className="px-6 py-2.5 bg-module hover:bg-moduleHover disabled:opacity-40 disabled:cursor-not-allowed text-surface rounded-full font-bold text-sm transition-all shadow-lg shadow-module/25 flex items-center gap-2 w-full md:w-auto justify-center"
             >
               <Download className="w-4 h-4" /> Download CSV
             </button>
@@ -483,7 +483,7 @@ export default function OutreachTracker() {
           {/* Data table */}
           <div className="glass-panel rounded-2xl border border-white/5 overflow-hidden">
             <div className="p-6 border-b border-white/5 flex items-center gap-3">
-              <BarChart3 className="w-5 h-5 text-rose-400" />
+              <BarChart3 className="w-5 h-5 text-module" />
               <h3 className="font-bold text-lg">Performance Overview</h3>
               {reportData.length > 0 && (
                 <span className="ml-auto text-xs font-bold text-textSecondary bg-white/5 px-3 py-1 rounded-full">
@@ -494,7 +494,7 @@ export default function OutreachTracker() {
 
             {loadingReport ? (
               <div className="p-12 flex justify-center">
-                <Loader2 className="w-8 h-8 text-rose-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-module animate-spin" />
               </div>
             ) : reportData.length === 0 ? (
               <div className="p-12 text-center text-textSecondary">
@@ -516,20 +516,20 @@ export default function OutreachTracker() {
                     {reportData.map((r, i) => (
                       <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                         <td className="p-4 text-sm font-bold">{r.date}</td>
-                        <td className="p-4 text-sm font-bold text-blue-400">{r.dmsSent}</td>
-                        <td className="p-4 text-sm font-bold text-purple-400">{r.emailsSent}</td>
-                        <td className="p-4 text-sm font-bold text-emerald-400">{r.repliesReceived}</td>
-                        <td className="p-4 text-sm font-bold text-amber-400">{r.forwards}</td>
-                        <td className="p-4 text-sm font-bold text-rose-400">{r.meetingsBooked}</td>
+                        <td className="p-4 text-sm font-bold text-info">{r.dmsSent}</td>
+                        <td className="p-4 text-sm font-bold text-info">{r.emailsSent}</td>
+                        <td className="p-4 text-sm font-bold text-success">{r.repliesReceived}</td>
+                        <td className="p-4 text-sm font-bold text-warning">{r.forwards}</td>
+                        <td className="p-4 text-sm font-bold text-module">{r.meetingsBooked}</td>
                       </tr>
                     ))}
                     <tr className="bg-white/5 font-black border-t border-white/10">
                       <td className="p-4 text-sm text-textSecondary uppercase tracking-widest text-xs">TOTAL</td>
-                      <td className="p-4 text-sm text-blue-400">{reportData.reduce((a, r) => a + (r.dmsSent || 0), 0)}</td>
-                      <td className="p-4 text-sm text-purple-400">{reportData.reduce((a, r) => a + (r.emailsSent || 0), 0)}</td>
-                      <td className="p-4 text-sm text-emerald-400">{reportData.reduce((a, r) => a + (r.repliesReceived || 0), 0)}</td>
-                      <td className="p-4 text-sm text-amber-400">{reportData.reduce((a, r) => a + (r.forwards || 0), 0)}</td>
-                      <td className="p-4 text-sm text-rose-400">{reportData.reduce((a, r) => a + (r.meetingsBooked || 0), 0)}</td>
+                      <td className="p-4 text-sm text-info">{reportData.reduce((a, r) => a + (r.dmsSent || 0), 0)}</td>
+                      <td className="p-4 text-sm text-info">{reportData.reduce((a, r) => a + (r.emailsSent || 0), 0)}</td>
+                      <td className="p-4 text-sm text-success">{reportData.reduce((a, r) => a + (r.repliesReceived || 0), 0)}</td>
+                      <td className="p-4 text-sm text-warning">{reportData.reduce((a, r) => a + (r.forwards || 0), 0)}</td>
+                      <td className="p-4 text-sm text-module">{reportData.reduce((a, r) => a + (r.meetingsBooked || 0), 0)}</td>
                     </tr>
                   </tbody>
                 </table>

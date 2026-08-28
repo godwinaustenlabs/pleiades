@@ -109,14 +109,14 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
   const fmt = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
   if (loading) return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center scrim ">
       <Loader2 className="w-8 h-8 text-primary animate-spin" />
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center scrim p-4" onClick={onClose}>
+      <div className="modal-panel rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
@@ -132,10 +132,10 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
               {[1, 2, 3].map(s => (
                 <div key={s} className={`flex items-center gap-1.5 ${s < step ? 'cursor-pointer' : ''}`} onClick={() => s < step && setStep(s)}>
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border transition-all ${
-                    s === step ? 'bg-primary border-primary text-white' :
-                    s < step ? 'bg-green-500/20 border-green-500/50 text-green-400' :
-                    'bg-white/5 border-white/20 text-textSecondary'
-                  }`}>{s}</div>
+ s === step ? 'bg-primary border-primary text-surface' :
+ s < step ? 'bg-success/20 border-success/50 text-success' :
+ 'bg-white/5 border-white/20 text-textSecondary'
+ }`}>{s}</div>
                 </div>
               ))}
             </div>
@@ -194,10 +194,10 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
               {/* Earnings */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-black text-green-400 uppercase tracking-widest flex items-center gap-2">
+                  <h3 className="text-sm font-black text-success uppercase tracking-widest flex items-center gap-2">
                     <TrendingUp className="w-4 h-4" /> Earnings / Allowances
                   </h3>
-                  <button onClick={() => addComponent('Earning')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 text-xs font-bold hover:bg-green-500/20 transition-all">
+                  <button onClick={() => addComponent('Earning')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/10 text-success border border-success/20 text-xs font-bold hover:bg-success/20 transition-all">
                     <Plus className="w-3 h-3" /> Add Earning
                   </button>
                 </div>
@@ -240,11 +240,11 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
                         type="number"
                         value={comp.value}
                         onChange={e => updateComponent(idx, 'value', Number(e.target.value))}
-                        className="w-full bg-surface/50 border border-white/10 rounded-lg pl-5 pr-2 py-1.5 text-sm font-mono focus:outline-none focus:border-green-500/50"
+                        className="w-full bg-surface/50 border border-white/10 rounded-lg pl-5 pr-2 py-1.5 text-sm font-mono focus:outline-none focus:border-success/50"
                       />
                     </div>
                     {/* Delete */}
-                    <button onClick={() => removeComponent(idx)} className="p-1.5 text-textSecondary hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                    <button onClick={() => removeComponent(idx)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-lg transition-all">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -254,10 +254,10 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
               {/* Deductions */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-black text-red-400 uppercase tracking-widest flex items-center gap-2">
+                  <h3 className="text-sm font-black text-danger uppercase tracking-widest flex items-center gap-2">
                     <TrendingDown className="w-4 h-4" /> Deductions
                   </h3>
-                  <button onClick={() => addComponent('Deduction')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold hover:bg-red-500/20 transition-all">
+                  <button onClick={() => addComponent('Deduction')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-danger/10 text-danger border border-danger/20 text-xs font-bold hover:bg-danger/20 transition-all">
                     <Plus className="w-3 h-3" /> Add Deduction
                   </button>
                 </div>
@@ -297,10 +297,10 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
                         type="number"
                         value={comp.value}
                         onChange={e => updateComponent(idx, 'value', Number(e.target.value))}
-                        className="w-full bg-surface/50 border border-white/10 rounded-lg pl-5 pr-2 py-1.5 text-sm font-mono focus:outline-none focus:border-red-500/50"
+                        className="w-full bg-surface/50 border border-white/10 rounded-lg pl-5 pr-2 py-1.5 text-sm font-mono focus:outline-none focus:border-danger/50"
                       />
                     </div>
-                    <button onClick={() => removeComponent(idx)} className="p-1.5 text-textSecondary hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all">
+                    <button onClick={() => removeComponent(idx)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-lg transition-all">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -317,12 +317,12 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
                   <span className="text-textSecondary">—</span>
                   <div className="text-center">
                     <p className="text-[10px] text-textSecondary uppercase tracking-widest">Deductions</p>
-                    <p className="font-black text-red-400">{fmt(preview.totalDeductions)}</p>
+                    <p className="font-black text-danger">{fmt(preview.totalDeductions)}</p>
                   </div>
                   <span className="text-textSecondary">=</span>
                   <div className="text-center">
                     <p className="text-[10px] text-textSecondary uppercase tracking-widest">Net Pay</p>
-                    <p className="font-black text-green-400 text-lg">{fmt(preview.netPay)}</p>
+                    <p className="font-black text-success text-lg">{fmt(preview.netPay)}</p>
                   </div>
                 </div>
               )}
@@ -345,15 +345,15 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
 
               {/* Earnings */}
               {preview.earnings.length > 0 && (
-                <div className="rounded-xl overflow-hidden border border-green-500/20">
-                  <div className="bg-green-500/10 px-4 py-2 flex items-center gap-2">
-                    <TrendingUp className="w-3.5 h-3.5 text-green-400" />
-                    <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Earnings & Allowances</span>
+                <div className="rounded-xl overflow-hidden border border-success/20">
+                  <div className="bg-success/10 px-4 py-2 flex items-center gap-2">
+                    <TrendingUp className="w-3.5 h-3.5 text-success" />
+                    <span className="text-[10px] font-black text-success uppercase tracking-widest">Earnings & Allowances</span>
                   </div>
                   {preview.earnings.map((e: any, i: number) => (
                     <div key={i} className="flex justify-between items-center px-4 py-2.5 border-t border-white/5 bg-white/[0.02] hover:bg-white/5 transition-colors">
                       <span className="text-sm">{e.name}</span>
-                      <span className="font-mono font-bold text-green-400">+ {fmt(e.amount)}</span>
+                      <span className="font-mono font-bold text-success">+ {fmt(e.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -361,15 +361,15 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
 
               {/* Deductions */}
               {preview.deductions.length > 0 && (
-                <div className="rounded-xl overflow-hidden border border-red-500/20">
-                  <div className="bg-red-500/10 px-4 py-2 flex items-center gap-2">
-                    <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                    <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Deductions</span>
+                <div className="rounded-xl overflow-hidden border border-danger/20">
+                  <div className="bg-danger/10 px-4 py-2 flex items-center gap-2">
+                    <TrendingDown className="w-3.5 h-3.5 text-danger" />
+                    <span className="text-[10px] font-black text-danger uppercase tracking-widest">Deductions</span>
                   </div>
                   {preview.deductions.map((d: any, i: number) => (
                     <div key={i} className="flex justify-between items-center px-4 py-2.5 border-t border-white/5 bg-white/[0.02] hover:bg-white/5 transition-colors">
                       <span className="text-sm">{d.name}</span>
-                      <span className="font-mono font-bold text-red-400">− {fmt(d.amount)}</span>
+                      <span className="font-mono font-bold text-danger">− {fmt(d.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -388,7 +388,7 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
               </div>
 
               {error && (
-                <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">
+                <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger text-xs font-bold">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {error}
                 </div>
@@ -398,7 +398,7 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
         </div>
 
         {/* Footer navigation */}
-        <div className="p-6 border-t border-white/10 bg-black/20 flex items-center justify-between shrink-0">
+        <div className="p-6 border-t border-white/10 bg-surfaceAlt flex items-center justify-between shrink-0">
           <button
             onClick={() => step > 1 ? setStep(s => s - 1) : onClose()}
             className="flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 border border-white/10 font-bold text-sm hover:bg-white/10 transition-all"
@@ -411,7 +411,7 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
             <button
               onClick={() => setStep(s => s + 1)}
               disabled={step === 1 && baseSalary <= 0}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90 transition-all disabled:opacity-40"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-surface font-bold text-sm hover:opacity-90 transition-all disabled:opacity-40"
             >
               Next <ChevronRight className="w-4 h-4" />
             </button>
@@ -419,7 +419,7 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-2 px-8 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90 transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-8 py-3 rounded-xl bg-primary text-surface font-bold text-sm hover:opacity-90 transition-all disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {saving ? 'Saving...' : 'Save Schema'}

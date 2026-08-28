@@ -1,16 +1,16 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
-import { getDb, schema } from '@ganova/database';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { UserPayload } from '../middleware/auth';
 import { requireFeatureAccess } from '../middleware/rbac';
 import { logAudit } from '../utils/audit';
 import { ok, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
-import { decideApproval, listPending } from '../agents/pleiades-accountant/approvals';
-import { accountantKey, type AccountantTurn } from '../agents/pleiades-accountant/agent';
-import { ingestDocument, removeDocument, searchKnowledge } from '../agents/pleiades-accountant/knowledge';
-import { recallActions } from '../agents/pleiades-accountant/journal';
+import { decideApproval, listPending } from '../agents/accountant/approvals';
+import { accountantKey, type AccountantTurn } from '../agents/accountant/agent';
+import { ingestDocument, removeDocument, searchKnowledge } from '../agents/accountant/knowledge';
+import { recallActions } from '../agents/accountant/journal';
 import { generateId } from '../utils/id';
 import {
   loadConfig,
@@ -18,7 +18,7 @@ import {
   renderComplianceContext,
   GROUP_LABELS,
   GROUP_ORDER,
-} from '../agents/pleiades-accountant/config';
+} from '../agents/accountant/config';
 
 /**
  * The Pleiades accountant, mounted inside the finance router at
@@ -273,8 +273,8 @@ agentRouter.post('/chat', requireFeatureAccess('finance', 'agent', 'edit'), asyn
       conversationId: thread ? `conv_${user.id}_${thread}` : undefined,
     };
 
-    const id = c.env.PLEIADES_AGENT.idFromName(accountantKey(user.id, thread));
-    const stub = c.env.PLEIADES_AGENT.get(id);
+    const id = c.env.ACCOUNTANT_AGENT.idFromName(accountantKey(user.id, thread));
+    const stub = c.env.ACCOUNTANT_AGENT.get(id);
     const res = await stub.fetch('https://pleiades.internal/turn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
