@@ -58,7 +58,7 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
           return (
             <React.Fragment key={i}>
               <div 
-                className="bg-gradient-to-r from-rose-500/80 to-pink-500/80 rounded-xl flex items-center justify-center shadow-lg shadow-rose-500/20 border border-white/20 backdrop-blur-md relative group transition-all duration-300 hover:scale-105"
+                className="bg-gradient-to-r from-module/80 to-module/80 rounded-xl flex items-center justify-center shadow-lg shadow-module/20 border border-white/20 backdrop-blur-md relative group transition-all duration-300 hover:scale-105"
                 style={{ 
                   width: `${currentWidth}%`, 
                   minHeight: '80px',
@@ -81,7 +81,7 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
                   )}
                 </div>
               </div>
-              {!isLast && <ArrowDown className="w-5 h-5 text-rose-500/50 animate-bounce" />}
+              {!isLast && <ArrowDown className="w-5 h-5 text-module/50 animate-bounce" />}
             </React.Fragment>
           );
         })}
@@ -93,11 +93,11 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
           </div>
           <div>
             <p className="text-textSecondary text-[10px] font-black uppercase tracking-widest">Conversions</p>
-            <p className="text-2xl font-black text-emerald-400">{funnel.conversions || 0}</p>
+            <p className="text-2xl font-black text-success">{funnel.conversions || 0}</p>
           </div>
           <div>
             <p className="text-textSecondary text-[10px] font-black uppercase tracking-widest">Conv. Rate</p>
-            <p className="text-2xl font-black text-rose-400">{funnel.conversionRatePct || 0}%</p>
+            <p className="text-2xl font-black text-module">{funnel.conversionRatePct || 0}%</p>
           </div>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
       <div className="w-full md:w-80 border-r border-white/5 bg-white/[0.02] flex flex-col">
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Target className="w-5 h-5 text-rose-400" />
+            <Target className="w-5 h-5 text-module" />
             <h3 className="font-black text-lg tracking-tight">Funnels</h3>
           </div>
           {canEdit && (
@@ -129,10 +129,10 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
                 key={f.id}
                 onClick={() => setSelectedId(f.id)}
                 className={`w-full text-left p-4 rounded-2xl transition-all border ${
-                  selectedId === f.id 
-                    ? 'bg-rose-500/10 border-rose-500/20 shadow-lg shadow-rose-500/5' 
-                    : 'bg-white/5 border-transparent hover:bg-white/10'
-                }`}
+ selectedId === f.id 
+ ? 'bg-module/10 border-module/20 shadow-lg shadow-module/5' 
+ : 'bg-white/5 border-transparent hover:bg-white/10'
+ }`}
               >
                 <p className="font-bold text-sm truncate">{f.funnelName}</p>
                 <p className="text-xs text-textSecondary mt-1">Rate: {f.conversionRatePct || 0}%</p>
@@ -158,7 +158,7 @@ export default function FunnelView({ funnels, onAdd, onEdit, onDelete, canEdit, 
                   </button>
                 )}
                 {canDelete && (
-                  <button onClick={() => onDelete(selectedFunnel)} className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all flex items-center gap-2 text-sm font-bold">
+                  <button onClick={() => onDelete(selectedFunnel)} className="px-4 py-2 bg-danger/10 hover:bg-danger/20 text-danger rounded-xl transition-all flex items-center gap-2 text-sm font-bold">
                     <Trash2 className="w-4 h-4" /> Delete
                   </button>
                 )}

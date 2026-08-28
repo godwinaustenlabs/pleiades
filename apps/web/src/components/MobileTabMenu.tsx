@@ -37,14 +37,14 @@ export default function MobileTabMenu({ tabs, activeTab, onTabChange, accentColo
       </button>
 
       {isOpen && (
-        <div className="mt-2 bg-slate-900 border border-white/10 rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50 relative">
+        <div className="mt-2 bg-surfaceAlt border border-white/10 rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50 relative">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => handleTabClick(tab.id)}
               className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-bold transition-all hover:bg-white/5 ${
-                activeTab === tab.id ? `text-${accentColor} bg-${accentColor}/5` : 'text-textSecondary'
-              }`}
+ activeTab === tab.id ? `text-${accentColor} bg-${accentColor}/5` : 'text-textSecondary'
+ }`}
             >
               <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? `text-${accentColor}` : 'text-textSecondary'}`} />
               {tab.label}

@@ -127,14 +127,14 @@ function Ops() {
   }, [TABS, permsLoaded]);
 
   if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
-  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-indigo-400 animate-spin" /></div>;
+  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-module animate-spin" /></div>;
 
   if (TABS.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-8">
         <div className="glass-panel p-12 rounded-[2.5rem] text-center space-y-6 max-w-md border border-white/10 shadow-2xl">
-          <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto border border-indigo-500/20">
-            <Lock className="w-10 h-10 text-indigo-400" />
+          <div className="w-20 h-20 bg-module/10 rounded-full flex items-center justify-center mx-auto border border-module/20">
+            <Lock className="w-10 h-10 text-module" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Ops Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
@@ -188,21 +188,21 @@ function Ops() {
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
       <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-500/20 p-2 rounded-xl border border-indigo-500/20 shadow-lg shadow-indigo-500/5">
-            <Settings className="w-5 h-5 md:w-6 h-6 text-indigo-400" />
+          <div className="bg-module/20 p-2 rounded-xl border border-module/20 shadow-lg shadow-module/5">
+            <Settings className="w-5 h-5 md:w-6 h-6 text-module" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-indigo-400">OPS</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-module">OPS</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Infrastructure</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-indigo-400 hover:bg-indigo-400/10 rounded-xl transition-all">
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-module hover:bg-module/10 rounded-xl transition-all">
             <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-indigo-500/20 overflow-hidden">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-module to-info flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-module/20 overflow-hidden">
               {user.profilePhoto ? (
                 <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
@@ -215,7 +215,7 @@ function Ops() {
             </div>
           </button>
           <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
             <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
@@ -226,10 +226,10 @@ function Ops() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
-                ? 'border-indigo-400 text-indigo-400 bg-indigo-400/5'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
-                }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-indigo-400' : 'text-textSecondary'}`} />
+ ? 'border-module text-module bg-module/5'
+ : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
+ }`}>
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-module' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}
@@ -270,11 +270,11 @@ function Ops() {
                   render: (_, record) => {
                     const status = clientPortalStatuses[record.id];
                     if (!status) return <span className="text-[10px] text-textSecondary italic animate-pulse">Checking...</span>;
-                    if (!status.hasLogin) return <span className="text-[10px] text-red-400 font-black uppercase tracking-widest">No Access</span>;
+                    if (!status.hasLogin) return <span className="text-[10px] text-danger font-black uppercase tracking-widest">No Access</span>;
                     return (
                       <div className="flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${status.isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${status.isActive ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${status.isActive ? 'bg-success' : 'bg-danger'}`} />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${status.isActive ? 'text-success' : 'text-danger'}`}>
                           {status.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </div>
@@ -322,7 +322,7 @@ function Ops() {
                 label: 'Provision Portal',
                 icon: Key,
                 onClick: (r) => { setSelectedClient(r); setShowProvisionPortal(true); },
-                color: 'text-indigo-400 hover:bg-indigo-500/10'
+                color: 'text-module hover:bg-module/10'
               }
             ] : tab === 'committees' ? [
               {
@@ -346,7 +346,7 @@ function Ops() {
                     alert('Error: ' + (err as Error).message);
                   }
                 },
-                color: 'text-red-400 hover:bg-red-500/10'
+                color: 'text-danger hover:bg-danger/10'
               }
             ] : []}
             canAdd={p.canEdit}
@@ -357,9 +357,9 @@ function Ops() {
 
         {tab === 'committees' && (
           <div className="mt-8 space-y-6">
-            <div className={`flex items-center justify-between p-8 glass-panel rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 transition-all ${!p.canEdit ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
+            <div className={`flex items-center justify-between p-8 glass-panel rounded-[2.5rem] bg-gradient-to-br from-module/10 to-transparent border-module/20 transition-all ${!p.canEdit ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
               <div className="flex items-center gap-6">
-                <div className="w-16 h-16 rounded-[2rem] bg-indigo-500 flex items-center justify-center shadow-xl shadow-indigo-500/20 border border-white/10">
+                <div className="w-16 h-16 rounded-[2rem] bg-module flex items-center justify-center shadow-xl shadow-module/20 border border-white/10">
                   <Shield className="w-8 h-8 text-white" />
                 </div>
                 <div>
@@ -368,7 +368,7 @@ function Ops() {
                 </div>
               </div>
               {p.canEdit && (
-                <button onClick={() => setShowProvisionCrm(true)} className="px-10 py-4 bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2 hover:scale-105">
+                <button onClick={() => setShowProvisionCrm(true)} className="px-10 py-4 bg-module hover:bg-moduleHover text-surface text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-module/25 flex items-center gap-2 hover:scale-105">
                   Launch CRM
                 </button>
               )}
@@ -626,16 +626,16 @@ function ProvisionCrmModal({ committees, employees, onClose, onSubmit }: { commi
     finally { setLoading(false); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={onClose}>
       <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
           <div><h2 className="text-xl font-black uppercase tracking-tight">Provision CRM Instance</h2><p className="text-[10px] text-textSecondary font-black uppercase tracking-widest mt-1">Operational Lifecycle Management</p></div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Target Committee</label><select required value={formData.committeeId} onChange={e => setFormData({ ...formData, committeeId: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-indigo-500 appearance-none transition-all">{committees.map(c => <option key={c.id} value={c.id}>{c.committeeName}</option>)}</select></div>
-          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Internal Personnel Assignments</label><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">{employees.map(emp => (<label key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-pointer group"><input type="checkbox" checked={(formData.employeeIds || []).includes(emp.id)} onChange={e => { const ids = e.target.checked ? [...(formData.employeeIds || []), emp.id] : (formData.employeeIds || []).filter(id => id !== emp.id); setFormData({ ...formData, employeeIds: ids }); }} className="w-4 h-4 rounded border-white/10 bg-black/40 text-indigo-500 focus:ring-0" /><div className="flex-1"><p className="text-xs font-bold group-hover:text-white transition-colors">{emp.name}</p><p className="text-[9px] text-textSecondary uppercase font-black tracking-widest">{emp.department}</p></div></label>))}</div></div>
-          <div className="pt-6 border-t border-white/10 flex justify-end gap-4"><button type="button" onClick={onClose} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">Discard</button><button type="submit" disabled={loading || !formData.committeeId} className="px-10 py-4 bg-indigo-500 hover:bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2 disabled:opacity-50">{loading ? 'Provisioning...' : 'Launch CRM'} <Check className="w-4 h-4" /></button></div>
+          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Target Committee</label><select required value={formData.committeeId} onChange={e => setFormData({ ...formData, committeeId: e.target.value })} className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-module appearance-none transition-all">{committees.map(c => <option key={c.id} value={c.id}>{c.committeeName}</option>)}</select></div>
+          <div><label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-3">Internal Personnel Assignments</label><div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">{employees.map(emp => (<label key={emp.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-pointer group"><input type="checkbox" checked={(formData.employeeIds || []).includes(emp.id)} onChange={e => { const ids = e.target.checked ? [...(formData.employeeIds || []), emp.id] : (formData.employeeIds || []).filter(id => id !== emp.id); setFormData({ ...formData, employeeIds: ids }); }} className="w-4 h-4 rounded border-white/10 bg-surfaceAlt text-module focus:ring-0" /><div className="flex-1"><p className="text-xs font-bold group-hover:text-white transition-colors">{emp.name}</p><p className="text-[9px] text-textSecondary uppercase font-black tracking-widest">{emp.department}</p></div></label>))}</div></div>
+          <div className="pt-6 border-t border-white/10 flex justify-end gap-4"><button type="button" onClick={onClose} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">Discard</button><button type="submit" disabled={loading || !formData.committeeId} className="px-10 py-4 bg-module hover:bg-moduleHover text-surface text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-module/25 flex items-center gap-2 disabled:opacity-50">{loading ? 'Provisioning...' : 'Launch CRM'} <Check className="w-4 h-4" /></button></div>
         </form>
       </div>
     </div>
@@ -670,7 +670,7 @@ function ProvisionPortalModal({ client, onClose, onSubmit }: { client: any; onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={onClose}>
       <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
           <div>
@@ -681,36 +681,36 @@ function ProvisionPortalModal({ client, onClose, onSubmit }: { client: any; onCl
         </div>
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
           {error && (
-            <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-bold">
+            <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-2xl text-danger text-xs font-bold">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
           <div>
             <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Display Name</label>
             <input required value={formData.displayName} onChange={e => setFormData({ ...formData, displayName: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+              className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all" />
           </div>
           <div>
             <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Login Email</label>
             <input required type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })}
               placeholder="client@company.com"
-              className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+              className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Password</label>
               <input required type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })}
-                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+                className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Confirm</label>
               <input required type="password" value={formData.confirmPassword} onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
-                className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+                className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all" />
             </div>
           </div>
           <div className="pt-6 flex justify-end gap-4">
             <button type="button" onClick={onClose} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">Discard</button>
-            <button type="submit" disabled={loading} className="px-10 py-4 bg-indigo-500 hover:bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-indigo-500/25 flex items-center gap-2 disabled:opacity-50">
+            <button type="submit" disabled={loading} className="px-10 py-4 bg-module hover:bg-moduleHover text-surface text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-module/25 flex items-center gap-2 disabled:opacity-50">
               {loading ? 'Provisioning...' : 'Enable Access'}
               {!loading && <Check className="w-4 h-4" />}
             </button>

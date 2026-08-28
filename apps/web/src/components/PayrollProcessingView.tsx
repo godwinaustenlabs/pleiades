@@ -107,7 +107,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
               />
             </div>
 
-            <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm flex gap-3 items-start">
+            <div className="p-4 rounded-xl bg-warning/10 border border-warning/20 text-warning text-sm flex gap-3 items-start">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold mb-1">How it works</p>
@@ -116,7 +116,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
             </div>
 
             {error && (
-              <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">
+              <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger text-xs font-bold">
                 <AlertCircle className="w-4 h-4 shrink-0" /> {error}
               </div>
             )}
@@ -125,7 +125,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
           <button
             onClick={handlePreviewPayroll}
             disabled={loadingPreview}
-            className="w-full py-4 rounded-xl bg-primary text-white font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="w-full py-4 rounded-xl bg-primary text-surface font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {loadingPreview
               ? <><Loader2 className="w-5 h-5 animate-spin" /> Calculating salaries...</>
@@ -161,8 +161,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
                   <tr>
                     <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest">Employee</th>
                     <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest">Base</th>
-                    <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest text-green-400">Gross</th>
-                    <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest text-red-400">Deductions</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest text-success">Gross</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest text-danger">Deductions</th>
                     <th className="px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest text-right">Net Pay</th>
                   </tr>
                 </thead>
@@ -171,8 +171,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
                     <tr key={emp.employeeId} className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3 font-bold">{emp.employeeName}</td>
                       <td className="px-4 py-3 font-mono text-textSecondary">{fmt(emp.baseSalary)}</td>
-                      <td className="px-4 py-3 font-mono text-green-400">{fmt(emp.grossSalary)}</td>
-                      <td className="px-4 py-3 font-mono text-red-400">− {fmt(emp.totalDeductions)}</td>
+                      <td className="px-4 py-3 font-mono text-success">{fmt(emp.grossSalary)}</td>
+                      <td className="px-4 py-3 font-mono text-danger">− {fmt(emp.totalDeductions)}</td>
                       <td className="px-4 py-3 font-mono font-black text-white text-right">{fmt(emp.netPay)}</td>
                     </tr>
                   ))}
@@ -182,7 +182,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
           </div>
 
           {error && (
-            <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">
+            <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger text-xs font-bold">
               <AlertCircle className="w-4 h-4 shrink-0" /> {error}
             </div>
           )}
@@ -194,7 +194,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
             <button
               onClick={handleGeneratePayroll}
               disabled={processing}
-              className="flex-1 py-4 rounded-xl bg-primary text-white font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 py-4 rounded-xl bg-primary text-surface font-bold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {processing ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating...</> : 'Confirm & Generate Payroll →'}
             </button>
@@ -205,8 +205,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
       {/* STEP 3: Done */}
       {step === 3 && (
         <div className="space-y-6 animate-in fade-in zoom-in duration-300">
-          <div className="glass-panel p-8 rounded-3xl border border-green-500/20 bg-green-500/5 text-center max-w-xl mx-auto space-y-4">
-            <CheckCircle2 className="w-14 h-14 text-green-400 mx-auto" />
+          <div className="glass-panel p-8 rounded-3xl border border-success/20 bg-success/5 text-center max-w-xl mx-auto space-y-4">
+            <CheckCircle2 className="w-14 h-14 text-success mx-auto" />
             <h3 className="text-xl font-bold">Payroll Generated!</h3>
             <p className="text-sm text-textSecondary">
               {results.filter(r => r.status === 'generated').length} payroll records created for <strong className="text-white">{month}</strong>.
@@ -231,11 +231,11 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
                 {results.map((r, i) => (
                   <tr key={i} className="hover:bg-white/[0.02]">
                     <td className="px-4 py-3 font-bold">{r.name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-green-400 font-bold">{fmt(r.netPay)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-success font-bold">{fmt(r.netPay)}</td>
                     <td className="px-4 py-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${
-                        r.status === 'generated' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
-                      }`}>{r.status}</span>
+ r.status === 'generated' ? 'bg-success/10 text-success border-success/20' : 'bg-danger/10 text-danger border-danger/20'
+ }`}>{r.status}</span>
                     </td>
                   </tr>
                 ))}

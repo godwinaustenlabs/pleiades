@@ -188,14 +188,14 @@ function Finance() {
   }, [TABS, permsLoaded]);
 
   if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
-  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-emerald-400 animate-spin" /></div>;
+  if (!permsLoaded) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-12 h-12 text-success animate-spin" /></div>;
 
   if (TABS.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-8">
         <div className="glass-panel p-12 rounded-[2.5rem] text-center space-y-6 max-w-md border border-white/10 shadow-2xl">
-          <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
-            <Lock className="w-10 h-10 text-emerald-400" />
+          <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto border border-success/20">
+            <Lock className="w-10 h-10 text-success" />
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Finance Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
@@ -232,21 +232,21 @@ function Finance() {
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
       <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-500/20 p-2 rounded-xl border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
-            <Wallet className="w-5 h-5 md:w-6 h-6 text-emerald-400" />
+          <div className="bg-success/20 p-2 rounded-xl border border-success/20 shadow-lg shadow-success/5">
+            <Wallet className="w-5 h-5 md:w-6 h-6 text-success" />
           </div>
           <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-emerald-400">FINANCE</span></h1>
+            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-success">FINANCE</span></h1>
             <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Controllership</span>
           </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-emerald-400 hover:bg-emerald-400/10 rounded-xl transition-all">
+          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-success hover:bg-success/10 rounded-xl transition-all">
             <Home className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
           <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-emerald-500/20 overflow-hidden">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-success to-module flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-success/20 overflow-hidden">
               {user.profilePhoto ? (
                 <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
               ) : (
@@ -259,7 +259,7 @@ function Finance() {
             </div>
           </button>
           <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
             <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
@@ -270,10 +270,10 @@ function Finance() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
-                ? 'border-emerald-400 text-emerald-400 bg-emerald-400/5'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
-                }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-emerald-400' : 'text-textSecondary'}`} />
+ ? 'border-success text-success bg-success/5'
+ : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
+ }`}>
+              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-success' : 'text-textSecondary'}`} />
               {t.label}
             </button>
           ))}
@@ -292,18 +292,18 @@ function Finance() {
             <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">Account</label>
-                <select value={selectedLedgerAccount} onChange={e => setSelectedLedgerAccount(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white">
+                <select value={selectedLedgerAccount} onChange={e => setSelectedLedgerAccount(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white">
                   <option value="">Select Account...</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.accountName}</option>)}
                 </select>
               </div>
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
               </div>
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">End Date</label>
-                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
               </div>
             </div>
             
@@ -314,7 +314,7 @@ function Finance() {
                 </div>
                 
                 <h2 className="text-2xl font-black mb-8 flex items-center gap-3 relative z-10">
-                  <Wallet className="w-6 h-6 text-emerald-400" />
+                  <Wallet className="w-6 h-6 text-success" />
                   Ledger: {accounts.find(a => a.id === selectedLedgerAccount)?.accountName}
                 </h2>
                 
@@ -322,32 +322,32 @@ function Finance() {
                   <div className="hidden md:block absolute left-1/2 top-0 bottom-0 w-px bg-white/10 -translate-x-1/2"></div>
                   
                   <div>
-                    <h3 className="font-black text-lg mb-4 text-emerald-400 border-b border-white/10 pb-2 tracking-widest uppercase">Debit (Dr)</h3>
+                    <h3 className="font-black text-lg mb-4 text-success border-b border-white/10 pb-2 tracking-widest uppercase">Debit (Dr)</h3>
                     <div className="space-y-2">
                       {ledgerViewData.debits.map((d: any) => (
-                        <div key={d.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${d.isBalanceEntry ? 'bg-amber-500/10 border-amber-500/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
+                        <div key={d.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${d.isBalanceEntry ? 'bg-warning/10 border-warning/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
                           <div className="flex flex-col gap-0.5">
-                            <span className={`font-bold transition-colors ${d.isBalanceEntry ? 'text-amber-400' : 'text-white group-hover:text-emerald-400'}`}>{d.description || 'Entry'}</span>
+                            <span className={`font-bold transition-colors ${d.isBalanceEntry ? 'text-warning' : 'text-white group-hover:text-success'}`}>{d.description || 'Entry'}</span>
                             <span className="text-[10px] text-textSecondary font-mono">{new Date(d.entryDate).toLocaleDateString()}</span>
-                            {!d.isBalanceEntry && d.id && <span className="text-[10px] font-mono text-emerald-500/60 bg-emerald-500/5 border border-emerald-500/10 px-1.5 py-0.5 rounded self-start">{d.id}</span>}
+                            {!d.isBalanceEntry && d.id && <span className="text-[10px] font-mono text-success/60 bg-success/5 border border-success/10 px-1.5 py-0.5 rounded self-start">{d.id}</span>}
                           </div>
-                          <span className={`font-mono font-black ${d.isBalanceEntry ? 'text-amber-400' : 'text-emerald-400'}`}>${(d.amount || 0).toLocaleString()}</span>
+                          <span className={`font-mono font-black ${d.isBalanceEntry ? 'text-warning' : 'text-success'}`}>${(d.amount || 0).toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                   
                   <div>
-                    <h3 className="font-black text-lg mb-4 text-rose-400 border-b border-white/10 pb-2 tracking-widest uppercase">Credit (Cr)</h3>
+                    <h3 className="font-black text-lg mb-4 text-danger border-b border-white/10 pb-2 tracking-widest uppercase">Credit (Cr)</h3>
                     <div className="space-y-2">
                       {ledgerViewData.credits.map((c: any) => (
-                        <div key={c.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${c.isBalanceEntry ? 'bg-amber-500/10 border-amber-500/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
+                        <div key={c.id} className={`flex justify-between items-center text-sm py-3 px-4 rounded-xl border transition-all group ${c.isBalanceEntry ? 'bg-warning/10 border-warning/30' : 'hover:bg-white/5 border-transparent hover:border-white/10'}`}>
                           <div className="flex flex-col gap-0.5">
-                            <span className={`font-bold transition-colors ${c.isBalanceEntry ? 'text-amber-400' : 'text-white group-hover:text-rose-400'}`}>{c.description || 'Entry'}</span>
+                            <span className={`font-bold transition-colors ${c.isBalanceEntry ? 'text-warning' : 'text-white group-hover:text-danger'}`}>{c.description || 'Entry'}</span>
                             <span className="text-[10px] text-textSecondary font-mono">{new Date(c.entryDate).toLocaleDateString()}</span>
-                            {!c.isBalanceEntry && c.id && <span className="text-[10px] font-mono text-rose-500/60 bg-rose-500/5 border border-rose-500/10 px-1.5 py-0.5 rounded self-start">{c.id}</span>}
+                            {!c.isBalanceEntry && c.id && <span className="text-[10px] font-mono text-danger/60 bg-danger/5 border border-danger/10 px-1.5 py-0.5 rounded self-start">{c.id}</span>}
                           </div>
-                          <span className={`font-mono font-black ${c.isBalanceEntry ? 'text-amber-400' : 'text-rose-400'}`}>${(c.amount || 0).toLocaleString()}</span>
+                          <span className={`font-mono font-black ${c.isBalanceEntry ? 'text-warning' : 'text-danger'}`}>${(c.amount || 0).toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
@@ -357,19 +357,19 @@ function Finance() {
                 <div className="mt-8 pt-6 border-t-2 border-white/20 grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
                   <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
                     <span>Total Dr</span>
-                    <span className="text-emerald-400 font-mono">${(ledgerViewData.totalDebit || 0).toLocaleString()}</span>
+                    <span className="text-success font-mono">${(ledgerViewData.totalDebit || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
                     <span>Total Cr</span>
-                    <span className="text-rose-400 font-mono">${(ledgerViewData.totalCredit || 0).toLocaleString()}</span>
+                    <span className="text-danger font-mono">${(ledgerViewData.totalCredit || 0).toLocaleString()}</span>
                   </div>
                 </div>
                 
                 <div className="mt-8 flex justify-center relative z-10">
-                  <div className={`px-8 py-4 rounded-2xl border-2 font-black text-xl flex gap-4 items-center shadow-2xl ${ledgerViewData.balanceSide === 'debit' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-emerald-500/20' : 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-rose-500/20'}`}>
+                  <div className={`px-8 py-4 rounded-2xl border-2 font-black text-xl flex gap-4 items-center shadow-2xl ${ledgerViewData.balanceSide === 'debit' ? 'bg-success/10 border-success/30 text-success shadow-success/20' : 'bg-danger/10 border-danger/30 text-danger shadow-danger/20'}`}>
                     <span>Balance b/d:</span>
                     <span className="font-mono">${(ledgerViewData.closingBalance || 0).toLocaleString()}</span>
-                    <span className="text-xs uppercase tracking-widest bg-black/40 px-3 py-1.5 rounded-lg border border-white/10">{ledgerViewData.balanceSide}</span>
+                    <span className="text-xs uppercase tracking-widest bg-surfaceAlt px-3 py-1.5 rounded-lg border border-white/10">{ledgerViewData.balanceSide}</span>
                   </div>
                 </div>
               </div>
@@ -397,15 +397,15 @@ function Finance() {
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
                 <div className="flex-1 w-full md:w-auto">
                   <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
                 </div>
                 <div className="flex-1 w-full md:w-auto">
                   <label className="text-xs text-textSecondary mb-1 block">End Date</label>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
                 </div>
                 <button 
                   onClick={() => window.open(`${API}/finance/export/${tab}?startDate=${startDate}&endDate=${endDate}`, '_blank')}
-                  className="w-full md:w-auto px-6 py-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 rounded-xl font-bold text-sm transition-all border border-emerald-500/30"
+                  className="w-full md:w-auto px-6 py-2 bg-success/20 text-success hover:bg-success/30 rounded-xl font-bold text-sm transition-all border border-success/30"
                 >
                   Export CSV
                 </button>
@@ -442,7 +442,7 @@ function Finance() {
                     }
                     if (lines.length > 0) {
                       const drs = lines.filter((l: any) => l.type === 'debit');
-                      return drs.length > 1 ? <span className="text-emerald-400/70 italic text-xs">Multiple ({drs.length})</span> : (accounts.find(a => a.id === drs[0]?.accountId)?.accountName || '—');
+                      return drs.length > 1 ? <span className="text-success/70 italic text-xs">Multiple ({drs.length})</span> : (accounts.find(a => a.id === drs[0]?.accountId)?.accountName || '—');
                     }
                     return accounts.find(a => a.id === v)?.accountName || v || '—';
                   }
@@ -454,12 +454,12 @@ function Finance() {
                     }
                     if (lines.length > 0) {
                       const crs = lines.filter((l: any) => l.type === 'credit');
-                      return crs.length > 1 ? <span className="text-rose-400/70 italic text-xs">Multiple ({crs.length})</span> : (accounts.find(a => a.id === crs[0]?.accountId)?.accountName || '—');
+                      return crs.length > 1 ? <span className="text-danger/70 italic text-xs">Multiple ({crs.length})</span> : (accounts.find(a => a.id === crs[0]?.accountId)?.accountName || '—');
                     }
                     return accounts.find(a => a.id === v)?.accountName || v || '—';
                   }
                 },
-                { key: 'invoiceId', label: 'Invoice', render: (v: any) => { const inv = invoices.find((i) => i.id === v); return inv ? <span className="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">{inv.invoiceNumber}</span> : <span className="text-textSecondary text-xs">—</span>; } },
+                { key: 'invoiceId', label: 'Invoice', render: (v: any) => { const inv = invoices.find((i) => i.id === v); return inv ? <span className="text-xs font-mono text-warning bg-warning/10 border border-warning/20 px-2 py-0.5 rounded-lg">{inv.invoiceNumber}</span> : <span className="text-textSecondary text-xs">—</span>; } },
               ] : tab === 'invoices' ? [
                 { key: 'invoiceNumber', label: 'Invoice #' },
                 { key: 'vendorName', label: 'Vendor' },
@@ -479,8 +479,8 @@ function Finance() {
                 { key: 'accountName', label: 'Account', type: 'avatar' as const },
                 { key: 'accountType', label: 'Type', type: 'badge' as const },
                 { key: 'bankName', label: 'Bank' },
-                { key: 'openingBalance', label: 'Opening Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.openingBalanceSide === 'debit' ? 'text-emerald-400 font-bold' : row.openingBalanceSide === 'credit' ? 'text-rose-400 font-bold' : 'text-textSecondary'}>{row.openingBalanceSide === 'debit' ? 'Dr' : row.openingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
-                { key: 'closingBalance', label: 'Closing Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.closingBalanceSide === 'debit' ? 'text-emerald-400 font-bold' : row.closingBalanceSide === 'credit' ? 'text-rose-400 font-bold' : 'text-textSecondary'}>{row.closingBalanceSide === 'debit' ? 'Dr' : row.closingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
+                { key: 'openingBalance', label: 'Opening Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.openingBalanceSide === 'debit' ? 'text-success font-bold' : row.openingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.openingBalanceSide === 'debit' ? 'Dr' : row.openingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
+                { key: 'closingBalance', label: 'Closing Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.closingBalanceSide === 'debit' ? 'text-success font-bold' : row.closingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.closingBalanceSide === 'debit' ? 'Dr' : row.closingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
                 { key: 'currency', label: 'Currency' },
                 { key: 'status', label: 'Status', type: 'status' as const },
               ]
@@ -510,17 +510,17 @@ function Finance() {
             <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
               </div>
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">End Date</label>
-                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
               </div>
             </div>
             
             <div className="glass-panel p-6 md:p-8 rounded-[2.5rem] border border-white/10 shadow-2xl">
               <h2 className="text-2xl font-black mb-6 flex items-center gap-3">
-                <FileText className="w-6 h-6 text-emerald-400" />
+                <FileText className="w-6 h-6 text-success" />
                 Trial Balance
               </h2>
               <div className="overflow-x-auto">
@@ -539,19 +539,19 @@ function Finance() {
                           <div className="font-bold">{b.accountName}</div>
                           <div className="text-xs text-textSecondary">{b.accountNumber}</div>
                         </td>
-                        <td className="p-4 text-right font-mono text-emerald-400">{b.type === 'debit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
-                        <td className="p-4 text-right font-mono text-rose-400">{b.type === 'credit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
+                        <td className="p-4 text-right font-mono text-success">{b.type === 'debit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
+                        <td className="p-4 text-right font-mono text-danger">{b.type === 'credit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
                       </tr>
                     ))}
-                    <tr className="bg-black/20 font-black text-lg">
+                    <tr className="bg-surfaceAlt font-black text-lg">
                       <td className="p-4 text-right">TOTAL</td>
-                      <td className="p-4 text-right font-mono text-emerald-400 border-t-2 border-emerald-500/30">${trialBalanceData.totalDebit.toLocaleString()}</td>
-                      <td className="p-4 text-right font-mono text-rose-400 border-t-2 border-rose-500/30">${trialBalanceData.totalCredit.toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono text-success border-t-2 border-success/30">${trialBalanceData.totalDebit.toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono text-danger border-t-2 border-danger/30">${trialBalanceData.totalCredit.toLocaleString()}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <div className={`mt-6 p-4 rounded-xl text-center font-bold border ${trialBalanceData.isBalanced ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+              <div className={`mt-6 p-4 rounded-xl text-center font-bold border ${trialBalanceData.isBalanced ? 'bg-success/10 text-success border-success/20' : 'bg-danger/10 text-danger border-danger/20'}`}>
                 {trialBalanceData.isBalanced ? '✅ Accounts are Balanced' : '❌ Accounts are NOT Balanced'}
               </div>
             </div>
@@ -564,7 +564,7 @@ function Finance() {
             heading="Finance Documents"
             description="Statements, audit reports, tax filings, and supporting records."
             documentTypes={['Statement', 'Audit Report', 'Tax Filing', 'Invoice Record', 'Bank Record', 'Contract', 'Other']}
-            accentClass="text-emerald-400"
+            accentClass="text-success"
             canEdit={getPerm('docs').canEdit}
             canDelete={getPerm('docs').canDelete}
           />

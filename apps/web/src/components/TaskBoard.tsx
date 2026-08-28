@@ -7,16 +7,16 @@ import { errorMessage } from '../lib/errors';
 type Status = 'todo' | 'in_progress' | 'completed' | 'blocked';
 const STATUSES: { key: Status; label: string; color: string; bg: string }[] = [
   { key: 'todo', label: 'To Do', color: 'text-slate-400', bg: 'bg-slate-500/10 border-slate-500/20' },
-  { key: 'in_progress', label: 'In Progress', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-  { key: 'completed', label: 'Completed', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-  { key: 'blocked', label: 'Blocked', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
+  { key: 'in_progress', label: 'In Progress', color: 'text-warning', bg: 'bg-warning/10 border-warning/20' },
+  { key: 'completed', label: 'Completed', color: 'text-success', bg: 'bg-success/10 border-success/20' },
+  { key: 'blocked', label: 'Blocked', color: 'text-danger', bg: 'bg-danger/10 border-danger/20' },
 ];
 
 const PRIORITIES: Record<string, { label: string; color: string; dot: string }> = {
-  urgent: { label: 'Urgent', color: 'bg-red-500/10 text-red-400 border-red-500/20', dot: 'bg-red-500' },
-  high: { label: 'High', color: 'bg-orange-500/10 text-orange-400 border-orange-500/20', dot: 'bg-orange-500' },
-  medium: { label: 'Medium', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20', dot: 'bg-amber-500' },
-  low: { label: 'Low', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', dot: 'bg-blue-500' },
+  urgent: { label: 'Urgent', color: 'bg-danger/10 text-danger border-danger/20', dot: 'bg-danger' },
+  high: { label: 'High', color: 'bg-warning/10 text-warning border-warning/20', dot: 'bg-warning' },
+  medium: { label: 'Medium', color: 'bg-warning/10 text-warning border-warning/20', dot: 'bg-warning' },
+  low: { label: 'Low', color: 'bg-info/10 text-info border-info/20', dot: 'bg-info' },
 };
 
 interface TaskBoardProps {
@@ -163,7 +163,7 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
         {canEdit && (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white text-xs font-black uppercase tracking-widest rounded-full transition-all shadow-lg shadow-primary/20 hover:scale-[1.02]"
+            className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-surface text-xs font-black uppercase tracking-widest rounded-full transition-all shadow-lg shadow-primary/20 hover:scale-[1.02]"
           >
             <Plus className="w-4 h-4" /> New Task
           </button>
@@ -181,11 +181,11 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
         >
           {/* Scrollbar styling injected inline for cross-browser support */}
           <style>{`
-            .kanban-scroll::-webkit-scrollbar { height: 4px; }
-            .kanban-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 99px; }
-            .kanban-scroll::-webkit-scrollbar-thumb { background: rgba(244,63,94,0.4); border-radius: 99px; }
-            .kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(244,63,94,0.7); }
-          `}</style>
+ .kanban-scroll::-webkit-scrollbar { height: 4px; }
+ .kanban-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 99px; }
+ .kanban-scroll::-webkit-scrollbar-thumb { background: rgba(244,63,94,0.4); border-radius: 99px; }
+ .kanban-scroll::-webkit-scrollbar-thumb:hover { background: rgba(244,63,94,0.7); }
+ `}</style>
           <div
             className="kanban-scroll flex gap-4 overflow-x-auto w-full pb-3"
             style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', scrollbarColor: 'rgba(244,63,94,0.4) rgba(255,255,255,0.03)' }}
@@ -197,9 +197,9 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                 onDrop={(e) => handleDrop(e, col.key)}
                 style={{ scrollSnapAlign: 'start', minWidth: 'min(80vw, 280px)', flex: '1 0 min(80vw, 280px)' }}
                 className={`rounded-2xl border p-4 min-h-[300px] transition-all duration-200 md:flex-1 md:min-w-0 ${dragOverCol === col.key
-                  ? 'border-primary/50 bg-primary/5 shadow-lg shadow-primary/10 scale-[1.01]'
-                  : col.bg
-                  }`}>
+ ? 'border-primary/50 bg-primary/5 shadow-lg shadow-primary/10 scale-[1.01]'
+ : col.bg
+ }`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full"
@@ -272,13 +272,13 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                         <div className="flex flex-col gap-1">
                           {canEdit && (
                             <button onClick={() => setEditingTask(task)}
-                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all text-white/20">
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-info/10 hover:text-info rounded-lg transition-all text-white/20">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {canEdit && (
                             <button onClick={() => handleDelete(task.id)}
-                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all text-white/20">
+                              className="opacity-0 group-hover:opacity-100 p-1 hover:bg-danger/10 hover:text-danger rounded-lg transition-all text-white/20">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
@@ -424,7 +424,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
   const labelCls = 'block text-[10px] font-black uppercase tracking-[0.2em] text-textSecondary mb-2';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md md:p-4 animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim md:p-4 animate-in fade-in" onClick={onClose}>
       <div className="bg-surface md:border border-white/10 md:rounded-[2.5rem] w-full h-full md:h-auto md:max-h-[90vh] max-h-[100dvh] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 md:p-8 border-b border-white/5 bg-white/5 flex-shrink-0">
@@ -440,14 +440,14 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 p-6 md:p-8 space-y-5 overflow-y-auto custom-scrollbar">
           {error && (
-            <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-bold">
+            <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-2xl text-danger text-xs font-bold">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
 
           {/* Title */}
           <div>
-            <label className={labelCls}>Title <span className="text-red-400">*</span></label>
+            <label className={labelCls}>Title <span className="text-danger">*</span></label>
             <input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
               placeholder="Describe the task clearly..." className={inputCls} />
           </div>
@@ -463,7 +463,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
           {/* Priority / Status / Task Type / Estimated Hours */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <label className={labelCls}>Priority <span className="text-red-400">*</span></label>
+              <label className={labelCls}>Priority <span className="text-danger">*</span></label>
               <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })} className={inputCls}>
                 <option value="low">🔵 Low</option>
                 <option value="medium">🟡 Medium</option>
@@ -472,7 +472,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
               </select>
             </div>
             <div>
-              <label className={labelCls}>Status <span className="text-red-400">*</span></label>
+              <label className={labelCls}>Status <span className="text-danger">*</span></label>
               <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}>
                 <option value="todo">To Do</option>
                 <option value="in_progress">In Progress</option>
@@ -563,7 +563,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
               Cancel
             </button>
             <button type="submit" disabled={loading}
-              className="px-10 py-3.5 text-xs font-black uppercase tracking-widest bg-primary hover:bg-primary/90 text-white rounded-full transition-all disabled:opacity-50 shadow-lg shadow-primary/20 flex items-center gap-2">
+              className="px-10 py-3.5 text-xs font-black uppercase tracking-widest bg-primary hover:bg-primary/90 text-surface rounded-full transition-all disabled:opacity-50 shadow-lg shadow-primary/20 flex items-center gap-2">
               {loading ? 'Saving...' : mode === 'create' ? 'Deploy Task' : 'Save Changes'}
             </button>
           </div>

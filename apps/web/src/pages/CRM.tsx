@@ -257,7 +257,7 @@ export default function CRM() {
 
   if (loading || !permsLoaded) return (
     <div className="flex items-center justify-center min-h-screen bg-black">
-      <Loader2 className="w-12 h-12 text-rose-500 animate-spin" />
+      <Loader2 className="w-12 h-12 text-module animate-spin" />
     </div>
   );
 
@@ -267,8 +267,8 @@ export default function CRM() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-8">
         <div className="glass-panel p-12 rounded-3xl text-center space-y-6 max-w-md border border-white/10 shadow-2xl">
-          <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto border border-rose-500/20">
-            <Lock className="w-10 h-10 text-rose-500" />
+          <div className="w-20 h-20 bg-module/10 rounded-full flex items-center justify-center mx-auto border border-module/20">
+            <Lock className="w-10 h-10 text-module" />
           </div>
           <h2 className="text-2xl font-bold">CRM Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
@@ -287,7 +287,7 @@ export default function CRM() {
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 scrim z-40 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -296,7 +296,7 @@ export default function CRM() {
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-50 flex-col items-center gap-1 py-4 px-1.5 bg-slate-900 border border-white/10 border-l-0 rounded-r-xl text-textSecondary hover:text-white hover:bg-white/5 transition-all shadow-xl"
+          className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-50 flex-col items-center gap-1 py-4 px-1.5 bg-surfaceAlt border border-white/10 border-l-0 rounded-r-xl text-textSecondary hover:text-white hover:bg-white/5 transition-all shadow-xl"
           title="Show committees sidebar"
         >
           <PanelLeftOpen className="w-4 h-4" />
@@ -306,19 +306,19 @@ export default function CRM() {
 
       {/* Sidebar - Committee List */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 border-r border-white/10 bg-slate-900 flex flex-col transition-all duration-300
-        lg:relative lg:inset-auto
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        ${sidebarCollapsed ? 'lg:w-0 lg:overflow-hidden lg:border-r-0' : 'lg:w-72'}
-      `}>
+ fixed inset-y-0 left-0 z-50 w-72 border-r border-border bg-surfaceAlt flex flex-col transition-all duration-300
+ lg:relative lg:inset-auto
+ ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+ ${sidebarCollapsed ? 'lg:w-0 lg:overflow-hidden lg:border-r-0' : 'lg:w-72'}
+ `}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center shadow-lg shadow-rose-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-module to-warning flex items-center justify-center shadow-lg shadow-module/20">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-black text-lg tracking-tight">GA<span className="text-rose-500">CRM</span></h1>
-              <p className="text-[10px] uppercase font-black text-rose-500 tracking-widest leading-none">Unified Committees</p>
+              <h1 className="font-black text-lg tracking-tight">GA<span className="text-module">CRM</span></h1>
+              <p className="text-[10px] uppercase font-black text-module tracking-widest leading-none">Unified Committees</p>
             </div>
             <button 
               onClick={() => setIsSidebarOpen(false)}
@@ -334,7 +334,7 @@ export default function CRM() {
               >
                 <PanelLeftClose className="w-4 h-4" />
               </button>
-              <button onClick={() => window.location.href = '/'} className="p-2 text-textSecondary hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all">
+              <button onClick={() => window.location.href = '/'} className="p-2 text-textSecondary hover:text-module hover:bg-module/10 rounded-xl transition-all">
                 <Home className="w-5 h-5" />
               </button>
             </div>
@@ -345,7 +345,7 @@ export default function CRM() {
               placeholder="Filter committees..."
               value={committeeSearch}
               onChange={e => setCommitteeSearch(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full bg-surfaceAlt border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-module"
             />
           </div>
         </div>
@@ -361,9 +361,9 @@ export default function CRM() {
                 setIsSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all group ${selectedCommittee?.id === c.id
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02]'
-                : 'hover:bg-white/5 text-textSecondary hover:text-white'
-                }`}
+ ? 'bg-module text-surface shadow-lg shadow-module/20 scale-[1.02]'
+ : 'hover:bg-white/5 text-textSecondary hover:text-surface'
+ }`}
             >
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${selectedCommittee?.id === c.id ? 'bg-white/20' : 'bg-white/5'}`}>
                 <Building2 className="w-4 h-4" />
@@ -397,7 +397,7 @@ export default function CRM() {
 
       {/* Main Content Area */}
       {selectedCommittee ? (
-        <main className="flex-1 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-rose-500/10 via-transparent to-transparent">
+        <main className="flex-1 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-module/10 via-transparent to-transparent">
           <header className="p-4 md:p-8 pb-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               {/* Mobile menu toggle */}
@@ -409,7 +409,7 @@ export default function CRM() {
               </button>
               <div>
                 <div className="hidden sm:flex items-center gap-3 mb-2">
-                  <div className="px-3 py-1 bg-rose-500/10 text-rose-500 text-[9px] font-black uppercase tracking-widest rounded-full border border-rose-500/20">Operational Instance</div>
+                  <div className="px-3 py-1 bg-module/10 text-module text-[9px] font-black uppercase tracking-widest rounded-full border border-module/20">Operational Instance</div>
                   <span className="text-textSecondary text-[10px] font-mono tracking-tighter">REF: {selectedCommittee.id}</span>
                 </div>
                 <h2 className="text-xl md:text-4xl font-black tracking-tight">{selectedCommittee.committeeName}</h2>
@@ -422,7 +422,7 @@ export default function CRM() {
               {getPerm('tickets').canEdit && (
                 <button
                   onClick={() => setShowNewTicket(true)}
-                  className="px-4 md:px-6 py-2 md:py-3 bg-rose-500 text-white text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
+                  className="px-4 md:px-6 py-2 md:py-3 bg-module text-surface text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl hover:bg-moduleHover transition-all shadow-lg shadow-module/20 flex items-center gap-2"
                 >
                   <Plus className="w-3 h-3 md:w-4 md:h-4" /> <span className="hidden sm:inline">New Ticket</span>
                 </button>
@@ -456,13 +456,13 @@ export default function CRM() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-6 py-5 text-[11px] font-black uppercase tracking-widest transition-all relative ${activeTab === tab.id ? 'text-rose-500' : 'text-textSecondary hover:text-white'
-                  }`}
+                className={`flex items-center gap-2 px-6 py-5 text-[11px] font-black uppercase tracking-widest transition-all relative ${activeTab === tab.id ? 'text-module' : 'text-textSecondary hover:text-white'
+ }`}
               >
                 <tab.icon className="w-3.5 h-3.5" />
                 {tab.label}
                 {activeTab === tab.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500 rounded-full animate-in fade-in zoom-in duration-300" />
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-module rounded-full animate-in fade-in zoom-in duration-300" />
                 )}
               </button>
             ))}
@@ -472,8 +472,8 @@ export default function CRM() {
             {activeTab === 'overview' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="glass-panel p-6 rounded-3xl bg-gradient-to-br from-rose-500/10 to-transparent border border-white/10">
-                    <h4 className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Open Tickets</h4>
+                  <div className="glass-panel p-6 rounded-3xl bg-gradient-to-br from-module/10 to-transparent border border-white/10">
+                    <h4 className="text-[10px] font-black text-module uppercase tracking-widest mb-1">Open Tickets</h4>
                     <p className="text-5xl font-black">{tickets.filter(t => t.status === 'open').length}</p>
                   </div>
                   <div className="glass-panel p-6 rounded-3xl border border-white/10">
@@ -481,8 +481,8 @@ export default function CRM() {
                     <p className="text-5xl font-black opacity-20">--</p>
                   </div>
                   <div className="glass-panel p-6 rounded-3xl border border-white/10">
-                    <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Stability Index</h4>
-                    <p className="text-5xl font-black text-emerald-400">98%</p>
+                    <h4 className="text-[10px] font-black text-success uppercase tracking-widest mb-1">Stability Index</h4>
+                    <p className="text-5xl font-black text-success">98%</p>
                   </div>
                 </div>
 
@@ -493,11 +493,11 @@ export default function CRM() {
                       {tickets.slice(0, 4).map((ticket) => (
                         <div key={ticket.id} className="glass-panel p-4 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all border border-white/10 group cursor-pointer">
                           <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-lg bg-white/5 ${ticket.status === 'open' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            <div className={`p-2 rounded-lg bg-white/5 ${ticket.status === 'open' ? 'text-module' : 'text-success'}`}>
                               <Ticket className="w-4 h-4" />
                             </div>
                             <div>
-                              <h4 className="text-sm font-bold group-hover:text-rose-500 transition-colors">{ticket.title}</h4>
+                              <h4 className="text-sm font-bold group-hover:text-module transition-colors">{ticket.title}</h4>
                               <p className="text-[9px] text-textSecondary uppercase font-black tracking-widest">{ticket.priority} • {ticket.status}</p>
                             </div>
                           </div>
@@ -526,21 +526,21 @@ export default function CRM() {
                     <button
                       onClick={() => setTicketFilter('active')}
                       className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-                        ticketFilter === 'active'
-                          ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
-                          : 'bg-white/5 text-textSecondary hover:text-white border border-white/10'
-                      }`}
+ ticketFilter === 'active'
+ ? 'bg-module text-surface shadow-lg shadow-module/20'
+ : 'bg-white/5 text-textSecondary hover:text-surface border border-white/10'
+ }`}
                     >Active Queue</button>
                     <button
                       onClick={() => setTicketFilter('resolved')}
                       className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-                        ticketFilter === 'resolved'
-                          ? 'bg-white/10 text-white'
-                          : 'bg-white/5 text-textSecondary hover:text-white border border-white/10'
-                      }`}
+ ticketFilter === 'resolved'
+ ? 'bg-white/10 text-white'
+ : 'bg-white/5 text-textSecondary hover:text-white border border-white/10'
+ }`}
                     >Resolved</button>
                   </div>
-                  <div className="flex items-center gap-2 text-textSecondary hover:text-rose-500 transition-colors cursor-pointer">
+                  <div className="flex items-center gap-2 text-textSecondary hover:text-module transition-colors cursor-pointer">
                     <Filter className="w-4 h-4" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Filter Matrix</span>
                   </div>
@@ -549,15 +549,15 @@ export default function CRM() {
                   {tickets
                     .filter(t => ticketFilter === 'active' ? t.status !== 'closed' : t.status === 'closed')
                     .map((ticket) => (
-                    <div key={ticket.id} className="glass-panel p-6 rounded-3xl border border-white/10 hover:border-rose-500/30 transition-all group">
+                    <div key={ticket.id} className="glass-panel p-6 rounded-3xl border border-white/10 hover:border-module/30 transition-all group">
                       <div className="flex items-start justify-between mb-4">
                         <div>
                           <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${ticket.priority === 'urgent' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
-                              }`}>{ticket.priority}</span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${ticket.priority === 'urgent' ? 'bg-danger/10 text-danger border border-danger/20' : 'bg-module/10 text-module border border-module/20'
+ }`}>{ticket.priority}</span>
                             <span className="text-textSecondary text-[10px] font-mono">#{ticket.id}</span>
                           </div>
-                          <h3 className="text-xl font-bold group-hover:text-rose-500 transition-colors">{ticket.title}</h3>
+                          <h3 className="text-xl font-bold group-hover:text-module transition-colors">{ticket.title}</h3>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
@@ -579,12 +579,12 @@ export default function CRM() {
                         </div>
                         <div className="flex items-center gap-4">
                           {ticket.status !== 'resolved' && getPerm('tickets').canEdit && (
-                            <button onClick={() => handleResolveTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 transition-colors">Mark Resolved</button>
+                            <button onClick={() => handleResolveTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-success hover:text-success transition-colors">Mark Resolved</button>
                           )}
                           {getPerm('tickets').canDelete && (
-                            <button onClick={() => handleDeleteTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 transition-colors">Delete Ticket</button>
+                            <button onClick={() => handleDeleteTicket(ticket.id)} className="text-[10px] font-black uppercase tracking-widest text-danger hover:text-danger transition-colors">Delete Ticket</button>
                           )}
-                          <button onClick={() => handleOpenConversation(ticket)} className="text-[10px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-400 transition-colors">Open Conversation</button>
+                          <button onClick={() => handleOpenConversation(ticket)} className="text-[10px] font-black uppercase tracking-widest text-module hover:text-module transition-colors">Open Conversation</button>
                         </div>
                       </div>
                     </div>
@@ -628,11 +628,11 @@ export default function CRM() {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {documents.map(doc => (
-                    <div key={doc.id} className="glass-panel p-6 rounded-3xl group hover:border-rose-500/30 transition-all cursor-pointer border border-white/10 bg-white/[0.02]">
-                      <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-4 group-hover:bg-rose-500/10 group-hover:text-rose-500 transition-all border border-white/10">
+                    <div key={doc.id} className="glass-panel p-6 rounded-3xl group hover:border-module/30 transition-all cursor-pointer border border-white/10 bg-white/[0.02]">
+                      <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-4 group-hover:bg-module/10 group-hover:text-module transition-all border border-white/10">
                         <FileText className="w-6 h-6" />
                       </div>
-                      <h4 className="font-bold text-sm mb-1 truncate group-hover:text-rose-500 transition-colors">{doc.title}</h4>
+                      <h4 className="font-bold text-sm mb-1 truncate group-hover:text-module transition-colors">{doc.title}</h4>
                       <p className="text-[9px] text-textSecondary font-black uppercase tracking-widest">{doc.docType || 'Document'} • {Math.round(doc.fileSize / 1024)} KB</p>
                       <button 
                         onClick={() => {
@@ -648,7 +648,7 @@ export default function CRM() {
                       {getPerm('documents').canDelete && (
                         <button 
                           onClick={() => handleDeleteDocument(doc.id)}
-                          className="mt-2 block w-full text-center py-2 bg-red-500/10 text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                          className="mt-2 block w-full text-center py-2 bg-danger/10 text-danger rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-danger/20 transition-all"
                         >
                           Delete Asset
                         </button>
@@ -677,7 +677,7 @@ export default function CRM() {
                   {getPerm('planner').canEdit && (
                     <button 
                       onClick={() => setShowEntityForm('planner')}
-                      className="px-6 py-3 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20"
+                      className="px-6 py-3 bg-module text-surface text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-moduleHover transition-all shadow-lg shadow-module/20"
                     >
                       New Event
                     </button>
@@ -685,14 +685,14 @@ export default function CRM() {
                 </div>
                 <div className="space-y-4">
                   {plannerEvents.map(evt => (
-                    <div key={evt.id} className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center justify-between group hover:border-rose-500/30 transition-all cursor-pointer" onClick={() => setEditingPlanner(evt)}>
+                    <div key={evt.id} className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center justify-between group hover:border-module/30 transition-all cursor-pointer" onClick={() => setEditingPlanner(evt)}>
                       <div className="flex items-center gap-6">
                         <div className="w-14 h-14 rounded-2xl bg-white/5 flex flex-col items-center justify-center border border-white/10">
-                          <span className="text-[9px] font-black uppercase text-rose-500">{new Date(evt.startDate).toLocaleString('default', { month: 'short' })}</span>
+                          <span className="text-[9px] font-black uppercase text-module">{new Date(evt.startDate).toLocaleString('default', { month: 'short' })}</span>
                           <span className="text-xl font-black leading-none">{new Date(evt.startDate).getDate()}</span>
                         </div>
                         <div>
-                          <h4 className="text-lg font-bold group-hover:text-rose-500 transition-colors">{evt.title}</h4>
+                          <h4 className="text-lg font-bold group-hover:text-module transition-colors">{evt.title}</h4>
                           <p className="text-xs text-textSecondary">{evt.description}</p>
                           <div className="flex gap-2 mt-2">
                              <span className="px-2 py-0.5 bg-white/5 rounded-md text-[9px] font-black uppercase text-textSecondary border border-white/10">{evt.eventType}</span>
@@ -701,7 +701,7 @@ export default function CRM() {
                       </div>
                       <div className="flex items-center gap-2">
                         {getPerm('planner').canDelete && (
-                          <button onClick={(e) => { e.stopPropagation(); handleDeletePlanner(evt.id); }} className="p-2 text-red-500 hover:bg-red-500/20 rounded-xl transition-all opacity-0 group-hover:opacity-100">
+                          <button onClick={(e) => { e.stopPropagation(); handleDeletePlanner(evt.id); }} className="p-2 text-danger hover:bg-danger/20 rounded-xl transition-all opacity-0 group-hover:opacity-100">
                             <Trash2 className="w-5 h-5" />
                           </button>
                         )}
@@ -711,7 +711,7 @@ export default function CRM() {
                   ))}
                   {plannerEvents.length === 0 && (
                     <div className="py-24 text-center glass-panel rounded-3xl border-dashed border-white/10 bg-white/[0.01]">
-                      <Calendar className="w-20 h-20 text-rose-500 mx-auto mb-6 opacity-10" />
+                      <Calendar className="w-20 h-20 text-module mx-auto mb-6 opacity-10" />
                       <p className="text-textSecondary font-black uppercase tracking-widest text-xs">No Scheduled Milestones</p>
                     </div>
                   )}
@@ -741,7 +741,7 @@ export default function CRM() {
       )}
       {/* Create Ticket Modal */}
       {showNewTicket && selectedCommittee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={() => setShowNewTicket(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={() => setShowNewTicket(false)}>
           <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
@@ -771,16 +771,16 @@ export default function CRM() {
             >
               <div>
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Subject Title</label>
-                <input name="title" required placeholder="Brief summary of the issue..." className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-rose-500 transition-all" />
+                <input name="title" required placeholder="Brief summary of the issue..." className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all" />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Description</label>
-                <textarea name="description" rows={4} placeholder="Detailed description..." className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-rose-500 transition-all resize-none" />
+                <textarea name="description" rows={4} placeholder="Detailed description..." className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all resize-none" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Priority</label>
-                  <select name="priority" className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-rose-500 transition-all">
+                  <select name="priority" className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all">
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
@@ -789,7 +789,7 @@ export default function CRM() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Category</label>
-                  <select name="category" className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-rose-500 transition-all">
+                  <select name="category" className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all">
                     <option value="support">General Support</option>
                     <option value="billing">Billing</option>
                     <option value="tech">Technical</option>
@@ -799,7 +799,7 @@ export default function CRM() {
               </div>
               <div className="pt-4 flex justify-end gap-4">
                 <button type="button" onClick={() => setShowNewTicket(false)} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">Cancel</button>
-                <button type="submit" disabled={newTicketLoading} className="px-10 py-4 bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-rose-500/25 flex items-center gap-2 disabled:opacity-50">
+                <button type="submit" disabled={newTicketLoading} className="px-10 py-4 bg-module hover:bg-moduleHover text-surface text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-module/25 flex items-center gap-2 disabled:opacity-50">
                   {newTicketLoading ? 'Submitting...' : 'Submit Ticket'}
                   <Send className="w-4 h-4" />
                 </button>
@@ -811,7 +811,7 @@ export default function CRM() {
       
       {/* Ticket Conversation Modal */}
       {showConversation && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in" onClick={() => setShowConversation(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={() => setShowConversation(false)}>
           <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
@@ -821,7 +821,7 @@ export default function CRM() {
                   {getPerm('tickets').canDelete && (
                     <button 
                       onClick={() => handleDeleteTicket(selectedTicket.id)}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1 bg-danger/10 text-danger hover:bg-danger/20 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors"
                     >
                       <Trash2 className="w-3 h-3" /> Delete
                     </button>
@@ -842,7 +842,7 @@ export default function CRM() {
               <div className="space-y-4">
                 {notes.map((note) => (
                   <div key={note.id} className={`flex ${note.authorId === user.id ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] p-4 rounded-2xl ${note.authorId === user.id ? 'bg-rose-500 text-white rounded-tr-none' : 'bg-white/5 text-white border border-white/10 rounded-tl-none'}`}>
+                    <div className={`max-w-[80%] p-4 rounded-2xl ${note.authorId === user.id ? 'bg-module text-surface rounded-tr-none' : 'bg-white/5 text-surface border border-white/10 rounded-tl-none'}`}>
                       <p className="text-sm leading-relaxed">{note.content}</p>
                       <p className="text-[9px] mt-2 opacity-50 uppercase font-black tracking-widest">{new Date(note.createdAt).toLocaleString()}</p>
                     </div>
@@ -862,12 +862,12 @@ export default function CRM() {
                   value={newNote}
                   onChange={e => setNewNote(e.target.value)}
                   placeholder="Type your message..."
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl pl-6 pr-16 py-4 text-sm focus:outline-none focus:border-rose-500 transition-all"
+                  className="w-full bg-surfaceAlt border border-white/10 rounded-2xl pl-6 pr-16 py-4 text-sm focus:outline-none focus:border-module transition-all"
                 />
                 <button 
                   type="submit"
                   disabled={noteLoading || !newNote.trim()}
-                  className="absolute right-2 top-2 bottom-2 px-4 bg-rose-500 hover:bg-rose-600 rounded-xl transition-all disabled:opacity-50"
+                  className="absolute right-2 top-2 bottom-2 px-4 bg-module hover:bg-moduleHover rounded-xl transition-all disabled:opacity-50"
                 >
                   {noteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>

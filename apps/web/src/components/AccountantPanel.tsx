@@ -63,11 +63,11 @@ function ApprovalCard({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-amber-500/40 bg-amber-500/5 rounded-xl p-4 space-y-3">
+    <div className="border border-warning/40 bg-warning/5 rounded-xl p-4 space-y-3">
       <div className="flex items-start gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+          <div className="text-[10px] font-black uppercase tracking-wider text-warningHover dark:text-warning">
             Needs your approval · {approval.toolName.replace(/_/g, ' ')}
           </div>
           <div className="text-sm font-semibold mt-1 leading-relaxed">{approval.summary}</div>
@@ -90,7 +90,7 @@ function ApprovalCard({
         <button
           onClick={() => onDecide(approval.id, 'approved')}
           disabled={!canDrive}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-surface text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
         >
           <Check className="w-3.5 h-3.5" /> Approve &amp; run
         </button>
@@ -336,7 +336,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
       </p>
 
       {missing.length > 0 && (
-        <div className="flex items-start gap-2 border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-3 py-2 rounded">
+        <div className="flex items-start gap-2 border border-warning/40 bg-warning/10 text-warningHover dark:text-warning text-xs px-3 py-2 rounded">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
             <strong>{missing.length} required setting{missing.length === 1 ? '' : 's'} unset.</strong>{' '}
@@ -346,7 +346,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
         </div>
       )}
 
-      {error && <div className="border border-red-500/40 bg-red-500/10 text-red-500 text-xs px-3 py-2 rounded">{error}</div>}
+      {error && <div className="border border-danger/40 bg-danger/10 text-danger text-xs px-3 py-2 rounded">{error}</div>}
       {notice && <div className="border border-primary/40 bg-primary/10 text-primary text-xs px-3 py-2 rounded">{notice}</div>}
 
       <div className="flex gap-1 border-b border-border">
@@ -355,8 +355,8 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
             key={id}
             onClick={() => setTab(id as Tab)}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[11px] font-black uppercase tracking-wider border-b-2 -mb-px ${
-              tab === id ? 'border-primary text-primary' : 'border-transparent text-textSecondary hover:text-text'
-            }`}
+ tab === id ? 'border-primary text-primary' : 'border-transparent text-textSecondary hover:text-text'
+ }`}
           >
             <Icon className="w-3.5 h-3.5" /> {label}
           </button>
@@ -406,7 +406,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                 <button
                   onClick={() => fileInput.current?.click()}
                   disabled={!canEditConfig || !!ingesting}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-primary text-surface text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
                 >
                   <Upload className="w-3 h-3" /> Add document
                 </button>
@@ -433,7 +433,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                       <button onClick={() => ingest(d.r2Key)} disabled={!canEditConfig || !!ingesting} title="Re-index" className="p-1 rounded border border-border disabled:opacity-40">
                         <RefreshCw className="w-3 h-3" />
                       </button>
-                      <button onClick={() => removeDoc(d.id)} disabled={!canEditConfig} title="Remove" className="p-1 rounded border border-border text-red-500 disabled:opacity-40">
+                      <button onClick={() => removeDoc(d.id)} disabled={!canEditConfig} title="Remove" className="p-1 rounded border border-border text-danger disabled:opacity-40">
                         <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
@@ -443,9 +443,9 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                   <div key={o.key} className="px-3 py-2 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[11px] font-bold truncate">{o.key}</div>
-                      <div className="text-[10px] text-amber-500">in the bucket, not indexed</div>
+                      <div className="text-[10px] text-warning">in the bucket, not indexed</div>
                     </div>
-                    <button onClick={() => ingest(o.key)} disabled={!canEditConfig || !!ingesting} className="px-2 py-1 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0">
+                    <button onClick={() => ingest(o.key)} disabled={!canEditConfig || !!ingesting} className="px-2 py-1 rounded bg-primary text-surface text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0">
                       Index
                     </button>
                   </div>
@@ -492,8 +492,8 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                 <div className="flex items-baseline gap-2 mb-1.5">
                   <span
                     className={`text-[10px] font-black uppercase tracking-wider ${
-                      m.role === 'user' ? 'text-primary' : 'text-textSecondary'
-                    }`}
+ m.role === 'user' ? 'text-primary' : 'text-textSecondary'
+ }`}
                   >
                     {m.role === 'user' ? 'You' : 'Accountant'}
                   </span>
@@ -501,7 +501,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                 </div>
                 {m.role === 'assistant' ? (
                   <div className="text-textPrimary text-[15px]">
-                    <MarkdownView source={m.text} />
+                    <MarkdownView source={m.text} assetDownloads />
                   </div>
                 ) : (
                   <div className="text-[15px] leading-7 whitespace-pre-wrap text-textPrimary">
@@ -549,7 +549,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
             <button
               onClick={send}
               disabled={!canDrive || sending || !draft.trim()}
-              className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-primary text-white text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-primary text-surface text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
             >
               <Send className="w-3.5 h-3.5" /> Send
             </button>
@@ -571,7 +571,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
               <button
                 onClick={saveConfig}
                 disabled={!canEditConfig || saving || !dirty}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-surface text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 {saving ? 'Saving' : dirty ? 'Save changes' : 'Saved'}
@@ -591,7 +591,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                         <div className="text-xs font-bold flex items-center gap-1.5">
                           {v.label}
                           {v.required && unset && (
-                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-500">required</span>
+                            <span className="text-[9px] font-black uppercase tracking-wider text-warning">required</span>
                           )}
                         </div>
                         {v.description && <div className="text-[10px] text-textSecondary mt-0.5">{v.description}</div>}
@@ -616,7 +616,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                           placeholder={v.key === 'salary_withholding_slabs'
                             ? '[{"from":0,"to":600000,"rate_pct":0},{"from":600000,"to":1200000,"rate_pct":5}]'
                             : 'JSON'}
-                          className={`border rounded px-2 py-1.5 text-[11px] font-mono bg-transparent ${unset && v.required ? 'border-amber-500/50' : 'border-border'}`}
+                          className={`border rounded px-2 py-1.5 text-[11px] font-mono bg-transparent ${unset && v.required ? 'border-warning/50' : 'border-border'}`}
                         />
                       ) : (
                         <div className="flex items-center gap-1.5">
@@ -625,7 +625,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
                             disabled={!canEditConfig}
                             onChange={(e) => setValue(v.key, e.target.value)}
                             placeholder={v.valueType === 'date' ? 'MM-DD' : v.valueType === 'percent' ? '0–100' : ''}
-                            className={`flex-1 border rounded px-2 py-1.5 text-xs bg-transparent ${unset && v.required ? 'border-amber-500/50' : 'border-border'}`}
+                            className={`flex-1 border rounded px-2 py-1.5 text-xs bg-transparent ${unset && v.required ? 'border-warning/50' : 'border-border'}`}
                           />
                           {v.unit && <span className="text-[10px] text-textSecondary w-10">{v.unit}</span>}
                         </div>
@@ -657,7 +657,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
       )}
 
       {preview && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setPreview(null)}>
+        <div className="fixed inset-0 z-50 scrim flex items-center justify-center p-4" onClick={() => setPreview(null)}>
           <div className="bg-surface border border-border rounded-xl max-w-3xl w-full max-h-[80vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="text-[11px] font-black uppercase tracking-wider mb-3">
               What the agent reads

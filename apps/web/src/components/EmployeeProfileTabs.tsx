@@ -129,8 +129,8 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
   ];
 
   return (<>
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
+      <div className="modal-panel rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
@@ -152,14 +152,14 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar Tabs */}
-          <div className="w-48 border-r border-white/10 bg-black/20 p-4 space-y-2 overflow-y-auto">
+          <div className="w-48 border-r border-white/10 bg-surfaceAlt p-4 space-y-2 overflow-y-auto">
             {tabs.map(t => (
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-bold ${
-                  activeTab === t.id ? 'bg-primary/20 text-primary border border-primary/20 shadow-lg shadow-primary/10' : 'text-textSecondary hover:bg-white/5 hover:text-white'
-                }`}
+ activeTab === t.id ? 'bg-primary/20 text-primary border border-primary/20 shadow-lg shadow-primary/10' : 'text-textSecondary hover:bg-white/5 hover:text-white'
+ }`}
               >
                 <t.icon className="w-4 h-4" />
                 {t.label}
@@ -268,10 +268,10 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                       {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <label className={`relative flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-xs cursor-pointer transition-all ${
-                      uploadingDoc
-                        ? 'bg-white/5 text-textSecondary border border-white/10 cursor-not-allowed'
-                        : 'bg-primary text-white hover:opacity-90 border border-primary'
-                    }`}>
+ uploadingDoc
+ ? 'bg-white/5 text-textSecondary border border-white/10 cursor-not-allowed'
+ : 'bg-primary text-surface hover:opacity-90 border border-primary'
+ }`}>
                       {uploadingDoc ? (
                         <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading...</>
                       ) : (
@@ -286,7 +286,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                       )}
                     </label>
                   </div>
-                  {docError && <p className="text-xs text-red-400 font-bold">{docError}</p>}
+                  {docError && <p className="text-xs text-danger font-bold">{docError}</p>}
                 </div>
 
                 {/* Document list */}
@@ -319,7 +319,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                           </button>
                           <button
                             onClick={() => handleDeleteDocument(doc.id)}
-                            className="p-1.5 text-textSecondary hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                            className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-lg transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -373,7 +373,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                             <p className="text-xs text-textSecondary mt-0.5">Gross: {fmt(record.grossSalary)} · Deductions: {fmt((record.withholdingTax || 0) + (record.otherDeductions || 0))}</p>
                           </div>
                           <div className="flex items-center gap-3">
-                            <p className="font-black text-green-400 font-mono">{fmt(record.netPay)}</p>
+                            <p className="font-black text-success font-mono">{fmt(record.netPay)}</p>
                             <select
                               value={record.disbursementStatus}
                               onChange={async (e) => {
@@ -391,12 +391,12 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                                 }
                               }}
                               className={`bg-surface/50 border border-white/10 rounded-lg px-2 py-1 text-[10px] focus:outline-none font-bold ${
-                                record.disbursementStatus === 'paid' ? 'text-green-400' : record.disbursementStatus === 'processed' ? 'text-blue-400' : 'text-yellow-400'
-                              }`}
+ record.disbursementStatus === 'paid' ? 'text-success' : record.disbursementStatus === 'processed' ? 'text-info' : 'text-warning'
+ }`}
                             >
-                              <option value="pending" className="bg-background text-yellow-400">Pending</option>
-                              <option value="processed" className="bg-background text-blue-400">Processed</option>
-                              <option value="paid" className="bg-background text-green-400">Paid</option>
+                              <option value="pending" className="bg-background text-warning">Pending</option>
+                              <option value="processed" className="bg-background text-info">Processed</option>
+                              <option value="paid" className="bg-background text-success">Paid</option>
                             </select>
                             <button
                               onClick={() => setViewingPaySlip(record)}
@@ -419,15 +419,15 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                 <h3 className="text-lg font-bold text-white mb-4">Attendance & Leaves</h3>
                 <div className="grid grid-cols-3 gap-4 mb-6">
                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-green-400">{attendanceRecords.filter(r => r.status === 'Present').length}</p>
+                     <p className="text-2xl font-black text-success">{attendanceRecords.filter(r => r.status === 'Present').length}</p>
                      <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Days Present</p>
                    </div>
                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-yellow-400">{attendanceRecords.reduce((acc, r) => acc + (r.totalHours || 0), 0).toFixed(1)}</p>
+                     <p className="text-2xl font-black text-warning">{attendanceRecords.reduce((acc, r) => acc + (r.totalHours || 0), 0).toFixed(1)}</p>
                      <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Total Hours Recorded</p>
                    </div>
                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-red-400">{attendanceRecords.filter(r => r.status === 'Absent' || r.status === 'Late').length}</p>
+                     <p className="text-2xl font-black text-danger">{attendanceRecords.filter(r => r.status === 'Absent' || r.status === 'Late').length}</p>
                      <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Late/Absent Records</p>
                    </div>
                 </div>
@@ -450,7 +450,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-xs font-bold ${record.status === 'Present' ? 'text-green-400' : 'text-yellow-400'}`}>{record.status}</p>
+                          <p className={`text-xs font-bold ${record.status === 'Present' ? 'text-success' : 'text-warning'}`}>{record.status}</p>
                           {record.totalHours && <p className="text-[10px] text-textSecondary mt-1">{record.totalHours} hrs</p>}
                         </div>
                       </div>
@@ -482,7 +482,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                           <p className="text-xs text-textSecondary mt-0.5">{asset.assetType}</p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-[10px] font-black uppercase tracking-widest ${asset.status === 'Assigned' ? 'text-primary' : 'text-yellow-400'}`}>{asset.status}</p>
+                          <p className={`text-[10px] font-black uppercase tracking-widest ${asset.status === 'Assigned' ? 'text-primary' : 'text-warning'}`}>{asset.status}</p>
                           {asset.issueDate && <p className="text-[10px] text-textSecondary mt-1">Issued: {asset.issueDate}</p>}
                         </div>
                       </div>

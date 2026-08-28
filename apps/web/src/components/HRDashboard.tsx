@@ -33,8 +33,8 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
         </div>
 
         <div className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
-            <CheckCircle2 className="w-6 h-6 text-green-400" />
+          <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
+            <CheckCircle2 className="w-6 h-6 text-success" />
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Present Today</p>
@@ -43,8 +43,8 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
         </div>
 
         <div className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-yellow-500/20 flex items-center justify-center">
-            <Clock className="w-6 h-6 text-yellow-400" />
+          <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
+            <Clock className="w-6 h-6 text-warning" />
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Pending Leaves</p>
@@ -53,8 +53,8 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
         </div>
 
         <div className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6 text-red-400" />
+          <div className="w-12 h-12 rounded-xl bg-danger/20 flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6 text-danger" />
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Absent Today</p>

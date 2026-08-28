@@ -141,12 +141,12 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="space-y-5">
       {error && (
-        <div className="flex items-start gap-2 border border-red-500/30 bg-red-500/5 rounded-xl p-3 text-sm text-red-500">
+        <div className="flex items-start gap-2 border border-danger/30 bg-danger/5 rounded-xl p-3 text-sm text-danger">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
         </div>
       )}
       {notice && (
-        <div className="flex items-start justify-between gap-2 border border-emerald-500/30 bg-emerald-500/5 rounded-xl p-3 text-sm text-emerald-500">
+        <div className="flex items-start justify-between gap-2 border border-success/30 bg-success/5 rounded-xl p-3 text-sm text-success">
           <span>{notice}</span>
           <button onClick={() => setNotice(null)}><X className="w-4 h-4" /></button>
         </div>
@@ -159,7 +159,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
             <select
               value={type}
               onChange={(e) => setType(e.target.value as any)}
-              className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+              className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
             >
               {TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
@@ -172,7 +172,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
               />
             </label>
           )}
@@ -185,14 +185,14 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm"
+              className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
             />
           </label>
 
           <button
             onClick={generate}
             disabled={!canEdit || busy}
-            className="px-5 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
+            className="px-5 py-2 rounded-xl bg-success/20 text-success border border-success/30 text-[11px] font-black uppercase tracking-wider disabled:opacity-40"
           >
             {busy ? 'Generating…' : 'Generate PDF'}
           </button>
@@ -238,7 +238,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
                         </span>
                       ))}
                     {d.generationBasis.figures.empty === true && (
-                      <span className="text-amber-500">nothing posted in this period</span>
+                      <span className="text-warning">nothing posted in this period</span>
                     )}
                   </div>
                 )}

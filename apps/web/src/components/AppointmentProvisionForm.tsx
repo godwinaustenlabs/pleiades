@@ -87,7 +87,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
       <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-3">
@@ -102,7 +102,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
         </div>
 
         <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-          {error && <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm">{error}</div>}
+          {error && <div className="mb-6 p-4 bg-danger/10 border border-danger/20 text-danger rounded-xl text-sm">{error}</div>}
           
           <form id="provision-form" onSubmit={handleSubmit} className="space-y-8">
             
@@ -114,15 +114,15 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
                   <div className="space-y-4 bg-white/5 p-4 rounded-2xl border border-white/10">
                     <div>
                       <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Email {formData.id ? '(Optional)' : '*'}</label>
-                      <input required={!formData.id} type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
+                      <input required={!formData.id} type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Username {formData.id ? '(Optional)' : '*'}</label>
-                      <input required={!formData.id} type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
+                      <input required={!formData.id} type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Password {formData.id ? '(Leave empty to keep)' : '*'}</label>
-                      <input required={!formData.id} type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
+                      <input required={!formData.id} type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
                     </div>
                   </div>
                 </div>
@@ -132,7 +132,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
                   <div className="space-y-4 bg-white/5 p-4 rounded-2xl border border-white/10">
                     <div>
                       <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Target Employee *</label>
-                      <select required value={formData.employeeId} onChange={e => setFormData({...formData, employeeId: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary appearance-none">
+                      <select required value={formData.employeeId} onChange={e => setFormData({...formData, employeeId: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary appearance-none">
                         <option value="">Select personnel...</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.department}</option>)}
                       </select>
@@ -140,16 +140,16 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Functional Title *</label>
-                        <input required type="text" value={formData.roleOrTitle} onChange={e => setFormData({...formData, roleOrTitle: e.target.value})} placeholder="e.g. Senior Associate" className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
+                        <input required type="text" value={formData.roleOrTitle} onChange={e => setFormData({...formData, roleOrTitle: e.target.value})} placeholder="e.g. Senior Associate" className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Effective Date *</label>
-                        <input required type="date" value={formData.appointmentDate} onChange={e => setFormData({...formData, appointmentDate: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
+                        <input required type="date" value={formData.appointmentDate} onChange={e => setFormData({...formData, appointmentDate: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-textSecondary mb-1.5 uppercase tracking-wider">Committee Assignment</label>
-                      <select value={formData.committeeId} onChange={e => setFormData({...formData, committeeId: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary appearance-none">
+                      <select value={formData.committeeId} onChange={e => setFormData({...formData, committeeId: e.target.value})} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-primary appearance-none">
                         <option value="">None</option>
                         {committees.map(c => <option key={c.id} value={c.id}>{c.committeeName}</option>)}
                       </select>
@@ -163,7 +163,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
                   <h3 className="text-xs font-bold text-textSecondary uppercase tracking-widest">Access</h3>
                 </div>
 
-                <div className="flex-1 bg-black/30 border border-white/10 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
+                <div className="flex-1 bg-surfaceAlt border border-white/10 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
                   <div className="overflow-y-auto custom-scrollbar flex-1 p-3">
                     <PermissionMatrix value={permissions} onChange={setPermissions} />
                   </div>
@@ -185,7 +185,7 @@ export default function AppointmentProvisionForm({ onClose, onSubmit, employees,
           <button type="button" onClick={onClose} className="px-6 py-2 text-sm font-bold text-textSecondary hover:text-white transition-colors">
             Discard
           </button>
-          <button type="submit" form="provision-form" disabled={loading} className="px-8 py-2.5 text-sm font-bold bg-primary hover:bg-primary/90 text-white rounded-full transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-2">
+          <button type="submit" form="provision-form" disabled={loading} className="px-8 py-2.5 text-sm font-bold bg-primary hover:bg-primary/90 text-surface rounded-full transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-2">
             {loading ? 'Processing...' : (formData.id ? 'Save Changes' : 'Confirm Provisioning')}
             {!loading && <Check className="w-4 h-4" />}
           </button>

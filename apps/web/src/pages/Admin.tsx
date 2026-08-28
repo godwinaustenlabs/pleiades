@@ -160,7 +160,7 @@ export default function Admin() {
 			</div>
 
 			{error && (
-				<div className="border border-red-500/40 bg-red-500/10 text-red-500 text-xs px-3 py-2 rounded">{error}</div>
+				<div className="border border-danger/40 bg-danger/10 text-danger text-xs px-3 py-2 rounded">{error}</div>
 			)}
 			{notice && (
 				<div className="border border-primary/40 bg-primary/10 text-primary text-xs px-3 py-2 rounded">{notice}</div>
@@ -228,7 +228,7 @@ export default function Admin() {
 								<button
 									onClick={save}
 									disabled={!canEditPerms || saving || !dirty || loadingGrants}
-									className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+									className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-surface text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
 								>
 									{saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
 									{saving ? 'Saving' : dirty ? 'Save changes' : 'Saved'}

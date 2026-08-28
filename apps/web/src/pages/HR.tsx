@@ -181,8 +181,8 @@ function HR() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-8">
         <div className="glass-panel p-12 rounded-3xl text-center space-y-6 max-w-md border border-white/10 shadow-2xl">
-          <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto border border-red-500/20">
-            <Lock className="w-10 h-10 text-red-500" />
+          <div className="w-20 h-20 bg-danger/10 rounded-full flex items-center justify-center mx-auto border border-danger/20">
+            <Lock className="w-10 h-10 text-danger" />
           </div>
           <h2 className="text-2xl font-bold">Access Restricted</h2>
           <p className="text-textSecondary text-sm leading-relaxed">
@@ -214,7 +214,7 @@ function HR() {
         <span className="font-mono text-[10px] text-textSecondary uppercase tracking-tighter">
           {id.substring(0, 8)}...
         </span>
-        {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-textSecondary opacity-0 group-hover/id:opacity-100 transition-opacity" />}
+        {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3 text-textSecondary opacity-0 group-hover/id:opacity-100 transition-opacity" />}
       </button>
     );
   };
@@ -227,7 +227,7 @@ function HR() {
     },
     {
       key: 'slackId', label: 'Slack ID',
-      render: (v: string) => (!v || v === 'NULL') ? <span className="text-textSecondary italic text-[10px]">—</span> : <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{v}</span>
+      render: (v: string) => (!v || v === 'NULL') ? <span className="text-textSecondary italic text-[10px]">—</span> : <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-module/10 text-module border border-module/20">{v}</span>
     },
     { key: 'email', label: 'Email', render: (v) => <span className="text-xs text-textSecondary truncate max-w-[120px] inline-block">{v || '—'}</span> },
     { key: 'phone', label: 'Phone', render: (v) => <span className="text-xs text-textSecondary whitespace-nowrap">{v || '—'}</span> },
@@ -271,12 +271,12 @@ function HR() {
           }}
           onClick={(e) => e.stopPropagation()}
           className={`bg-surface/50 border border-white/10 rounded-lg px-2.5 py-1 text-xs focus:outline-none font-bold ${
-            v === 'paid' ? 'text-green-400' : v === 'processed' ? 'text-blue-400' : 'text-yellow-400'
-          }`}
+ v === 'paid' ? 'text-success' : v === 'processed' ? 'text-info' : 'text-warning'
+ }`}
         >
-          <option value="pending" className="bg-background text-yellow-400 font-bold">Pending</option>
-          <option value="processed" className="bg-background text-blue-400 font-bold">Processed</option>
-          <option value="paid" className="bg-background text-green-400 font-bold">Paid</option>
+          <option value="pending" className="bg-background text-warning font-bold">Pending</option>
+          <option value="processed" className="bg-background text-info font-bold">Processed</option>
+          <option value="paid" className="bg-background text-success font-bold">Paid</option>
         </select>
       )
     },
@@ -400,7 +400,7 @@ function HR() {
             </div>
           </button>
           <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all">
+          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
             <LogOut className="w-4 h-4 md:w-5 h-5" />
           </button>
         </div>
@@ -411,9 +411,9 @@ function HR() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
-                ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
-                }`}>
+ ? 'border-primary text-primary bg-primary/5'
+ : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
+ }`}>
               <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-primary' : 'text-textSecondary'}`} />
               {t.label}
             </button>
@@ -756,15 +756,15 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="glass-panel rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
+      <div className="modal-panel rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Profile' : 'Create Profile'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar min-h-0">
-          {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold">{error}</div>}
+          {error && <div className="p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger text-xs font-bold">{error}</div>}
 
           <div className="flex items-center gap-8">
             <div className="relative group">
@@ -794,7 +794,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                 }}
               />
 
-              {uploading && <div className="absolute inset-0 bg-black/50 rounded-[2rem] flex items-center justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>}
+              {uploading && <div className="absolute inset-0 bg-surfaceAlt rounded-[2rem] flex items-center justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>}
             </div>
             <div className="flex-1 space-y-4">
               <div className="space-y-1.5">
@@ -882,7 +882,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
                           {appt.isActive ? 'ACTIVE' : 'EXPIRED'}
                         </div>
                         {canEditPermissions && (
@@ -965,7 +965,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                             <p className="text-xs font-bold">{a.assetName}</p>
                             <p className="text-[10px] text-textSecondary">{a.assetType}</p>
                           </div>
-                          <button type="button" onClick={() => handleUnassignAsset(a.id)} className="text-[10px] text-red-400 font-bold px-2 py-1 bg-red-400/10 rounded hover:bg-red-400/20">Remove</button>
+                          <button type="button" onClick={() => handleUnassignAsset(a.id)} className="text-[10px] text-danger font-bold px-2 py-1 bg-danger/10 rounded hover:bg-danger/20">Remove</button>
                         </div>
                       ))}
                     </div>
@@ -1027,12 +1027,12 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                         setFormData({ ...formData, department: next.join(',') });
                       }}
                       className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${isSelected
-                          ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10'
-                          : 'bg-surface/50 border-white/10 text-textSecondary hover:border-white/20'
-                        }`}
+ ? 'bg-primary/10 border-primary text-primary shadow-lg shadow-primary/10'
+ : 'bg-surface/50 border-white/10 text-textSecondary hover:border-white/20'
+ }`}
                     >
-                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-white/20 bg-black/20'
-                        }`}>
+                      <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-white/20 bg-surfaceAlt'
+ }`}>
                         {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
                       </div>
                       <span className="text-xs font-bold">{opt.label}</span>
@@ -1049,7 +1049,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
 
         <div className="p-6 bg-white/5 border-t border-white/10 flex gap-4">
           <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-white/10 text-xs font-black uppercase tracking-widest text-textSecondary hover:bg-white/5 transition-all">Cancel</button>
-          <button onClick={handleSubmit} disabled={loading} className="flex-1 py-3 rounded-xl bg-primary text-white text-xs font-black uppercase tracking-widest hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+          <button onClick={handleSubmit} disabled={loading} className="flex-1 py-3 rounded-xl bg-primary text-surface text-xs font-black uppercase tracking-widest hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Save Record
           </button>

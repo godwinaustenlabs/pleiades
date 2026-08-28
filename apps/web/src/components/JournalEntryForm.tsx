@@ -70,10 +70,10 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose} />
+      <div className="absolute inset-0 scrim animate-in fade-in duration-300" onClick={onClose} />
       <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-surface/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/10 overflow-hidden animate-in zoom-in-95 duration-300">
         
-        <div className="p-6 md:p-8 border-b border-white/10 flex items-center justify-between bg-black/20">
+        <div className="p-6 md:p-8 border-b border-white/10 flex items-center justify-between bg-surfaceAlt">
           <h2 className="text-xl md:text-2xl font-black">{initialData ? 'Update Journal Entry' : 'New Journal Entry'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
             <X className="w-6 h-6 text-textSecondary" />
@@ -85,11 +85,11 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="text-xs font-bold text-textSecondary mb-2 block uppercase tracking-widest">Entry Date</label>
-                <input type="date" required value={entryDate} onChange={e => setEntryDate(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all" />
+                <input type="date" required value={entryDate} onChange={e => setEntryDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-success/50 focus:ring-1 focus:ring-success/50 transition-all" />
               </div>
               <div>
                 <label className="text-xs font-bold text-textSecondary mb-2 block uppercase tracking-widest">Attach Invoice</label>
-                <select value={invoiceId} onChange={e => setInvoiceId(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all">
+                <select value={invoiceId} onChange={e => setInvoiceId(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-success/50 focus:ring-1 focus:ring-success/50 transition-all">
                   <option value="">— None —</option>
                   {invoices.map(i => <option key={i.id} value={i.id}>{i.invoiceNumber} – {i.vendorName || 'N/A'}</option>)}
                 </select>
@@ -98,27 +98,27 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
 
             <div>
               <label className="text-xs font-bold text-textSecondary mb-2 block uppercase tracking-widest">Description</label>
-              <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all" />
+              <textarea required rows={2} value={description} onChange={e => setDescription(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-success/50 focus:ring-1 focus:ring-success/50 transition-all" />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* DEBITS */}
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-black text-emerald-400 tracking-widest uppercase">Debits</h3>
-                  <button type="button" onClick={() => addLine('debit')} className="text-xs flex items-center gap-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded">
+                  <h3 className="text-sm font-black text-success tracking-widest uppercase">Debits</h3>
+                  <button type="button" onClick={() => addLine('debit')} className="text-xs flex items-center gap-1 text-success hover:text-success bg-success/10 px-2 py-1 rounded">
                     <Plus className="w-3 h-3" /> Add
                   </button>
                 </div>
                 <div className="space-y-3">
                   {lines.filter(l => l.type === 'debit').map(line => (
                     <div key={line.id} className="flex gap-2 items-center">
-                      <select required value={line.accountId} onChange={e => updateLine(line.id, 'accountId', e.target.value)} className="flex-1 min-w-0 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50">
+                      <select required value={line.accountId} onChange={e => updateLine(line.id, 'accountId', e.target.value)} className="flex-1 min-w-0 bg-surfaceAlt border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-success/50">
                         <option value="">Select Account</option>
                         {accounts.map(a => <option key={a.id} value={a.id}>{a.accountName}</option>)}
                       </select>
-                      <input type="number" required min="0" step="0.01" value={line.amount || ''} onChange={e => updateLine(line.id, 'amount', e.target.value)} className="w-24 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white text-right focus:outline-none focus:border-emerald-500/50" placeholder="0.00" />
-                      <button type="button" onClick={() => removeLine(line.id)} className="p-2 text-textSecondary hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors">
+                      <input type="number" required min="0" step="0.01" value={line.amount || ''} onChange={e => updateLine(line.id, 'amount', e.target.value)} className="w-24 bg-surfaceAlt border border-white/10 rounded-lg px-3 py-2 text-sm text-white text-right focus:outline-none focus:border-success/50" placeholder="0.00" />
+                      <button type="button" onClick={() => removeLine(line.id)} className="p-2 text-textSecondary hover:text-danger rounded-lg hover:bg-white/5 transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -129,20 +129,20 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
               {/* CREDITS */}
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-black text-rose-400 tracking-widest uppercase">Credits</h3>
-                  <button type="button" onClick={() => addLine('credit')} className="text-xs flex items-center gap-1 text-rose-400 hover:text-rose-300 bg-rose-500/10 px-2 py-1 rounded">
+                  <h3 className="text-sm font-black text-danger tracking-widest uppercase">Credits</h3>
+                  <button type="button" onClick={() => addLine('credit')} className="text-xs flex items-center gap-1 text-danger hover:text-danger bg-danger/10 px-2 py-1 rounded">
                     <Plus className="w-3 h-3" /> Add
                   </button>
                 </div>
                 <div className="space-y-3">
                   {lines.filter(l => l.type === 'credit').map(line => (
                     <div key={line.id} className="flex gap-2 items-center">
-                      <select required value={line.accountId} onChange={e => updateLine(line.id, 'accountId', e.target.value)} className="flex-1 min-w-0 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-rose-500/50">
+                      <select required value={line.accountId} onChange={e => updateLine(line.id, 'accountId', e.target.value)} className="flex-1 min-w-0 bg-surfaceAlt border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-danger/50">
                         <option value="">Select Account</option>
                         {accounts.map(a => <option key={a.id} value={a.id}>{a.accountName}</option>)}
                       </select>
-                      <input type="number" required min="0" step="0.01" value={line.amount || ''} onChange={e => updateLine(line.id, 'amount', e.target.value)} className="w-24 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white text-right focus:outline-none focus:border-rose-500/50" placeholder="0.00" />
-                      <button type="button" onClick={() => removeLine(line.id)} className="p-2 text-textSecondary hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors">
+                      <input type="number" required min="0" step="0.01" value={line.amount || ''} onChange={e => updateLine(line.id, 'amount', e.target.value)} className="w-24 bg-surfaceAlt border border-white/10 rounded-lg px-3 py-2 text-sm text-white text-right focus:outline-none focus:border-danger/50" placeholder="0.00" />
+                      <button type="button" onClick={() => removeLine(line.id)} className="p-2 text-textSecondary hover:text-danger rounded-lg hover:bg-white/5 transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -151,7 +151,7 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
               </div>
             </div>
 
-            <div className={`p-4 rounded-xl flex items-center justify-between border ${isBalanced ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+            <div className={`p-4 rounded-xl flex items-center justify-between border ${isBalanced ? 'bg-success/10 border-success/20 text-success' : 'bg-danger/10 border-danger/20 text-danger'}`}>
               <div className="font-bold">
                 {isBalanced ? '✅ Entry is Balanced' : '❌ Out of Balance'}
               </div>
@@ -163,11 +163,11 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
           </form>
         </div>
 
-        <div className="p-6 md:p-8 border-t border-white/10 bg-black/20 flex justify-end gap-4">
+        <div className="p-6 md:p-8 border-t border-white/10 bg-surfaceAlt flex justify-end gap-4">
           <button type="button" onClick={onClose} className="px-6 py-2.5 rounded-xl font-bold text-sm bg-white/5 hover:bg-white/10 transition-colors">
             Cancel
           </button>
-          <button form="journal-form" type="submit" disabled={loading || !isBalanced} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${loading || !isBalanced ? 'bg-emerald-500/50 cursor-not-allowed opacity-50' : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]'}`}>
+          <button form="journal-form" type="submit" disabled={loading || !isBalanced} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${loading || !isBalanced ? 'bg-success/50 cursor-not-allowed opacity-50' : 'bg-success hover:bg-success text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]'}`}>
             {loading ? 'Saving...' : 'Save Entry'}
           </button>
         </div>
