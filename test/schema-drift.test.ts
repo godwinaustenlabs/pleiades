@@ -35,7 +35,7 @@ function productionTables(): string[] {
  * Tables Drizzle declares that production does not have.
  *
  * `tasks` is real and currently unfixed: it is created by migration 0000, is
- * recorded in office-db's d1_migrations as applied, and does not exist in the
+ * recorded in pleiades-db's d1_migrations as applied, and does not exist in the
  * database — so it was dropped by hand at some point. The five handlers in
  * src/routes/tech.ts that read it return
  * `D1_ERROR: no such table: tasks` in production today, which

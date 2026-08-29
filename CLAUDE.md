@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-GAnovaOS ("officeOS") is an internal company operating system deployed as a **single Cloudflare Worker**. One Hono API (`src/`) serves `/api/*` and also serves the built React SPA (`apps/web/dist`) as static assets with SPA fallback. Persistence is Cloudflare D1 (SQLite) via Drizzle ORM, plus KV, R2, and Workers AI bindings.
+Pleiades is an internal company operating system deployed as a **single Cloudflare Worker**. One Hono API (`src/`) serves `/api/*` and also serves the built React SPA (`apps/web/dist`) as static assets with SPA fallback. Persistence is Cloudflare D1 (SQLite) via Drizzle ORM, plus R2, Vectorize, and Workers AI bindings.
+
+The script, the database and every bucket are named `pleiades*`. It was
+previously called GAnovaOS ("officeOS") and ran against `office-db` and the
+`office-*` buckets; that rename and the storage cutover are both complete, so
+an `office-*` name appearing anywhere now is a leftover, not a live resource.
+`test/config.test.ts` enforces this — every D1 and R2 resource name must start
+with the script name.
 
 ## Commands
 
@@ -47,9 +54,10 @@ The suite is in four layers, and the two snapshot files are the load-bearing par
 Two facts the suite records rather than hides, both pre-existing:
 
 - `GET /api/tech/tasks` (and `/:id`) return `D1_ERROR: no such table: tasks`. Migration
-  0000 creates the table and `office-db` records that migration as applied, but the table
-  is not there — it was dropped by hand. `schema-drift.test.ts` names `tasks` as the one
-  known gap so it cannot silently become two.
+  0000 creates the table and `pleiades-db` records that migration as applied, but the
+  table is not there — it was dropped by hand, and the cutover copied that state across
+  faithfully. `schema-drift.test.ts` names `tasks` as the one known gap so it cannot
+  silently become two.
 - `GET /api/admin/users/my-team` returns 404 for everyone. `/users/:id` is registered at
   `admin.ts:137` and `my-team` at `admin.ts:259`, so the parameterised route shadows it
   and the handler is unreachable. Registering the static path first fixes it.
@@ -69,19 +77,25 @@ Gates: `npm test`, `npx tsc --noEmit -p tsconfig.json`, `cd apps/web && npx tsc 
 Run D1 commands **from the repo root** — the D1 binding lives only in the root `wrangler.jsonc`, and `migrations_dir` points at `packages/database/migrations`:
 
 ```bash
-npx wrangler d1 migrations apply office-db --local     # or --remote
-npx wrangler d1 execute office-db --local --command="..."
+npx wrangler d1 migrations apply pleiades-db --local     # or --remote
+npx wrangler d1 execute pleiades-db --local --command="..."
 ```
 
-Note: `packages/database`'s own `migrate` script now refuses to run and points at
-the root-level command above — it used to name a database (`ganova-db`) that does
-not exist.
+Note: `packages/database`'s own `migrate` script refuses to run and points at the
+root-level command above. It has named a stale database twice now — first
+`ganova-db`, which never existed, then `office-db` after the cutover — which is
+the argument for it not naming one at all.
 
 #### Copying the database
 
-There is no rename for a D1 database, so moving one means export, create,
-import — and a plain `wrangler d1 export | wrangler d1 execute` **does not
-work**. Two things break it:
+This is how `office-db` became `pleiades-db` on 28 Aug 2026. That cutover is
+done — `scripts/cutover-storage.sh` is the reviewed, re-runnable form of it, and
+`scripts/verify-live.sh` checks the result. Keep the section: D1 has no rename,
+so the next time a database moves it moves this way, and every trap below is one
+this migration actually hit.
+
+Moving a database means export, create, import — and a plain
+`wrangler d1 export | wrangler d1 execute` **does not work**. Two things break it:
 
 1. A combined schema+data dump fails with `no such table: main.<table>`. Export
    `--no-data` and `--no-schema` separately and import the schema first.
@@ -96,12 +110,15 @@ This reads exactly like data corruption and is not — it is statement order.
 is the supported path:
 
 ```bash
-npx wrangler d1 export  office-db  --remote --no-data   --output=cutover/schema.sql
-npx wrangler d1 export  office-db  --remote --no-schema --output=cutover/data.sql
+npx wrangler d1 export  "$SRC" --remote --no-data   --output=cutover/schema.sql
+npx wrangler d1 export  "$SRC" --remote --no-schema --output=cutover/data.sql
 python3 scripts/d1-order-dump.py cutover/schema.sql cutover/data.sql cutover/ordered.sql
-npx wrangler d1 execute pleiades-db --remote --file=cutover/schema.sql  --yes
-npx wrangler d1 execute pleiades-db --remote --file=cutover/ordered.sql --yes
+npx wrangler d1 execute "$DST" --remote --file=cutover/schema.sql  --yes
+npx wrangler d1 execute "$DST" --remote --file=cutover/ordered.sql --yes
 ```
+
+`cutover/` is gitignored — those dumps are full production data, including
+password hashes. Do not commit them; see SECURITY.md.
 
 It also drops `sqlite_sequence`, which SQLite maintains itself; replaying the
 dump's copy leaves two rows for the same table and makes the next AUTOINCREMENT
@@ -116,7 +133,7 @@ terms, so a per-table count query has to be chunked.
 
 Do **not** rebuild a database by replaying `packages/database/migrations/`. The
 files no longer describe production: `0000_plain_shard.sql` creates a `tasks`
-table that `office-db` records as applied and does not have. A second hazard,
+table that `pleiades-db` records as applied and does not have. A second hazard,
 `fix_universal_tasks_fk.sql`, has since been deleted — being unnumbered,
 wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
@@ -128,14 +145,24 @@ pre-roles-only schema (`role_permissions`, `role_hierarchy`, `user_app_*`), so a
 `generate` today prompts to rename tables that were already replaced and would
 emit a file numbered `0020`, colliding with the hand-written `0020_role_based_access.sql`.
 Reconciling that baseline is a deliberate decision, not a routine step. What
-authoritatively records migration state is `office-db`'s own `d1_migrations`
+authoritatively records migration state is `pleiades-db`'s own `d1_migrations`
 table, not `meta/_journal.json`.
 
 ## Architecture
 
 ### Request flow
 
-`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, `agent`, plus `agents/slack`. Each router applies its own middleware at the top of its file:
+`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
+
+Three routers are **not** mounted at the top level — `src/routes/agent.ts`,
+`assets-register.ts` and `statements.ts` are sub-routed inside `finance.ts`, so
+they serve `/api/finance/agent`, `/api/finance/assets` and
+`/api/finance/statements`. Their features are gated under `finance`
+(`agent`, `agent_config`, `assets`), which is why looking for an `agent` app in
+`APP_FEATURES` finds nothing. `test/__snapshots__/routes.txt` is the
+authoritative list of what is actually reachable.
+
+Each router applies its own middleware at the top of its file:
 
 ```ts
 hrRouter.use('*', authMiddleware);
@@ -241,7 +268,7 @@ router.post('/things', async (c) => {
 
 `user_app_permissions` is the authorization table (see Authorization above).
 
-Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@pleiades/database` (path-mapped in the root `tsconfig.json`).
+Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `pleiades`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@pleiades/database` (path-mapped in the root `tsconfig.json`). `schema/pleiades.ts` holds the agent's own tables — approvals, conversations, journal, compliance config, knowledge and generated documents.
 
 Column names are snake_case in SQL, camelCase in TS, and primary keys are often *not* named `id` in SQL (e.g. `universalTasks.id` maps to the `task_id` column) — always check the schema file rather than assuming.
 
@@ -324,11 +351,17 @@ Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_
 
 ### Bindings and secrets
 
-`wrangler.jsonc` defines `DB` (D1 `office-db`), `ASSETS`, `SELF` (this Worker,
+`wrangler.jsonc` defines `DB` (D1 `pleiades-db`), `ASSETS`, `SELF` (this Worker,
 bound to itself), `AI`, `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
-`office-crm-docs`, used by `/api/assets` for uploads/downloads),
-`COMPLIANCE_BUCKET` (R2 `office-compliance-docs`), and the two Durable Object
-bindings `SLACK_AGENT` / `PLEIADES_AGENT`.
+`pleiades-docs`, used by `/api/assets` for uploads/downloads),
+`COMPLIANCE_BUCKET` (R2 `pleiades-compliance-docs`), and the two Durable Object
+bindings `SLACK_AGENT` / `ACCOUNTANT_AGENT` (classes `SlackAgent` /
+`AccountantAgent`).
+
+`SELF` is declared optional in `Env` on purpose: a self-referential service
+binding cannot name a script that does not exist yet, so the first deploy of a
+renamed script would be impossible otherwise. `executors.ts` falls back to a
+plain fetch against `WORKER_ORIGIN` when it is absent.
 
 `CLIENTS_KV_NAMESPACE` and `MEMORY_KV_NAMESPACE` were removed: nothing read
 either, and both namespaces were verified empty before the bindings were
@@ -381,7 +414,7 @@ misconfigured".
 - **Do not run `npm run format` across the repo.** `.prettierrc`/`.editorconfig` specify tabs, but the existing TypeScript sources are 2-space indented; a blanket format reflows the whole codebase. Match the indentation of the file you are editing.
 - The Vite dev proxy targets `127.0.0.1:8788` while `wrangler dev` defaults to `8787`. If `/api` calls 502 in dev, start the worker on 8788 (`npx wrangler dev --port 8788`).
 - `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it.
-- **The Drizzle schema has drifted from production before.** `role_hierarchy` and `role_permissions` were defined in `schema/auth.ts` for a long time but never existed in the D1 database, so every route touching them returned a 500 that nobody noticed. If you add a table, confirm the migration actually ran against `office-db` (`SELECT name FROM sqlite_master`).
+- **The Drizzle schema has drifted from production before.** `role_hierarchy` and `role_permissions` were defined in `schema/auth.ts` for a long time but never existed in the D1 database, so every route touching them returned a 500 that nobody noticed. If you add a table, confirm the migration actually ran against `pleiades-db` (`SELECT name FROM sqlite_master`). `test/schema-drift.test.ts` now catches this class of drift automatically.
 - `test/schema.sql` is the **production** DDL, pulled from `sqlite_master`, precisely so the test database cannot drift from the real one. Regenerate it rather than hand-editing.
 
 ## Conventions

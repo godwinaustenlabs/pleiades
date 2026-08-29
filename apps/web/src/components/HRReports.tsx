@@ -328,7 +328,7 @@ export default function HRReports(_props: HRReportsProps) {
  </table>
 
  <div class="footer">
- <p>This is a system-generated corporate report · GAnovaOS Human Resources Platform</p>
+ <p>This is a system-generated corporate report · Pleiades Human Resources Platform</p>
  </div>
  </body>
  </html>

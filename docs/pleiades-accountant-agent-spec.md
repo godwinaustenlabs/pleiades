@@ -1,7 +1,7 @@
 # Pleiades Accountant — Specification
 
 **For:** Godwin Austen Labs
-**Stack:** Cloudflare Agents SDK (Workers + Durable Objects), `office-db` (D1), R2
+**Stack:** Cloudflare Agents SDK (Workers + Durable Objects), `pleiades-db` (D1), R2
 **Original draft:** August 2026 · **Rewritten to match the build:** 25 August 2026
 
 ---
@@ -109,7 +109,7 @@ fact.
 
 ## SECTION C — Database
 
-Everything lives in **`office-db`**, not a dedicated D1.
+Everything lives in **`pleiades-db`**, not a dedicated D1.
 
 > *Departure from the original spec, which called for a separate database.* D1
 > cannot join across databases, and almost every useful question spans both
@@ -301,7 +301,7 @@ Verified: superadmin 200, a Tech Lead without the grant 403, unauthenticated 401
 
 ## SECTION G — Runtime
 
-`PleiadesAgent extends Agent<Env>` — an Agents-SDK Durable Object, one instance
+`AccountantAgent extends Agent<Env>` — an Agents-SDK Durable Object, one instance
 per conversation. Serialising turns matters more here than for a chat assistant:
 bookkeeping is consequential, and two concurrent requests must not race into
 posting the same journal twice.

@@ -50,7 +50,7 @@ export { AccountantAgent } from './agents/accountant/agent';
  */
 export type Env = {
   // ── Bindings (wrangler.jsonc) ──────────────────────────────────────────────
-  /** D1 `office-db`. The only database. */
+  /** D1 `pleiades-db`. The only database. */
   DB: D1Database;
   /** Static assets: the built SPA in apps/web/dist, with SPA fallback. */
   ASSETS: Fetcher;
@@ -70,7 +70,7 @@ export type Env = {
    * Read by: src/index.ts (scheduled)
    */
   WORKER_ORIGIN: string;
-  /** R2 `office-crm-docs`. Every uploaded document and photo — src/routes/assets.ts. */
+  /** R2 `pleiades-docs`. Every uploaded document and photo — src/routes/assets.ts. */
   CRM_BUCKET?: R2Bucket;
   /** Source documents for the accountant's knowledge base. */
   COMPLIANCE_BUCKET?: R2Bucket;

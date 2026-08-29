@@ -97,13 +97,14 @@ describe('wrangler.jsonc contracts', () => {
   /**
    * Prefixes that resource names may still carry mid-cutover.
    *
-   * The `pleiades` Worker is deployed pointing at `office-db` and the `office-*`
-   * buckets on purpose: both hostnames then serve identical data from one
-   * dataset, so the new script can be validated against production before any
-   * data moves, and nothing has to be frozen to get there.
+   * Empty, and that is the point: the storage cutover has landed, so every
+   * resource is named `pleiades*` and the rule below is at full strength.
+   * While it ran, this held `office-` so the renamed script could point at the
+   * old database and buckets — both hostnames serving identical data from one
+   * dataset — and be validated against production before anything moved.
    *
-   * Empty this list when the storage cutover lands. The rule below tightens
-   * automatically, and anything left behind fails.
+   * Only add a prefix here for the duration of another such move, and empty it
+   * again on the commit that completes one.
    */
   const TRANSITIONAL_PREFIXES: string[] = [];
 

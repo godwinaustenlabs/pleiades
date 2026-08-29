@@ -4,7 +4,7 @@ import { usersLogins } from './auth';
 /**
  * Pleiades Accountant — the agent's system of record.
  *
- * These tables live in `office-db` alongside the accounting data the agent
+ * These tables live in `pleiades-db` alongside the accounting data the agent
  * reasons over (invoices, payroll_records, employees, transactions). The spec
  * suggested a dedicated D1; a single database was chosen instead because D1
  * cannot join across databases, and almost every useful question the agent

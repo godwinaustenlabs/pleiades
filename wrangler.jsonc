@@ -107,7 +107,7 @@
 		}
 	],
 	// Retrieval over those documents. Rates never come from here — see
-	// src/agents/pleiades-accountant/knowledge.ts.
+	// src/agents/accountant/knowledge.ts.
 	"vectorize": [
 		{
 			"binding": "VECTORIZE",

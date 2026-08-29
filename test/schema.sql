@@ -1,8 +1,8 @@
--- Production DDL, pulled verbatim from office-db's sqlite_master.
+-- Production DDL, pulled verbatim from pleiades-db's sqlite_master.
 -- The test database is the real schema, not a hand-picked subset: it held 23
 -- of the 85 production tables, so anything touching finance, CRM or assets
 -- could not be tested at all. Regenerate this file rather than editing it:
---   npx wrangler d1 execute office-db --remote --json \
+--   npx wrangler d1 execute pleiades-db --remote --json \
 --     --command="SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL"
 
 CREATE TABLE `accounts` (
