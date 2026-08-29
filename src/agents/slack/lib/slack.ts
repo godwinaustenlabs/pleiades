@@ -61,7 +61,7 @@ export type SlackActor = {
 };
 
 /**
- * Resolves a Slack user id to an officeOS account.
+ * Resolves a Slack user id to a Pleiades account.
  *
  * Only ever called AFTER the request signature has been verified. The Slack id
  * itself is never trusted as an identity beyond this lookup, and never leaves

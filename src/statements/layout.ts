@@ -47,7 +47,7 @@ export class StatementDoc {
     const d = new StatementDoc(meta);
     d.doc = await PDFDocument.create();
     d.doc.setTitle(`${meta.title} — ${meta.organisation}`);
-    d.doc.setCreator('officeOS');
+    d.doc.setCreator('Pleiades');
     d.body = await d.doc.embedFont(StandardFonts.Helvetica);
     d.bold = await d.doc.embedFont(StandardFonts.HelveticaBold);
     // Courier for figures: proportional digits make columns of money ragged

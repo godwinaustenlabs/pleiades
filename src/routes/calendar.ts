@@ -64,10 +64,10 @@ calendarRouter.get('/feed/:token', async (c) => {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//officeOS//Calendar Feed//EN',
+    'PRODID:-//Pleiades//Calendar Feed//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:officeOS - ' + (feed.user.name || feed.user.username),
+    'X-WR-CALNAME:Pleiades - ' + (feed.user.name || feed.user.username),
     'X-WR-TIMEZONE:UTC',
     'X-WR-CALDESC:Tasks and Appointments for ' + (feed.user.name || feed.user.username),
   ];
@@ -88,6 +88,10 @@ calendarRouter.get('/feed/:token', async (c) => {
     if (!start || !endStr) return;
 
     lines.push('BEGIN:VEVENT');
+    // The `officeos.org` here is a stable identifier, not branding: a UID is how
+    // a subscribed client recognises an event it already has. Renaming it to
+    // match the Pleiades rename would make every calendar drop its existing
+    // events and re-add them as new. Leave it.
     lines.push(`UID:task-${task.id}@officeos.org`);
     lines.push(`DTSTAMP:${new Date(task.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0]}Z`);
     lines.push(`DTSTART;VALUE=DATE:${start}`);

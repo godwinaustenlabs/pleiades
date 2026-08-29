@@ -7,7 +7,7 @@ import { Env } from '../../index';
  *
  * The agent can set salary structures, run payroll and post journals. Reaching
  * it is therefore a privilege in its own right, separate from being able to use
- * Slack or hold an officeOS account — an employee with HR access but no
+ * Slack or hold a Pleiades account — an employee with HR access but no
  * accounting remit should not be able to ask it to open a ledger.
  *
  * The check is the same wherever the request came from: the Accounting UI route

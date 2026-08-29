@@ -77,7 +77,7 @@ const createSlackAgentRouter = (_app: Hono<{ Bindings: Env }>) => {
                 await postToSlack(
                   token,
                   channel,
-                  `Hi <@${slackId}>! I'm officeOS, your personal AI assistant. How can I help you today?`,
+                  `Hi <@${slackId}>! I'm Pleiades, your personal AI assistant. How can I help you today?`,
                   threadTs,
                 );
               }
@@ -101,13 +101,13 @@ const createSlackAgentRouter = (_app: Hono<{ Bindings: Env }>) => {
     }
 
     // A Slack id is not an identity by itself. This lookup is the only thing
-    // that turns one into an officeOS user, and it runs after verification.
+    // that turns one into a Pleiades user, and it runs after verification.
     const actor = await resolveSlackActor(env, slackId);
     if (!actor) {
       return c.json(
         {
           response_type: 'ephemeral',
-          text: "Your Slack account isn't linked to an active officeOS user, so I can't act on your behalf.",
+          text: "Your Slack account isn't linked to an active Pleiades user, so I can't act on your behalf.",
         },
         200,
       );
