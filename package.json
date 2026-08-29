@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "concurrently \"wrangler dev\" \"turbo run dev\"",
     "build": "turbo run build",
+    "deploy": "wrangler deploy",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "test": "vitest run",
@@ -17,7 +18,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^4.20260510.1",
+    "@cloudflare/workers-types": "^5.20260828.1",
     "@tailwindcss/postcss": "^4.3.0",
     "autoprefixer": "^10.5.0",
     "concurrently": "^9.2.1",
@@ -26,7 +27,8 @@
     "tailwindcss": "^4.3.0",
     "turbo": "latest",
     "typescript": "^5.0.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "4.124.0"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
