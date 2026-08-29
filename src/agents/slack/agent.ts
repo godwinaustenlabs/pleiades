@@ -7,13 +7,23 @@ import { buildTools } from './tools';
 import { postToSlack, replyToSlashCommand } from './lib/slack';
 
 /**
+ * How many prior messages are replayed to the model each turn.
+ *
+ * Ten messages is five user/assistant exchanges — the "last five" the bot is
+ * expected to remember. Counted in messages rather than exchanges because that
+ * is what `messages` takes, and a turn that errored leaves a user message with
+ * no assistant reply, so the two do not divide evenly.
+ */
+const MAX_HISTORY_MESSAGES = 10;
+
+/**
  * One turn handed to the agent by the webhook, after the Slack signature has
- * been verified and the Slack user mapped to an officeOS account.
+ * been verified and the Slack user mapped to a Pleiades account.
  */
 export interface SlackTurn {
   /** Slack user id (U…), used for addressing and prompt context only. */
   slackId: string;
-  /** The officeOS users_logins id whose permissions this turn runs under. */
+  /** The Pleiades users_logins id whose permissions this turn runs under. */
   actorUserId: string;
   channel: string;
   threadTs?: string;
@@ -33,7 +43,9 @@ export interface SlackTurn {
  *  - Turns in one thread are serialised by the Durable Object, so two quick
  *    messages cannot interleave and answer each other's question.
  *  - `this.sql` gives the conversation durable, queryable history that lives
- *    with the conversation instead of in a KV blob keyed by user.
+ *    with the conversation instead of in a KV blob keyed by user. The last
+ *    MAX_HISTORY_MESSAGES of it are replayed to the model each turn, which is
+ *    what makes the bot able to follow "what about the other one?".
  *  - `this.schedule()` is available for follow-ups the agent should perform
  *    later, which a stateless webhook cannot do at all.
  *
@@ -65,6 +77,37 @@ export class SlackAgent extends Agent<Env> {
       INSERT INTO turns (role, slack_user, actor_user_id, content, created_at)
       VALUES (${role}, ${turn.slackId}, ${turn.actorUserId}, ${content}, ${Date.now()})
     `;
+  }
+
+  /**
+   * The recent conversation, replayed to the model.
+   *
+   * Without this the Durable Object gave serialisation but not memory: turns
+   * were written to `turns` on every message and never read back, so the model
+   * saw exactly one user message per turn and could not remember what it had
+   * just said or what was asked two messages ago. This is the same defect the
+   * accountant agent was built to fix — see `agents/accountant/agent.ts`.
+   *
+   * `error` rows are skipped. They record that a turn failed, which is useful
+   * to a human reading the history but is not dialogue, and replaying a stack
+   * message as if the assistant had said it invites the model to treat its own
+   * failures as content.
+   *
+   * Ordered by `id` rather than `created_at`: two messages in the same
+   * millisecond would tie on the timestamp, and AUTOINCREMENT cannot.
+   */
+  private loadRecentTurns(limit = MAX_HISTORY_MESSAGES) {
+    this.ensureSchema();
+    const rows = this.sql<{ role: string; content: string }>`
+      SELECT role, content
+      FROM turns
+      WHERE role IN ('user', 'assistant')
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `;
+    return rows
+      .reverse()
+      .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
   }
 
   /**
@@ -102,6 +145,9 @@ export class SlackAgent extends Agent<Env> {
 
   /** Runs one turn and posts the answer back to Slack. */
   async handleTurn(turn: SlackTurn): Promise<void> {
+    // Read history *before* recording this turn, or the prompt appears twice —
+    // once as the last history entry and again as the live message.
+    const history = this.loadRecentTurns();
     this.record('user', turn, turn.prompt);
 
     // Workers AI through the binding — no third-party quota, which matters for
@@ -116,7 +162,7 @@ export class SlackAgent extends Agent<Env> {
       const result = await generateText({
         model,
         system: buildSystemPrompt(turn.slackId),
-        prompt: turn.prompt,
+        messages: [...history, { role: 'user' as const, content: turn.prompt }],
         tools: buildTools(this.apiCaller(turn)),
         // Keep gpt-oss terse: its analysis channel otherwise consumes the
         // output budget and the turn ends without a final message.
