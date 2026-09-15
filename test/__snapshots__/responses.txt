@@ -162,6 +162,8 @@
     200 ok data=array<empty>
 /api/finance/pl-reports/:id
     404 err="Record not found"
+/api/finance/reports
+    200 ok data={missing,reports}
 /api/finance/statements
     200 ok data={missing,statements}
 /api/finance/transactions

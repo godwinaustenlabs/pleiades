@@ -109,6 +109,13 @@ const ANY_AUTHENTICATED: [string, string][] = [];
 const READ_RULES: { prefix: string; grants: [string, string][] }[] = [
   // ── Current prefixes ───────────────────────────────────────────────────────
   { prefix: 'employee-docs/', grants: [['hr', 'employees']] },
+  // Ordered ahead of `finance-docs/` deliberately: the first matching prefix
+  // wins, so these two have to precede the rule they narrow. A generated
+  // report is a verbatim transcript of the journal or the ledger, not a
+  // summary of it, so reading one requires the grant that owns that data —
+  // the same grant `src/routes/reports.ts` requires to produce it.
+  { prefix: 'finance-docs/reports/journal/', grants: [['finance', 'journals']] },
+  { prefix: 'finance-docs/reports/ledger/', grants: [['finance', 'ledgers']] },
   { prefix: 'finance-docs/', grants: [['finance', 'docs']] },
   { prefix: 'crm-docs/', grants: [['crm', 'documents']] },
   { prefix: 'ops-docs/', grants: [['ops', 'docs'], ['core', 'docs']] },

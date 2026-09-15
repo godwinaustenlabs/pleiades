@@ -1,8 +1,5 @@
-import { and, desc, eq } from 'drizzle-orm';
-import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
-import { generateId } from '../utils/id';
-import { loadConfig } from '../agents/accountant/config';
+import { fileDocument, letterhead, statementKey } from './file';
 import { StatementDoc } from './layout';
 import {
   assetsAndLiabilities,
@@ -14,12 +11,9 @@ import {
 /**
  * Renders a statement, files it in R2, and records it.
  *
- * Written straight to the bucket from the Worker rather than posted through
- * `PUT /api/assets/upload/*`: that route exists for browser uploads and holds
- * the whole body in memory with a 25 MB ceiling. `finance-docs/` is already an
- * allowed upload prefix with a matching read rule gated on `finance/docs`, so
- * the download authorises with no new wiring, and `application/pdf` is on the
- * inline-safe list, so it opens in the browser instead of forcing a download.
+ * Versioning, the bucket write and the `generated_documents` row all live in
+ * `file.ts`, shared with the ledger reports — see the note there on why there
+ * is one implementation of that rather than two.
  */
 
 export type StatementType = 'profit_and_loss' | 'assets_and_liabilities';
@@ -48,20 +42,6 @@ const humanDate = (iso: string) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', {
     day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
   });
-
-/** Company identity for the letterhead, from the operator's settings. */
-async function letterhead(env: Env) {
-  const vars = await loadConfig(env);
-  const get = (k: string) => vars.find((v) => v.key === k)?.value || null;
-  return {
-    // Falls back to a neutral label rather than inventing a legal name: a
-    // statement headed with the wrong entity is worse than one headed plainly.
-    organisation: get('company_legal_name') || 'The company',
-    ntn: get('company_ntn'),
-    currency: 'PKR',
-    accountant: get('accountant_name'),
-  };
-}
 
 function renderProfitAndLoss(doc: StatementDoc, pl: ProfitAndLoss) {
   if (pl.empty) {
@@ -201,58 +181,24 @@ export async function generateStatement(
 
   const bytes = await doc.save();
 
-  // Version rather than overwrite. `generated_documents` carries a unique index
-  // on (doc_type, period_label, version) precisely so a regenerated statement
-  // sits beside the one somebody may already have circulated.
-  const db = getDb(env);
-  const previous = await db
-    .select()
-    .from(schema.generatedDocuments)
-    .where(
-      and(
-        eq(schema.generatedDocuments.docType, req.type),
-        eq(schema.generatedDocuments.periodLabel, periodLabel),
-      ),
-    )
-    .orderBy(desc(schema.generatedDocuments.version))
-    .limit(1);
-  const version = (previous[0]?.version ?? 0) + 1;
+  const filed = await fileDocument(
+    env,
+    {
+      docType: req.type,
+      periodLabel,
+      bytes,
+      actorUserId: req.actorUserId,
+      basis: {
+        source: 'general_journals + assets register',
+        startDate: isPeriod ? startDate : null,
+        endDate: req.endDate,
+        requestedVia: req.requestedVia,
+        figures,
+      },
+    },
+    (version) => statementKey(req.type, periodLabel, version),
+  );
+  if ('error' in filed) return filed;
 
-  const r2Key = `finance-docs/statements/${req.type}_${periodLabel}_v${version}.pdf`;
-  if (!env.CRM_BUCKET) return { error: 'No document bucket is configured on this Worker.' };
-  await env.CRM_BUCKET.put(r2Key, bytes, {
-    httpMetadata: { contentType: 'application/pdf' },
-  });
-
-  const docId = generateId('gdoc');
-  const url = `/api/assets/download/${encodeURIComponent(r2Key)}`;
-  await db.insert(schema.generatedDocuments).values({
-    id: docId,
-    docType: req.type,
-    periodLabel,
-    version,
-    fileUrl: url,
-    generatedBy: req.actorUserId,
-    // What the numbers came from, kept with the document rather than in a log
-    // that rotates: a statement is only as good as the trail behind it.
-    generationBasis: JSON.stringify({
-      source: 'general_journals + assets register',
-      startDate: isPeriod ? startDate : null,
-      endDate: req.endDate,
-      requestedVia: req.requestedVia,
-      figures,
-    }),
-    createdAt: new Date(),
-  });
-
-  return {
-    docId,
-    docType: req.type,
-    periodLabel,
-    version,
-    r2Key,
-    url,
-    bytes: bytes.length,
-    figures,
-  };
+  return { ...filed, docType: req.type, figures };
 }

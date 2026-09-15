@@ -52,6 +52,7 @@ import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import agentRouter from './agent';
 import assetRegisterRouter from './assets-register';
 import statementsRouter from './statements';
+import reportsRouter from './reports';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -71,6 +72,11 @@ financeRouter.route('/assets', assetRegisterRouter);
 
 // Generated statements — rendered as PDFs into R2 under finance-docs/.
 financeRouter.route('/statements', statementsRouter);
+
+// Ledger reports — the general journal and the ledger accounts, transcribed to
+// PDF. Gated inside on `journals` / `ledgers` rather than on `docs`, because
+// these print the entries themselves rather than a summary of them.
+financeRouter.route('/reports', reportsRouter);
 
 /* ── LEDGERS ── */
 financeRouter.get('/ledgers', requireFeatureAccess('finance', 'ledgers', 'view'), async (c) => {

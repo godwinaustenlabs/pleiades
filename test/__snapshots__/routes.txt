@@ -205,6 +205,9 @@ POST   /api/finance/pl-reports
 DELETE /api/finance/pl-reports/:id
 GET    /api/finance/pl-reports/:id
 PATCH  /api/finance/pl-reports/:id
+GET    /api/finance/reports
+POST   /api/finance/reports/journal
+POST   /api/finance/reports/ledger
 GET    /api/finance/statements
 POST   /api/finance/statements
 GET    /api/finance/transactions

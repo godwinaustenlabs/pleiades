@@ -400,6 +400,121 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
       ),
     }),
 
+    generate_journal_report: tool({
+      description:
+        'Renders the GENERAL JOURNAL as a PDF and returns a download link: every entry in the range, ' +
+        'both sides of each, the account names, the narration, and the running totals. Use this for ' +
+        '"the journal for last year", "a report of the last three months", "print all the entries". ' +
+        'BOTH DATES ARE OPTIONAL and omitting them means the complete history — that is a supported ' +
+        'request, so do not invent a start date to avoid it. Resolve relative periods ("last year", ' +
+        '"last quarter") against today\'s date, which is in your instructions, and say the dates you ' +
+        'used. Optionally limited to one ledger book by `ledger_id`, which filters on the book each ' +
+        'ENTRY is stamped with. The figures come from the ledger, not from you: report what the tool ' +
+        'returns, do not restate amounts from memory. This changes no books, so it needs no approval.',
+      inputSchema: z.object({
+        start_date: z.string().optional().describe('YYYY-MM-DD. Omit for "from the beginning".'),
+        end_date: z.string().optional().describe('YYYY-MM-DD. Omit for "up to today".'),
+        ledger_id: z.string().optional().describe('Restrict to entries stamped with this ledger book.'),
+      }),
+      execute: recorded(
+        'generate_journal_report',
+        (a, data) => ({
+          subject: 'General journal report',
+          summary:
+            `Generated version ${data?.version ?? '?'} covering ${data?.coverage ?? 'an unstated period'}` +
+            (data?.figures
+              ? `. ${data.figures.entries} entries, debits ${data.figures.totalDebit}, ` +
+                `credits ${data.figures.totalCredit}`
+              : '') +
+            '.',
+          // The period reported on, not the day it was made.
+          periodLabel: (a.start_date ?? a.end_date ?? 'all-time').slice(0, 7),
+          entities: {
+            docId: data?.docId,
+            version: data?.version,
+            url: data?.url,
+            startDate: a.start_date ?? null,
+            endDate: a.end_date ?? null,
+            ledgerId: a.ledger_id ?? null,
+            figures: data?.figures,
+          },
+        }),
+        (a: any) =>
+          callApi('POST', '/api/finance/reports/journal', {
+            startDate: a.start_date ?? null,
+            endDate: a.end_date ?? null,
+            ledgerId: a.ledger_id ?? null,
+          }),
+      ),
+    }),
+
+    generate_ledger_report: tool({
+      description:
+        'Renders LEDGER ACCOUNTS as a PDF and returns a download link: for each account, an opening ' +
+        'balance, every entry against it with what it was posted to, a running balance, and a closing ' +
+        'balance. Three scopes. `account` needs `account_id` and reports that one account — use ' +
+        'get_accounts first to find the id. `ledger` needs `ledger_id` and reports every account that ' +
+        'BELONGS TO that book (note the difference from generate_journal_report, whose ledger filter ' +
+        'is on the book stamped on each entry). `all` reports every account in one document. ' +
+        'BOTH DATES ARE OPTIONAL; omitting them gives the complete history from inception, which is a ' +
+        'supported request. With a start date, the balance carried in from before it is shown as ' +
+        'Balance b/d. Resolve relative periods against today\'s date and say which dates you used. ' +
+        'This changes no books, so it needs no approval.',
+      inputSchema: z.object({
+        scope: z.enum(['account', 'ledger', 'all']),
+        account_id: z.string().optional().describe('Required when scope is "account".'),
+        ledger_id: z.string().optional().describe('Required when scope is "ledger".'),
+        start_date: z.string().optional().describe('YYYY-MM-DD. Omit to run from inception.'),
+        end_date: z.string().optional().describe('YYYY-MM-DD. Omit for "up to today".'),
+      }),
+      execute: recorded(
+        'generate_ledger_report',
+        (a, data) => ({
+          subject: `Ledger report (${a.scope})`,
+          summary:
+            `Generated version ${data?.version ?? '?'} covering ${data?.coverage ?? 'an unstated period'}` +
+            (data?.figures
+              ? `. ${data.figures.accounts} account(s), debits ${data.figures.totalDebit}, ` +
+                `credits ${data.figures.totalCredit}` +
+                (data.figures.closingBalance !== null && data.figures.closingBalance !== undefined
+                  ? `, closing balance ${data.figures.closingBalance}`
+                  : '')
+              : '') +
+            '.',
+          periodLabel: (a.start_date ?? a.end_date ?? 'all-time').slice(0, 7),
+          entities: {
+            docId: data?.docId,
+            version: data?.version,
+            url: data?.url,
+            scope: a.scope,
+            accountId: a.account_id ?? null,
+            ledgerId: a.ledger_id ?? null,
+            startDate: a.start_date ?? null,
+            endDate: a.end_date ?? null,
+            figures: data?.figures,
+          },
+        }),
+        (a: any) =>
+          callApi('POST', '/api/finance/reports/ledger', {
+            scope: a.scope,
+            accountId: a.account_id ?? null,
+            ledgerId: a.ledger_id ?? null,
+            startDate: a.start_date ?? null,
+            endDate: a.end_date ?? null,
+          }),
+      ),
+    }),
+
+    list_reports: tool({
+      description:
+        'Journal and ledger reports that exist and can be downloaded, newest first, with the figures ' +
+        'each one reported. Reconciled against the document store, so anything whose file has been ' +
+        'removed is absent — if a period you expected is not here, its report is gone and generating ' +
+        'it again is the right move. Only reports the person you are acting for may read are listed.',
+      inputSchema: z.object({}),
+      execute: async () => callApi('GET', '/api/finance/reports'),
+    }),
+
     list_statements: tool({
       description:
         'Statements that exist and can be downloaded, newest first, with the figures each one ' +

@@ -15,6 +15,7 @@ import DocumentsTab from '../components/DocumentsTab';
 import AccountantPanel from '../components/AccountantPanel';
 import AssetRegister from '../components/AssetRegister';
 import StatementsPanel from '../components/StatementsPanel';
+import ReportsPanel from '../components/ReportsPanel';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
@@ -68,6 +69,10 @@ function Finance() {
     return `${yyyy}-${mm}-${dd}`;
   });
   const [selectedLedgerAccount, setSelectedLedgerAccount] = useState('');
+  // The report generators are collapsed by default. Both tabs already carry a
+  // filter bar and a table, and a third always-open panel above them pushes the
+  // thing the tab is named after below the fold.
+  const [showReport, setShowReport] = useState<'journal' | 'ledger' | null>(null);
   const [ledgerViewData, setLedgerViewData] = useState<any>(null);
   const [committees, setCommittees] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -289,6 +294,25 @@ function Finance() {
         />
         {tab === 'ledger-view' && (
           <div className="space-y-4 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowReport(showReport === 'ledger' ? null : 'ledger')}
+                className="px-6 py-2 bg-surfaceAlt hover:bg-white/5 rounded-xl font-bold text-sm transition-all border border-white/10 flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                {showReport === 'ledger' ? 'Hide PDF Report' : 'PDF Report'}
+              </button>
+            </div>
+
+            {showReport === 'ledger' && (
+              <ReportsPanel
+                kind="ledger"
+                canEdit={user.isSuperadmin || getPerm('ledgers').canView}
+                ledgers={ledgers.map(l => ({ id: l.id, name: l.ledgerName }))}
+                accounts={accounts.map(a => ({ id: a.id, name: a.accountName }))}
+              />
+            )}
+
             <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
               <div className="flex-1 w-full md:w-auto">
                 <label className="text-xs text-textSecondary mb-1 block">Account</label>
@@ -409,7 +433,26 @@ function Finance() {
                 >
                   Export CSV
                 </button>
+                <button
+                  onClick={() => setShowReport(showReport === 'journal' ? null : 'journal')}
+                  className="w-full md:w-auto px-6 py-2 bg-surfaceAlt hover:bg-white/5 rounded-xl font-bold text-sm transition-all border border-white/10 flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  {showReport === 'journal' ? 'Hide PDF Report' : 'PDF Report'}
+                </button>
               </div>
+            )}
+
+            {/* The generator keeps its own date range rather than reusing the
+                filter bar's. The bar above defaults to a fortnight and is for
+                browsing; a report is a document somebody keeps, and inheriting
+                a range nobody chose for it is how the wrong period gets filed. */}
+            {tab === 'journals' && showReport === 'journal' && (
+              <ReportsPanel
+                kind="journal"
+                canEdit={user.isSuperadmin || getPerm('journals').canView}
+                ledgers={ledgers.map(l => ({ id: l.id, name: l.ledgerName }))}
+              />
             )}
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Finance'}

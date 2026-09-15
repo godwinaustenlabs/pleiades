@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (14 files, 301 tests)
+npm test          # vitest — see test/ (17 files, 343 tests)
 npm run test:watch
 ```
 
@@ -154,11 +154,12 @@ table, not `meta/_journal.json`.
 
 `src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
 
-Three routers are **not** mounted at the top level — `src/routes/agent.ts`,
-`assets-register.ts` and `statements.ts` are sub-routed inside `finance.ts`, so
-they serve `/api/finance/agent`, `/api/finance/assets` and
-`/api/finance/statements`. Their features are gated under `finance`
-(`agent`, `agent_config`, `assets`), which is why looking for an `agent` app in
+Four routers are **not** mounted at the top level — `src/routes/agent.ts`,
+`assets-register.ts`, `statements.ts` and `reports.ts` are sub-routed inside
+`finance.ts`, so they serve `/api/finance/agent`, `/api/finance/assets`,
+`/api/finance/statements` and `/api/finance/reports`. Their features are gated
+under `finance` (`agent`, `agent_config`, `assets`, and — for reports —
+`journals` / `ledgers`), which is why looking for an `agent` app in
 `APP_FEATURES` finds nothing. `test/__snapshots__/routes.txt` is the
 authoritative list of what is actually reachable.
 
@@ -287,6 +288,11 @@ step: `ALLOWED_UPLOAD_PREFIXES` (where a caller may write) and `READ_RULES`
 adding to both — a prefix with no read rule is refused, so the files upload
 successfully and then cannot be opened.
 
+`READ_RULES` is resolved by the **first matching prefix**, not the longest, so a
+rule that narrows another must be listed above it. `finance-docs/reports/journal/`
+and `finance-docs/reports/ledger/` sit ahead of `finance-docs/` for exactly this
+reason.
+
 Upload prefixes must be passed explicitly (`pathPrefix` on a `file` field in
 `EntityForm`). They were once derived from the *form's title*, so
 "Upload Institutional Asset" wrote to `upload_institutional_asset/`; the bucket
@@ -294,6 +300,55 @@ still holds several such prefixes, listed as legacy entries in `READ_RULES`.
 Do not add new ones.
 
 `universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
+
+### Generated documents (`src/statements`)
+
+Everything the app renders to PDF. `layout.ts` is a small typographic kit over
+**pdf-lib** — chosen because it is pure JavaScript, runs in the Worker with no
+binding and no network call, and embeds the standard fonts. It provides section
+headings, totals, notes and a table whose header repeats on every page it spans.
+
+Two things in it are load-bearing and easy to undo by accident:
+
+- **Every string drawn goes through `sanitise()`.** The standard fonts are
+  WinAnsi-encoded and pdf-lib *throws* on a codepoint outside that set. A
+  statement only ever drew account names, but a report draws free-text
+  narrations typed by people, where a curly quote or an emoji is ordinary — and
+  the exception would fail the report only for the date ranges containing the
+  offending entry. Common punctuation is transliterated; anything else becomes
+  `?`. Do not add a `drawText` call that bypasses it.
+- **Wrapping is by word index, never by character offset** into the source
+  string. Offsets do not survive whitespace collapsing, and the bug it produces
+  is a duplicated tail (`Invoice: inv_77a2b1 77a2b1`) rather than an error.
+
+On top of the kit sit two families, sharing `file.ts` for versioning, the R2
+write and the `generated_documents` row:
+
+- `render.ts` + `data.ts` — **statements** (profit and loss, assets and
+  liabilities). These *summarise*: a handful of figures for a period.
+- `reports-render.ts` + `reports.ts` — **reports** (the general journal, and the
+  ledger accounts). These *transcribe*: every entry, both sides, the narration.
+
+That difference drives the design of the reports. "The whole journal" is an
+ordinary request rather than an edge case, so both date bounds are optional and
+omitting them means the complete history. Totals are always struck over every
+matching row while only the *listing* is bounded by `MAX_DETAIL_ROWS`, and the
+document says how many rows it did not print — abbreviated, never silently
+wrong and never a 500.
+
+Note the two ledger filters mean different things, and the agent's tool
+descriptions say so: the journal report's `ledgerId` filters on the book each
+**entry** is stamped with, whereas the ledger report's `ledger` scope selects
+the **accounts** belonging to that book.
+
+Neither report adds a feature to `APP_FEATURES`, so neither needed a migration:
+they reuse `finance/journals` and `finance/ledgers`, gated per route in
+`routes/reports.ts` and matched by the R2 read rules above so that generating a
+report and downloading it require the same grant.
+
+`scripts/preview-report.ts` renders both from fixture data straight to files
+with no Worker and no database — the layout is the half of this that no
+assertion really checks.
 
 ### Agents (`src/agents`)
 
