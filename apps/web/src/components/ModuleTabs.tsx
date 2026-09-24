@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface ModuleTab {
@@ -31,10 +31,13 @@ interface ModuleTabsProps {
  */
 export default function ModuleTabs({ tabs, active, onChange }: ModuleTabsProps) {
   const strip = useRef<HTMLDivElement>(null);
+  const [atEnd, setAtEnd] = useState(false);
 
   useEffect(() => {
     const el = strip.current?.querySelector<HTMLElement>('[data-active="true"]');
-    el?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    // `nearest` on both axes: `inline: 'center'` also scrolls every scrollable
+    // ancestor, which on a short page jumped the whole document.
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   }, [active]);
 
   if (tabs.length === 0) return null;
@@ -64,13 +67,26 @@ export default function ModuleTabs({ tabs, active, onChange }: ModuleTabsProps) 
         </div>
       </div>
 
-      {/* Phone: scrolling pills, full-bleed under the header so the strip runs
-          edge to edge while its contents keep the page's gutter. */}
+      {/* Phone: scrolling pills.
+          Two details make this read as a scroller rather than as a bar that
+          overflows the screen. The gutter is padding on the *inner* row, not on
+          the scroll container — a container's trailing padding is dropped at the
+          end of the scroll in every browser, so the last pill ended up flush
+          against the edge with no margin. And the right edge is faded with a
+          mask, so the pill the viewport cuts through looks deliberately clipped
+          instead of broken. The mask is removed once the strip is scrolled to
+          the end, since there is then nothing more to hint at. */}
       <div
         ref={strip}
-        className="scroll-x no-scrollbar border-b border-white/5 bg-surface/30 px-4 py-2.5 backdrop-blur-md md:hidden"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+        }}
+        className={`scroll-x no-scrollbar border-b border-white/5 bg-surface/30 py-2.5 backdrop-blur-md md:hidden ${
+          atEnd ? '' : 'module-tabs-fade'
+        }`}
       >
-        <div className="flex w-max gap-2">
+        <div className="flex w-max gap-2 px-4">
           {tabs.map((t) => (
             <button
               key={t.id}

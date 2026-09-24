@@ -9,7 +9,6 @@ import GAGrid from '../components/GAGrid';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
-import NotificationCenter from '../components/NotificationCenter';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
 import { API, token } from '../lib/auth';
@@ -337,6 +336,7 @@ function Tech() {
         subtitle="Unified Engineering"
         onProfile={() => setShowProfile(true)}
         onLogout={handleLogout}
+        app="tech"
         roleFallback="Lead"
       />
 
@@ -366,7 +366,6 @@ function Tech() {
       </main>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-      <NotificationCenter currentApp="tech" />
 
       {showEntityForm && (
         <EntityForm

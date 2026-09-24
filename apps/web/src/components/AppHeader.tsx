@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Home, LogOut } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCurrentUser } from '../lib/useCurrentUser';
+import NotificationCenter from './NotificationCenter';
 import UserAvatar from './UserAvatar';
 
 interface AppHeaderProps {
@@ -14,6 +15,12 @@ interface AppHeaderProps {
   onLogout: () => void;
   /** Shown under the name when the account has no job title. */
   roleFallback?: string;
+  /**
+   * The module this header belongs to, e.g. "finance". Given one, the header
+   * hosts the cross-app notification bell — which used to be a floating button
+   * pinned over the bottom-right of the page content.
+   */
+  app?: string;
   /** Anything module-specific that belongs between the avatar and the door. */
   children?: ReactNode;
 }
@@ -40,6 +47,7 @@ export default function AppHeader({
   onProfile,
   onLogout,
   roleFallback = 'Employee',
+  app,
   children,
 }: AppHeaderProps) {
   // Read here rather than taken as a prop: six pages each parsed `ga_user`
@@ -76,6 +84,7 @@ export default function AppHeader({
 
       <div className="flex shrink-0 items-center gap-1 md:gap-3">
         {children}
+        {app && <NotificationCenter currentApp={app} />}
         <button
           onClick={onProfile}
           aria-label="Profile settings"

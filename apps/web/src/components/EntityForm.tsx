@@ -105,9 +105,18 @@ interface EntityFormProps {
   onSubmit: (data: any) => Promise<void>;
   loading?: boolean;
   onChange?: (data: any, changedKey: string) => any;
+  /**
+   * Raise this form above another one that is already open.
+   *
+   * Two EntityForms both sitting at `z-[100]` are ordered by their position in
+   * the DOM, which is not something a caller should have to reason about: the
+   * "add a currency" form opened from inside the account form rendered
+   * *underneath* it and could not be typed into. A nested form says so.
+   */
+  nested?: boolean;
 }
 
-export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading, onChange }: EntityFormProps) {
+export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading, onChange, nested = false }: EntityFormProps) {
   const [formData, setFormData] = useState(() => {
     const data = { ...initialData };
     fields.forEach(f => {
@@ -200,7 +209,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center scrim md:p-4" onClick={onClose}>
+    <div className={`fixed inset-0 flex items-center justify-center scrim md:p-4 ${nested ? 'z-[120]' : 'z-[100]'}`} onClick={onClose}>
       <div className="modal-panel w-full h-full md:h-auto md:max-h-[85dvh] md:max-w-lg md:rounded-3xl overflow-hidden shadow-2xl border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 md:p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-lg md:text-xl font-bold text-white">{title}</h2>

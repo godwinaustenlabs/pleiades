@@ -10,7 +10,6 @@ import FunnelView from '../components/FunnelView';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
-import NotificationCenter from '../components/NotificationCenter';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
 import DealPipelineView from '../components/DealPipelineView';
@@ -194,6 +193,7 @@ function Acquisition() {
         subtitle="Growth & Acquisition"
         onProfile={() => setShowProfile(true)}
         onLogout={handleLogout}
+        app="acquisition"
         roleFallback="Manager"
       />
 
@@ -280,7 +280,6 @@ function Acquisition() {
       </main>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-      <NotificationCenter currentApp="acquisition" />
 
       {showEntityForm && (
         <EntityForm

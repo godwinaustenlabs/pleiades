@@ -423,6 +423,7 @@ export default function CRM() {
               <button onClick={() => window.location.href = '/'} aria-label="Home" className="rounded-xl border border-white/10 bg-white/5 p-2 text-textSecondary transition-all hover:bg-white/10 hover:text-white md:rounded-2xl md:p-3">
                 <Home className="h-4 w-4 md:h-5 md:w-5" />
               </button>
+              <NotificationCenter currentApp="crm" />
               <button
                 onClick={() => setShowProfile(true)}
                 aria-label="Profile settings"
@@ -884,7 +885,6 @@ export default function CRM() {
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
 
-      <NotificationCenter currentApp="crm" />
     </div>
   );
 }

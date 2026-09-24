@@ -8,7 +8,6 @@ import GAGrid from '../components/GAGrid';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
-import NotificationCenter from '../components/NotificationCenter';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
 import JournalEntryForm from '../components/JournalEntryForm';
@@ -266,6 +265,7 @@ function Finance() {
         subtitle="Global Controllership"
         onProfile={() => setShowProfile(true)}
         onLogout={handleLogout}
+        app="finance"
         roleFallback="Controller"
       />
 
@@ -621,6 +621,7 @@ function Finance() {
       {showCurrencyForm && (
         <EntityForm
           title="Add a currency"
+          nested
           fields={[
             { key: 'code', label: 'Code (3 letters, e.g. PKR)', type: 'text' as const, required: true },
             { key: 'name', label: 'Name', type: 'text' as const },
@@ -646,7 +647,6 @@ function Finance() {
       )}
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-      <NotificationCenter currentApp="finance" />
 
       {showEntityForm && tab === 'journals' ? (
         <JournalEntryForm

@@ -263,6 +263,11 @@ export default function UserDashboard() {
               <span className="text-2xl md:text-3xl font-black text-primary">{data?.stats?.efficiencyScore || 'N/A'}%</span>
             </div>
 
+            {/* Bell and avatar are one group, so `justify-between` puts the
+                score at one end and the controls at the other rather than
+                stranding the bell in the middle of the row. */}
+            <div className="flex items-center gap-2 md:gap-3">
+            <NotificationCenter currentApp="dashboard" />
             <button 
               onClick={() => setShowProfile(true)}
               className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center p-1 hover:bg-white/10 transition-all group"
@@ -276,14 +281,16 @@ export default function UserDashboard() {
                   name={data?.employee?.name || currentUser().name}
                   email={currentUser().email}
                   photo={data?.user?.avatarUrl || data?.employee?.profilePhoto}
-                  size={64}
-                  className="h-full w-full rounded-lg md:rounded-xl"
+                  size={40}
+                  fill
+                  className="rounded-lg md:rounded-xl"
                 />
                 <div className="absolute inset-0 hidden items-center justify-center rounded-xl bg-surfaceAlt opacity-0 transition-opacity group-hover:opacity-100 md:flex">
                   <Camera className="h-4 w-4 text-white" />
                 </div>
               </div>
             </button>
+            </div>
           </div>
         </div>
       </header>
@@ -831,7 +838,6 @@ export default function UserDashboard() {
           onUpdate={fetchDashboard}
         />
       )}
-      <NotificationCenter currentApp="dashboard" />
     </div>
   );
 }

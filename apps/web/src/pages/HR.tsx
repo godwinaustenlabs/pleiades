@@ -8,7 +8,6 @@ import { profilePhotoUrl } from '../lib/avatar';
 import GAGrid, { type Column } from '../components/GAGrid';
 
 import TaskBoard from '../components/TaskBoard';
-import NotificationCenter from '../components/NotificationCenter';
 import AppointmentProvisionForm from '../components/AppointmentProvisionForm';
 import ProfileModal from '../components/ProfileModal';
 import EntityForm from '../components/EntityForm';
@@ -370,6 +369,7 @@ function HR() {
         subtitle="HR Management"
         onProfile={() => setShowProfile(true)}
         onLogout={handleLogout}
+        app="hr"
         roleFallback="Employee"
       />
 
@@ -503,7 +503,6 @@ function HR() {
           onClose={() => setViewingPaySlip(null)}
         />
       )}
-      <NotificationCenter currentApp="hr" />
 
       {showEntityForm && (
         <EmployeeForm

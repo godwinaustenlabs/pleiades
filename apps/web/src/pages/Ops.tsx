@@ -8,7 +8,6 @@ import GAGrid from '../components/GAGrid';
 import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
-import NotificationCenter from '../components/NotificationCenter';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
 import { API, token } from '../lib/auth';
@@ -188,6 +187,7 @@ function Ops() {
         subtitle="Global Infrastructure"
         onProfile={() => setShowProfile(true)}
         onLogout={handleLogout}
+        app="ops"
         roleFallback="Director"
       />
 
@@ -373,7 +373,6 @@ function Ops() {
       )}
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-      <NotificationCenter currentApp="ops" />
 
       {showEntityForm && (
         <EntityForm

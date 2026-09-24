@@ -112,14 +112,45 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
   };
 
   return (
-    <div
-      className="fixed bottom-4 right-4 z-[100] flex flex-col items-end md:bottom-8 md:right-8"
-      // Clear of the home indicator in an installed app; zero in a browser tab.
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
-      {/* Panel */}
+    <div className="relative">
+      {/* Toggle. It lives in the page header now. As a floating action button
+          pinned to the bottom-right corner it sat on top of whatever was
+          underneath it — most often the Save button of a form or the last row
+          of a table — on every page and at every width. A header button cannot
+          overlap content, and it is in the same place on a phone and on a
+          desktop. */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+        aria-expanded={isOpen}
+        className={`relative rounded-xl p-2 transition-all md:p-2.5 ${
+          isOpen ? 'bg-primary/15 text-primary' : 'text-textSecondary hover:bg-white/10 hover:text-textPrimary'
+        }`}
+      >
+        <Bell className="h-4 w-4 md:h-5 md:w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute right-0 top-0 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-danger px-1 text-[9px] font-black leading-none text-onScrim">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
       {isOpen && (
-        <div className="mb-4 w-[calc(100vw-2rem)] sm:w-96 max-h-[calc(100dvh-8rem)] md:max-h-[600px] flex flex-col glass-panel rounded-[2rem] border border-white/20 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+        <>
+          {/* Click-away. Transparent, and below the panel. */}
+          <div className="fixed inset-0 z-[90]" onClick={() => setIsOpen(false)} aria-hidden="true" />
+          {/* Anchored under the bell on desktop; a full-width card under the
+              header on a phone, where 24rem would not fit beside it. */}
+          <div
+            data-notification-panel
+            /* `modal-panel` (opaque) rather than one of the glass surfaces: the
+               panel is a child of the header, and the header already has a
+               `backdrop-filter`. A nested backdrop-filter has no page content
+               left to sample, so a translucent panel here does not blur what is
+               behind it — it simply lets the page show through, and the form
+               underneath was legible straight through the notification list. */
+            className="modal-panel fixed inset-x-2 top-[4.5rem] z-[95] flex max-h-[72dvh] flex-col overflow-hidden rounded-[1.75rem] shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200 md:absolute md:inset-x-auto md:right-0 md:top-full md:mt-2 md:max-h-[600px] md:w-96"
+          >
           {/* Header */}
           <div className="p-4 md:p-6 bg-white/5 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -254,21 +285,9 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
               </form>
             )}
           </div>
-        </div>
+          </div>
+        </>
       )}
-
-      {/* Toggle */}
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center transition-all shadow-2xl relative ${isOpen ? 'bg-white text-black' : 'bg-primary text-surface hover:scale-105 active:scale-95 shadow-primary/30'}`}
-      >
-        {isOpen ? <X className="w-6 h-6 md:w-7 md:h-7" /> : <Bell className="w-6 h-6 md:w-7 md:h-7" />}
-        {unreadCount > 0 && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 bg-danger text-surface text-[9px] md:text-[10px] font-black rounded-full border-2 md:border-4 border-background flex items-center justify-center animate-bounce">
-            {unreadCount}
-          </span>
-        )}
-      </button>
     </div>
   );
 }

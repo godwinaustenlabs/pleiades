@@ -727,3 +727,11 @@ summary,
   from { transform: translateY(6%); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
+
+/* The right-edge fade on a scrolling tab strip (components/ModuleTabs.tsx).
+   A mask rather than an overlaid gradient, so it works on any background and
+   cannot intercept a tap on the pill underneath it. */
+.module-tabs-fade {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
+}
