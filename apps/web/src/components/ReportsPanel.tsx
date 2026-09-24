@@ -176,7 +176,7 @@ export default function ReportsPanel({
   }
 
   const allTime = !startDate && !endDate;
-  const field = 'bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm';
+  const field = 'w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm';
   const label = 'block text-[10px] font-black uppercase tracking-wider text-textSecondary';
 
   return (
@@ -197,7 +197,7 @@ export default function ReportsPanel({
         <div className="flex flex-wrap items-end gap-3">
           {kind === 'ledger' && (
             <>
-              <label className="space-y-1">
+              <label className="min-w-0 flex-1 basis-36 space-y-1">
                 <span className={label}>Report on</span>
                 <select value={scope} onChange={(e) => setScope(e.target.value as Scope)} className={field}>
                   <option value="all">Every account</option>
@@ -206,7 +206,7 @@ export default function ReportsPanel({
                 </select>
               </label>
               {scope === 'account' && (
-                <label className="space-y-1">
+                <label className="min-w-0 flex-1 basis-36 space-y-1">
                   <span className={label}>Account</span>
                   <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={field}>
                     <option value="">Select an account…</option>
@@ -215,7 +215,7 @@ export default function ReportsPanel({
                 </label>
               )}
               {scope === 'ledger' && (
-                <label className="space-y-1">
+                <label className="min-w-0 flex-1 basis-36 space-y-1">
                   <span className={label}>Ledger</span>
                   <select value={ledgerId} onChange={(e) => setLedgerId(e.target.value)} className={field}>
                     <option value="">Select a ledger…</option>
@@ -227,7 +227,7 @@ export default function ReportsPanel({
           )}
 
           {kind === 'journal' && ledgers.length > 0 && (
-            <label className="space-y-1">
+            <label className="min-w-0 flex-1 basis-36 space-y-1">
               <span className={label}>Ledger</span>
               <select value={ledgerId} onChange={(e) => setLedgerId(e.target.value)} className={field}>
                 <option value="">All ledgers</option>
@@ -236,11 +236,11 @@ export default function ReportsPanel({
             </label>
           )}
 
-          <label className="space-y-1">
+          <label className="min-w-0 flex-1 basis-36 space-y-1">
             <span className={label}>From</span>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={field} />
           </label>
-          <label className="space-y-1">
+          <label className="min-w-0 flex-1 basis-36 space-y-1">
             <span className={label}>To</span>
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={field} />
           </label>

@@ -735,3 +735,68 @@ summary,
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
   mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
 }
+
+/* ── Date and time inputs ────────────────────────────────────────────────
+   These do not behave like other inputs, and the difference only shows on
+   iOS Safari — in Chrome the same markup measures correctly inside its
+   container, which is why the finance date pickers looked fine everywhere
+   except on a real phone.
+
+   Three separate UA behaviours push the control past its box there:
+
+     - the input carries an intrinsic width from its own date format and
+       ignores a `width: 100%` that would shrink it below that, so a field in
+       a narrow card renders wider than the card;
+     - `::-webkit-date-and-time-value` is right-aligned and carries its own
+       margin, which drives the digits into the right edge of the field;
+     - the picker indicator is laid out after that value rather than inside
+       the remaining space, adding its width on top.
+
+   `appearance: none` plus an explicit `min-width: 0` is what lets the box
+   shrink to its container; the rest puts the value and the indicator back
+   where the rest of the app's fields put them. Harmless in Chrome, which
+   already did the right thing. */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+input[type='month'],
+input[type='week'] {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  /* `min-width: 0` is the load-bearing half — it is what lets the box shrink
+     to its container at all. Width itself stays a layout decision for the
+     markup, so a field that genuinely wants to be narrow still can. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+input[type='date']::-webkit-date-and-time-value,
+input[type='time']::-webkit-date-and-time-value,
+input[type='datetime-local']::-webkit-date-and-time-value,
+input[type='month']::-webkit-date-and-time-value,
+input[type='week']::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+  min-width: 0;
+}
+
+input[type='date']::-webkit-datetime-edit,
+input[type='time']::-webkit-datetime-edit,
+input[type='datetime-local']::-webkit-datetime-edit,
+input[type='month']::-webkit-datetime-edit,
+input[type='week']::-webkit-datetime-edit {
+  padding: 0;
+  min-width: 0;
+}
+
+/* Keep the calendar button hard against the right edge of the field instead
+   of letting it add to the field's own width. */
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  margin-inline-start: auto;
+  margin-inline-end: 0;
+  flex: none;
+  opacity: 0.6;
+}

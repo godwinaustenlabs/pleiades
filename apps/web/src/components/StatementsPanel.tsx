@@ -154,30 +154,30 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
 
       <div className="glass-panel border border-white/10 rounded-2xl p-5 space-y-4">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1">
+          <label className="min-w-0 flex-1 basis-36 space-y-1">
             <span className="block text-[10px] font-black uppercase tracking-wider text-textSecondary">Statement</span>
             <select
               value={type}
               onChange={(e) => setType(e.target.value as any)}
-              className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
+              className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
             >
               {TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </label>
 
           {needsPeriod && (
-            <label className="space-y-1">
+            <label className="min-w-0 flex-1 basis-36 space-y-1">
               <span className="block text-[10px] font-black uppercase tracking-wider text-textSecondary">From</span>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
+                className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
               />
             </label>
           )}
 
-          <label className="space-y-1">
+          <label className="min-w-0 flex-1 basis-36 space-y-1">
             <span className="block text-[10px] font-black uppercase tracking-wider text-textSecondary">
               {needsPeriod ? 'To' : 'As at'}
             </span>
@@ -185,7 +185,7 @@ export default function StatementsPanel({ canEdit }: { canEdit: boolean }) {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
+              className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-3 py-2 text-sm"
             />
           </label>
 
