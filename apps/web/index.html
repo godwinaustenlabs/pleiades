@@ -4,10 +4,31 @@
 <head>
   <meta charset="UTF-8" />
   <link rel="icon" type="image" href="/pleiades_logo_dark.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- `viewport-fit=cover` lets the app paint into the notch and home-indicator
+       areas; the `env(safe-area-inset-*)` padding in index.css is what keeps
+       content out of them. No `maximum-scale`/`user-scalable=no`: iOS has
+       ignored those since iOS 10 and they only break pinch-zoom where it is
+       honoured. The pinch-on-focus that this app actually suffered from is a
+       font-size problem, fixed at the bottom of index.css. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Pleiades Portal</title>
+  <meta name="description" content="Godwin Austen Labs' internal operating system." />
   <meta name="theme-color" content="#FBFAF7" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#0C110E" media="(prefers-color-scheme: dark)" />
+
+  <!-- Installed-app metadata. `manifest.json` rather than `.webmanifest` so the
+       asset server's content type cannot be the thing that breaks installation. -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Pleiades" />
+  <!-- `default` rather than `black-translucent`: the status bar then keeps the
+       theme colour behind it instead of letting a sticky header slide under the
+       clock. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="format-detection" content="telephone=no" />
+
   <!-- Outfit was already named first in --font-sans but was never loaded, so every
        heading silently fell back to Inter. Both are loaded now: Outfit for display,
        Inter for UI text, JetBrains Mono for ids and figures. -->
@@ -24,6 +45,13 @@
       var t = localStorage.getItem('theme') || 'system';
       var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       if (dark) document.documentElement.classList.add('dark');
+      // Installed standalone, the app is not a browser tab: `.standalone` is
+      // what lets the stylesheet drop browser-only affordances and pick up the
+      // safe-area padding a tab does not need.
+      var standalone = window.matchMedia('(display-mode: standalone)').matches
+        || window.matchMedia('(display-mode: fullscreen)').matches
+        || window.navigator.standalone === true;
+      if (standalone) document.documentElement.classList.add('standalone');
     })();
   </script>
   <div id="root"></div>

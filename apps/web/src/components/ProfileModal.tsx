@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Key, Save, X, Loader2, Camera, Sun, Moon, Monitor } from 'lucide-react';
 import CropModal from './CropModal';
 import { API, token } from '../lib/auth';
+import { profilePhotoUrl } from '../lib/avatar';
 import { errorMessage } from '../lib/errors';
 
 
@@ -42,11 +43,6 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
       .catch(() => setLoading(false));
   }, []);
 
-  const getProfileUrl = (url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -138,7 +134,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
-      <div className="modal-panel rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+      <div className="sheet modal-panel rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-white/5 bg-white/5">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/20">
@@ -165,7 +161,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
                   <div className="w-24 h-24 rounded-full border-2 border-primary/30 p-1 bg-white/5 overflow-hidden">
                     {form.profilePhoto ? (
                       <img 
-                        src={getProfileUrl(form.profilePhoto)!} 
+                        src={profilePhotoUrl(form.profilePhoto)!} 
                         alt="Avatar" 
                         className="w-full h-full rounded-full object-cover" 
                       />

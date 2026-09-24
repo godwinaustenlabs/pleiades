@@ -68,7 +68,7 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
           <h3 className="text-sm font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
             <Activity className="w-4 h-4" /> Quick Actions
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
              <button className="p-4 rounded-xl bg-white/5 border border-white/10 hover:border-primary/50 transition-all text-left">
                <FileText className="w-5 h-5 mb-2 text-primary" />
                <p className="font-bold text-sm">Run Monthly Payroll</p>

@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (17 files, 343 tests)
+npm test          # vitest — see test/ (18 files, 349 tests)
 npm run test:watch
 ```
 
@@ -139,6 +139,13 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
+The newest is `0037_currencies.sql`, which lifts the account currency list out
+of the Finance page (where it was five options hardcoded in two separate forms,
+and did not include PKR) into a `currencies` table. It is gated on
+`finance/accounts` rather than a feature of its own — a currency exists only as
+an attribute of an account — so it needed no `APP_FEATURES` entry and no grant
+migration.
+
 Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
 workflow. Its snapshot baseline stopped at `0019` and still describes the
 pre-roles-only schema (`role_permissions`, `role_hierarchy`, `user_app_*`), so a
@@ -183,6 +190,27 @@ client router can resolve it. Without it every deep link and refresh away from
 1. `x-api-key` header → agent identity from the `api_keys` table (`type: 'agent'`, never superadmin).
 2. `x-agent-actor` + `x-agent-secret` headers → the `users_logins` row named by the actor id, but only when the secret matches the `AGENT_INTERNAL_SECRET` Worker binding. Present-but-invalid always denies and never falls through to another source. This replaced `x-slack-id`, which named a Slack user and was trusted outright — see SECURITY.md #1. Slack identity is resolved server-side only *after* the request signature is verified (`src/agents/slack/lib/slack.ts`), and the resolved user id is what gets passed here.
 3. `Authorization: Bearer <jwt>` → falls back to the `auth_token` cookie, then a `?token=` query param (the query-param path exists so `<img>`/download URLs can authenticate).
+
+**Session lifetime is a week of inactivity, not a week from login.** A token
+lasts `SESSION_TTL_SECONDS` (8 days) and any request carrying one with under
+`SESSION_REFRESH_BELOW_SECONDS` (7 days) left is answered with a freshly signed
+one in the `X-Refresh-Token` header. The one-day gap between the two numbers is
+what makes the guarantee exact and the cost negligible: anyone active in the
+last 24 hours holds a token with at least 7 days on it, and a session is
+re-signed at most once a day rather than once per request. `/api/portal` slides
+on the same constants, in its own `clientAuth`.
+
+The browser half is `apps/web/src/lib/session.ts`, which wraps `window.fetch`
+once at startup — the app makes several hundred bare `fetch` calls across every
+page, so asking each call site to look for the header was never going to hold.
+It also clears the token on a 401 and fires `pleiades:session-expired`, which
+`App.tsx` turns into a redirect to the right sign-in screen.
+
+A longer session does **not** delay a revocation: the token still carries no
+permission claim, and grants are read from the database on every request. The
+only thing it lengthens is how long a stolen token is useful, which is the
+trade that was made deliberately — see `test/session.test.ts`, which pins all
+three halves of the behaviour.
 
 `/api/portal` is a **separate auth world**: it has its own `clientAuth` using JWTs with `type: 'client'` and does not use `authMiddleware`.
 
@@ -397,6 +425,55 @@ One page component per module in `src/pages/` mapped 1:1 to routes in `App.tsx`;
 
 `src/lib/auth.ts` owns `API`, `token()`, `currentUser()` and `authHeaders()` — these were previously copy-pasted into ~20 files. Import them; do not redefine them locally.
 
+Three pieces of that shell are now shared rather than pasted per page, because
+six pages carried byte-identical copies of each:
+
+- `components/AppHeader.tsx` — the bar at the top of every module page. It reads
+  `--module` for its accent (Finance used to spell it `success`, HR `primary`),
+  and it resolves the signed-in person itself via `lib/useCurrentUser.ts`
+  instead of taking a prop.
+- `components/ModuleTabs.tsx` — the tab bar, underlined on desktop and a
+  scrolling row of pills on a phone. It replaces `MobileTabMenu`, a dropdown
+  that built its classes by interpolation (`text-${accentColor}`) and therefore
+  rendered with no accent at all: Tailwind cannot emit a class that only exists
+  at runtime.
+- `components/UserAvatar.tsx` + `lib/avatar.ts` — the person's photo, with
+  initials as the fallback. The photo never appeared anywhere before: `ga_user`
+  is written from the login payload, and that payload carried no
+  `profilePhoto` until now, so the `<img>` branch in each header was dead code.
+  `/api/dashboard` names the same thing `avatarUrl`, which is what the
+  workspace page reads.
+
+#### Phones and the installed app
+
+The app is installable (`public/manifest.json`, `public/sw.js`, icons generated
+from the mark) and is expected to be used as one. Four things in `index.css`
+carry that, all of them deliberately **unlayered** — Tailwind puts its own rules
+in `@layer`, and an unlayered rule outruns every layered one, which is what lets
+them beat a utility like `text-sm` on an input without a thicket of
+`!important`:
+
+- **Inputs are 16px below `md`.** Mobile Safari zooms the viewport when a
+  focused field's text is under 16px and does not zoom back out, which is why
+  tapping almost any field threw the layout sideways. This is the only fix that
+  does not involve disabling pinch-zoom for everyone.
+- **`min-h-screen`/`h-screen` resolve to `dvh`**, and every `max-h-[90vh]`
+  dialog was rewritten to `dvh`. `vh` is the *largest* viewport, so a dialog
+  sized in it hides its own footer under the address bar.
+- **`.sheet`** docks a centred dialog to the bottom edge below `sm`. A centred
+  card with `max-h-[90dvh]` is the wrong shape on a 390px screen.
+- **Safe areas** are applied once on `.standalone body` rather than per header,
+  because `.safe-x` *sets* padding and would silently erase an element's own
+  `px-4`.
+
+`.standalone` is stamped on `<html>` at boot for `display-mode: standalone`, and
+is what distinguishes the installed app from the same URL in a tab.
+
+The service worker never touches `/api/*` — not even stale-while-revalidate.
+This is an operating system for live data; showing yesterday's payroll because
+the network was slow is worse than showing nothing. Navigations are
+network-first with a cached shell fallback so a deploy lands on the next load.
+
 `src/lib/usePermissions.ts` is the single client-side permission source: it loads
 `/api/permissions/me` once and exposes `can(app, feature, level)` and `canSeeApp(app)`.
 Pages destructure it as `{ grants: userPermissions, loaded: permsLoaded }`. The client
@@ -466,6 +543,8 @@ misconfigured".
 
 ## Gotchas
 
+- **Match the indentation of the file you are editing**, and note that
+  `apps/web/src/components/*` is 2-space while `apps/web/src/lib/*` is tabs.
 - **Do not run `npm run format` across the repo.** `.prettierrc`/`.editorconfig` specify tabs, but the existing TypeScript sources are 2-space indented; a blanket format reflows the whole codebase. Match the indentation of the file you are editing.
 - The Vite dev proxy targets `127.0.0.1:8788` while `wrangler dev` defaults to `8787`. If `/api` calls 502 in dev, start the worker on 8788 (`npx wrangler dev --port 8788`).
 - `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it.

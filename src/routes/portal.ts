@@ -6,6 +6,11 @@ import { Env } from '../index';
 import { generateId } from '../utils/id';
 import { ok, badRequest, notFound, serverError } from '../utils/response';
 import { hashPassword, verifyPassword } from '../utils/password';
+import {
+  SESSION_REFRESH_BELOW_SECONDS,
+  SESSION_REFRESH_HEADER,
+  SESSION_TTL_SECONDS,
+} from '../middleware/auth';
 
 const portalRouter = new Hono<{ Bindings: Env; Variables: { client: { id: string; clientId: string; name: string; type: string } } }>();
 
@@ -22,6 +27,20 @@ async function clientAuth(c: any, next: any) {
     const p = await verify(h.split(' ')[1], c.env.JWT_SECRET, 'HS256');
     if (p.type !== 'client') return c.json({ error: 'Invalid token' }, 401);
     c.set('client', { id: p.id, clientId: p.clientId, name: p.name, type: 'client' });
+    // Same sliding window the staff session gets (see middleware/auth.ts): a
+    // client who opens the portal at all keeps a week of runway, and one who
+    // does not is asked to sign in again.
+    const now = Math.floor(Date.now() / 1000);
+    if (typeof p.exp === 'number' && p.exp - now < SESSION_REFRESH_BELOW_SECONDS) {
+      c.header(
+        SESSION_REFRESH_HEADER,
+        await sign(
+          { id: p.id, clientId: p.clientId, name: p.name, type: 'client', iat: now, exp: now + SESSION_TTL_SECONDS },
+          c.env.JWT_SECRET,
+          'HS256',
+        ),
+      );
+    }
     return await next();
   } catch { return c.json({ error: 'Invalid token' }, 401); }
 }
@@ -57,8 +76,8 @@ portalRouter.post('/login', async (c) => {
       ...(needsUpgrade ? { passwordHash: await hashPassword(password) } : {}),
     }).where(eq(schema.clientLogins.id, cl.id));
     const now = Math.floor(Date.now() / 1000);
-    const token = await sign({ id: cl.id, clientId: cl.clientId, name: cl.name || (cl as any).client?.clientName, type: 'client', iat: now, exp: now + 28800 }, c.env.JWT_SECRET, 'HS256');
-    return ok(c, { token, expiresIn: 28800, client: { id: cl.id, clientId: cl.clientId, email: cl.email, name: cl.name, companyName: (cl as any).client?.clientName } });
+    const token = await sign({ id: cl.id, clientId: cl.clientId, name: cl.name || (cl as any).client?.clientName, type: 'client', iat: now, exp: now + SESSION_TTL_SECONDS }, c.env.JWT_SECRET, 'HS256');
+    return ok(c, { token, expiresIn: SESSION_TTL_SECONDS, client: { id: cl.id, clientId: cl.clientId, email: cl.email, name: cl.name, companyName: (cl as any).client?.clientName } });
   } catch (err) { return serverError(c, err); }
 });
 

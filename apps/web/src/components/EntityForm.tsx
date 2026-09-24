@@ -59,20 +59,20 @@ function StagesEditor({ value, onChange }: { value: any, onChange: (val: string)
         <div key={i} className="flex items-center gap-3 bg-surface/50 p-2.5 rounded-xl border border-white/10 group transition-all hover:border-primary/50">
           <GripVertical className="w-4 h-4 text-white/20 cursor-move" />
           
-          <div className="flex-1 flex gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
             <input 
               type="text" 
               value={stage.name} 
               onChange={e => updateStage(i, 'name', e.target.value)} 
-              className="w-1/2 bg-transparent border-none text-sm text-white font-bold focus:outline-none placeholder:text-white/20" 
+              className="w-full min-w-0 border-none bg-transparent text-sm font-bold text-white focus:outline-none placeholder:text-white/20 sm:w-1/2" 
               placeholder="Stage Name (e.g. Awareness)" 
             />
-            <div className="w-[1px] bg-white/10" />
+            <div className="hidden w-px bg-white/10 sm:block" />
             <input 
               type="number" 
               value={stage.value || ''} 
               onChange={e => updateStage(i, 'value', e.target.value ? Number(e.target.value) : undefined)} 
-              className="w-1/2 bg-transparent border-none text-sm text-success font-bold focus:outline-none placeholder:text-success/20" 
+              className="w-full min-w-0 border-none bg-transparent text-sm font-bold text-success focus:outline-none placeholder:text-success/20 sm:w-1/2" 
               placeholder="KPI Value (optional)" 
             />
           </div>
@@ -80,7 +80,7 @@ function StagesEditor({ value, onChange }: { value: any, onChange: (val: string)
           <button 
             type="button"
             onClick={() => removeStage(i)} 
-            className="p-2 opacity-0 group-hover:opacity-100 hover:bg-danger/20 text-danger rounded-lg transition-all"
+            className="shrink-0 rounded-lg p-2 text-danger transition-all hover:bg-danger/20 md:opacity-0 md:group-hover:opacity-100"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -201,7 +201,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center scrim md:p-4" onClick={onClose}>
-      <div className="modal-panel w-full h-full md:h-auto md:max-h-[85vh] md:max-w-lg md:rounded-3xl overflow-hidden shadow-2xl border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="modal-panel w-full h-full md:h-auto md:max-h-[85dvh] md:max-w-lg md:rounded-3xl overflow-hidden shadow-2xl border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 md:p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-lg md:text-xl font-bold text-white">{title}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
@@ -229,7 +229,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     required={field.required}
                     value={formData[field.key] || ''}
                     onChange={e => handleFieldChange(field.key, e.target.value)}
-                    className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors appearance-none"
+                    className={`w-full rounded-xl border border-white/10 bg-surface/50 py-2.5 pl-4 text-sm transition-colors focus:border-primary/50 focus:outline-none appearance-none ${field.action ? 'pr-24' : 'pr-4'}`}
                   >
                     <option value="">Select option...</option>
                     {field.options?.map(opt => (
@@ -265,9 +265,9 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                           </div>
                         )}
                         <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                          <div className="flex items-center gap-3 truncate">
+                          <div className="flex min-w-0 items-center gap-3">
                             <File className="w-4 h-4 text-primary shrink-0" />
-                            <span className="text-sm truncate">{formData[field.key].split('/').pop()}</span>
+                            <span className="min-w-0 truncate text-sm">{formData[field.key].split('/').pop()}</span>
                           </div>
                           <button 
                             type="button" 
@@ -304,7 +304,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     required={field.required}
                     value={formData[field.key] || ''}
                     onChange={e => handleFieldChange(field.key, e.target.value)}
-                    className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                    className={`w-full rounded-xl border border-white/10 bg-surface/50 py-2.5 pl-4 text-sm transition-colors focus:border-primary/50 focus:outline-none ${field.action ? 'pr-24' : 'pr-4'}`}
                   />
                 )}
 
@@ -323,7 +323,7 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
           </div>
         </form>
 
-        <div className="p-6 bg-white/5 border-t border-white/10 flex gap-4">
+        <div className="pb-safe md:pb-6-safe flex gap-3 border-t border-white/10 bg-white/5 px-4 pt-4 md:gap-4 md:px-6 md:pt-6">
           <button
             type="button"
             onClick={onClose}

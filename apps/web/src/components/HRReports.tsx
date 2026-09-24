@@ -367,7 +367,7 @@ export default function HRReports(_props: HRReportsProps) {
       {/* PARAMETERS WIZARD MODAL */}
       {selectedReport && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center scrim p-4" onClick={() => setSelectedReport(null)}>
-          <div className="modal-panel rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+          <div className="sheet modal-panel rounded-3xl w-full max-w-lg max-h-[90dvh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
               <div>
@@ -395,7 +395,7 @@ export default function HRReports(_props: HRReportsProps) {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Start Date</label>
                   <input

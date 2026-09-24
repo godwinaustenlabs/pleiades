@@ -57,7 +57,7 @@
 /api/auth/profile
     200 ok data={createdAt,createdByUserId,email,employee,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,passwordUpdatedAt,phone,profilePhoto,username}
 /api/auth/whoami
-    200 ok data={employeeId,id,isSuperadmin,name,title,type,username}
+    200 ok data={email,employeeId,id,isSuperadmin,name,profilePhoto,title,type,username}
 /api/core/clients
     200 ok data=array<empty>
 /api/core/clients/:id
@@ -134,6 +134,8 @@
     200 ok data=array<{defaultLifeMonths,key}>
 /api/finance/assets/depreciation
     200 ok data={lines,period,postable,total}
+/api/finance/currencies
+    200 ok data=array<{code,createdAt,createdByUserId,id,isActive,name,symbol}>
 /api/finance/documents
     200 ok data=array<{createdAt,department,documentType,id,title,uploadedBy,url}>
 /api/finance/export/journals

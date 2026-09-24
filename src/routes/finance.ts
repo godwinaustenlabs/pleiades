@@ -229,6 +229,111 @@ financeRouter.delete('/accounts/:id', requireFeatureAccess('finance', 'accounts'
 });
 
 
+/* ── CURRENCIES ──
+ *
+ * The catalogue the account forms' currency dropdown reads. Gated on
+ * `finance/accounts` rather than a feature of its own: a currency exists only
+ * as an attribute of an account, so anyone who may create an account may
+ * create the currency it is denominated in, and no new APP_FEATURES entry (and
+ * therefore no grant migration) is needed. */
+
+/** Normalise a submitted code: ISO 4217 is three upper-case letters. */
+function normaliseCurrencyCode(raw: unknown): string | null {
+  const code = String(raw ?? '').trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+financeRouter.get('/currencies', requireFeatureAccess('finance', 'accounts', 'view'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const rows = await db.query.currencies.findMany();
+    // Active first, then alphabetical — the dropdown reads in this order.
+    rows.sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.code.localeCompare(b.code));
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+financeRouter.post('/currencies', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user' as any);
+    const body = await c.req.json<{ code?: string; name?: string; symbol?: string }>();
+
+    const code = normaliseCurrencyCode(body.code);
+    if (!code) return badRequest(c, 'code must be a three-letter currency code, e.g. PKR');
+
+    // The unique index would reject this anyway, as a 500. Saying so plainly is
+    // the difference between "already added" and "something went wrong".
+    const existing = await db.query.currencies.findFirst({ where: eq(schema.currencies.code, code) });
+    if (existing) {
+      if (!existing.isActive) {
+        await db.update(schema.currencies).set({ isActive: true }).where(eq(schema.currencies.id, existing.id));
+        await logAudit(c.env, user.id, 'UPDATE', 'currencies', existing.id, { reactivated: code });
+        return ok(c, { id: existing.id, code, reactivated: true });
+      }
+      return c.json({ success: false, error: `${code} is already available.` }, 409);
+    }
+
+    const id = generateId('cur');
+    await db.insert(schema.currencies).values({
+      id,
+      code,
+      name: (body.name || '').trim() || null,
+      symbol: (body.symbol || '').trim() || null,
+      isActive: true,
+      createdByUserId: user.id,
+      createdAt: new Date(),
+    });
+    await logAudit(c.env, user.id, 'CREATE', 'currencies', id, { code });
+    return created(c, { id, code });
+  } catch (err) { return serverError(c, err); }
+});
+
+financeRouter.patch('/currencies/:id', requireFeatureAccess('finance', 'accounts', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user' as any);
+    const id = c.req.param('id');
+    const body = await c.req.json<{ name?: string; symbol?: string; isActive?: boolean }>();
+
+    const patch: Record<string, unknown> = {};
+    if (body.name !== undefined) patch.name = String(body.name).trim() || null;
+    if (body.symbol !== undefined) patch.symbol = String(body.symbol).trim() || null;
+    if (body.isActive !== undefined) patch.isActive = !!body.isActive;
+    // The code is the key accounts already store; changing it would silently
+    // orphan every account denominated in the old one.
+    if (Object.keys(patch).length === 0) return badRequest(c, 'Nothing to update');
+
+    await db.update(schema.currencies).set(patch).where(eq(schema.currencies.id, id));
+    await logAudit(c.env, user.id, 'UPDATE', 'currencies', id, patch);
+    return ok(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+financeRouter.delete('/currencies/:id', requireFeatureAccess('finance', 'accounts', 'delete'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user' as any);
+    const id = c.req.param('id');
+
+    const row = await db.query.currencies.findFirst({ where: eq(schema.currencies.id, id) });
+    if (!row) return notFound(c);
+
+    // An account already denominated in it keeps its label; the currency is
+    // retired from the dropdown instead of deleted out from under the data.
+    const inUse = await db.query.accounts.findMany({ where: eq(schema.accounts.currency, row.code) });
+    if (inUse.length > 0) {
+      await db.update(schema.currencies).set({ isActive: false }).where(eq(schema.currencies.id, id));
+      await logAudit(c.env, user.id, 'UPDATE', 'currencies', id, { retired: row.code, accounts: inUse.length });
+      return ok(c, { id, retired: true, accounts: inUse.length });
+    }
+
+    await db.delete(schema.currencies).where(eq(schema.currencies.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'currencies', id, { code: row.code });
+    return ok(c, { id, deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
 /* ── FUND REQUESTS ── */
 financeRouter.get('/fund-requests', requireFeatureAccess('finance', 'fund_requests', 'view'), async (c) => {
   try {

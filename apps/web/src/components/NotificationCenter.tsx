@@ -112,10 +112,14 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
   };
 
   return (
-    <div className="fixed bottom-4 right-4 md:bottom-8 md:right-8 z-[100] flex flex-col items-end">
+    <div
+      className="fixed bottom-4 right-4 z-[100] flex flex-col items-end md:bottom-8 md:right-8"
+      // Clear of the home indicator in an installed app; zero in a browser tab.
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       {/* Panel */}
       {isOpen && (
-        <div className="mb-4 w-[calc(100vw-2rem)] sm:w-96 max-h-[calc(100vh-8rem)] md:max-h-[600px] flex flex-col glass-panel rounded-[2rem] border border-white/20 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+        <div className="mb-4 w-[calc(100vw-2rem)] sm:w-96 max-h-[calc(100dvh-8rem)] md:max-h-[600px] flex flex-col glass-panel rounded-[2rem] border border-white/20 shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
           {/* Header */}
           <div className="p-4 md:p-6 bg-white/5 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -205,7 +209,7 @@ export default function NotificationCenter({ currentApp }: NotificationCenterPro
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Message Type</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {['notification', 'request', 'flag'].map(t => (
                       <button 
                         key={t} type="button" onClick={() => setMsgType(t)}

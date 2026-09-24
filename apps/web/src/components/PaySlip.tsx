@@ -87,7 +87,7 @@ export default function PaySlip({ record, employee, onClose }: PaySlipProps) {
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center scrim p-4" onClick={onClose}>
-      <div className="bg-background rounded-3xl w-full max-w-2xl max-h-[92vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="sheet bg-background rounded-3xl w-full max-w-2xl max-h-[92dvh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Modal controls */}
         <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/5 shrink-0">
@@ -130,7 +130,7 @@ export default function PaySlip({ record, employee, onClose }: PaySlipProps) {
             </div>
 
             {/* Employee info */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               <div>
                 <p className="text-[9px] font-black text-textSecondary uppercase tracking-widest mb-0.5">Employee</p>
                 <p className="font-black text-base">{employee.name}</p>

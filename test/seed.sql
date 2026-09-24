@@ -291,3 +291,10 @@ VALUES ('cc_nil_return_required', 'nil_return_required', 'filing_deadlines', 'Ni
 INSERT OR IGNORE INTO compliance_config
 	(id, config_key, group_name, label, description, value_type, unit, value, required, sort_order, effective_from, created_at, updated_at)
 VALUES ('cc_daily_runner_actor', 'daily_runner_actor', 'company', 'Daily runner operator', 'The users_logins id the twice-daily check runs as. Its tool calls are limited to that person''s permissions. Leave blank to switch the scheduled run off.', 'text', NULL, NULL, 0, 90, '2020-01-01', unixepoch(), unixepoch());
+
+-- The currency catalogue migration 0037 seeds. Present here so the response
+-- manifest records the row shape `/finance/currencies` returns rather than an
+-- empty array, which would say nothing about it.
+DELETE FROM currencies;
+INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_pkr','PKR','Pakistani Rupee','Rs',1,0);
+INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_usd','USD','United States Dollar','$',1,0);

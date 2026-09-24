@@ -302,6 +302,15 @@ CREATE TABLE `content_calendar` (
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`campaign_id`) REFERENCES `campaigns`(`campaign_id`) ON UPDATE no action ON DELETE no action
 );
+CREATE TABLE currencies (
+  currency_id        TEXT PRIMARY KEY,
+  code               TEXT NOT NULL UNIQUE,
+  name               TEXT,
+  symbol             TEXT,
+  is_active          INTEGER NOT NULL DEFAULT 1,
+  created_by_user_id TEXT,
+  created_at         INTEGER NOT NULL
+);
 CREATE TABLE conversation_turns (
 	id TEXT PRIMARY KEY,
 	conversation_id TEXT NOT NULL REFERENCES agent_conversations(id),

@@ -130,7 +130,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
 
   return (<>
     <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
-      <div className="modal-panel rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="sheet modal-panel rounded-3xl w-full max-w-5xl max-h-[90dvh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
@@ -173,7 +173,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
             {activeTab === 'profile' && (
               <div className="space-y-6">
                 <h3 className="text-lg font-bold text-white mb-4">Personal Information</h3>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Full Name</label>
                     <input type="text" readOnly value={employee?.name || ''} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none" />
@@ -205,7 +205,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                 </div>
                 
                 <h3 className="text-lg font-bold text-white mb-4 mt-8">Employment Details</h3>
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Designation</label>
                     <input type="text" readOnly value={employee?.designation || ''} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none" />
@@ -237,7 +237,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                 </div>
 
                 <h3 className="text-lg font-bold text-white mb-4 mt-8">Financial & Compliance</h3>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Bank Details</label>
                     <textarea rows={2} readOnly value={employee?.bankDetails || ''} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none resize-none font-mono" />
@@ -263,7 +263,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                     <select
                       value={docType}
                       onChange={e => setDocType(e.target.value)}
-                      className="bg-surface/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none flex-1 min-w-[160px]"
+                      className="w-full min-w-0 flex-1 rounded-xl border border-white/10 bg-surface/50 px-3 py-2 text-sm focus:outline-none sm:w-auto sm:min-w-[160px]"
                     >
                       {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -310,7 +310,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                             <p className="text-xs text-textSecondary">{doc.uploadDate}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                           <button
                             onClick={() => setPreviewUrl(`${doc.url}${doc.url.includes('?') ? '&' : '?'}token=${token()}`)}
                             className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-all"
@@ -344,7 +344,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Base Salary</label>
                     <input type="text" readOnly value={fmt(employee?.baseSalary || 0)} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none" />
@@ -400,7 +400,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
                             </select>
                             <button
                               onClick={() => setViewingPaySlip(record)}
-                              className="p-2 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              className="rounded-lg p-2 text-textSecondary transition-all hover:bg-primary/10 hover:text-primary md:opacity-0 md:group-hover:opacity-100"
                               title="View Pay Slip"
                             >
                               <Eye className="w-4 h-4" />
@@ -417,7 +417,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
             {activeTab === 'attendance' && (
               <div className="space-y-4">
                 <h3 className="text-lg font-bold text-white mb-4">Attendance & Leaves</h3>
-                <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
                      <p className="text-2xl font-black text-success">{attendanceRecords.filter(r => r.status === 'Present').length}</p>
                      <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Days Present</p>

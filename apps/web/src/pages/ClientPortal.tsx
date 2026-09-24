@@ -194,9 +194,9 @@ export default function ClientPortal() {
     <div className="min-h-screen bg-surfaceAlt text-white font-sans flex flex-col">
       {/* Client Header */}
       <nav className="border-b border-white/5 bg-surfaceAlt/50 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-module flex items-center justify-center">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 md:h-20 md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-module md:h-10 md:w-10">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div className="flex flex-col">
@@ -205,7 +205,7 @@ export default function ClientPortal() {
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex shrink-0 items-center gap-3 md:gap-6">
             <div className="hidden md:flex flex-col items-end mr-2">
               <span className="text-xs font-bold text-white">{clientData?.name || 'Authorized Client'}</span>
               <span className="text-[10px] font-black text-module uppercase tracking-widest">{clientData?.companyName || 'Corporate Partner'}</span>
@@ -220,14 +220,14 @@ export default function ClientPortal() {
         </div>
       </nav>
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-12">
-        <div className="flex flex-col md:flex-row gap-12">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 md:px-6 md:py-12">
+        <div className="flex flex-col gap-8 md:flex-row md:gap-12">
 
           {/* Main Dashboard */}
           <div className="flex-1 space-y-10">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-3xl font-black mb-2 tracking-tight">Your Support Hub</h2>
+                <h2 className="mb-2 text-2xl font-black tracking-tight sm:text-3xl">Your Support Hub</h2>
                 <p className="text-textSecondary font-medium text-sm">Track your tickets and communicate with our expert teams.</p>
               </div>
               <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
@@ -299,7 +299,7 @@ export default function ClientPortal() {
             {activeTab === 'new_ticket' && (
               <div className="animate-in fade-in zoom-in-95 duration-500">
                 <div className="bg-white/5 border border-white/10 rounded-[2rem] p-10 backdrop-blur-xl">
-                  <h3 className="text-2xl font-bold mb-8">Raise a Service Ticket</h3>
+                  <h3 className="mb-6 text-xl font-bold sm:mb-8 sm:text-2xl">Raise a Service Ticket</h3>
                   <form onSubmit={handleCreateTicket} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
@@ -410,7 +410,7 @@ export default function ClientPortal() {
       </main>
 
       <footer className="py-10 border-t border-white/5">
-        <div className="max-w-6xl mx-auto px-6 text-center">
+        <div className="mx-auto max-w-6xl px-4 text-center md:px-6">
           <div className="flex justify-center mb-6">
             <div className="flex items-center gap-2 opacity-50">
               <Shield className="w-5 h-5 text-module" />

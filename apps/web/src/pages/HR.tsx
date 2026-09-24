@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Users, Shield, Activity, LogOut,
-  Key, Settings, BarChart3, Plus, Loader2, Save, X, Home, Lock, CheckCircle2, Copy, Check, FileText
+  Users, Shield, Activity,
+  Key, Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
 } from 'lucide-react';
 import Login from './Login';
+import { profilePhotoUrl } from '../lib/avatar';
 import GAGrid, { type Column } from '../components/GAGrid';
 
 import TaskBoard from '../components/TaskBoard';
@@ -12,7 +13,8 @@ import AppointmentProvisionForm from '../components/AppointmentProvisionForm';
 import ProfileModal from '../components/ProfileModal';
 import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
-import MobileTabMenu from '../components/MobileTabMenu';
+import AppHeader from '../components/AppHeader';
+import ModuleTabs from '../components/ModuleTabs';
 import HRDashboard from '../components/HRDashboard';
 import HRReports from '../components/HRReports';
 import PayrollProcessingView from '../components/PayrollProcessingView';
@@ -73,11 +75,6 @@ function HR() {
     };
   }, []);
 
-  const getProfileUrl = (url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
   const handleLogout = () => {
     localStorage.clear();
@@ -367,68 +364,18 @@ function HR() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="bg-primary/20 p-2 rounded-xl">
-            <Activity className="w-5 h-5 md:w-6 h-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-none"><span className="text-primary">OS</span></h1>
-            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-bold">HR Management</span>
-          </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-xl transition-all">
-            <Home className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
+      <AppHeader
+        icon={Activity}
+        title="HR"
+        subtitle="HR Management"
+        onProfile={() => setShowProfile(true)}
+        onLogout={handleLogout}
+        roleFallback="Employee"
+      />
 
-        <div className="flex items-center gap-2 md:gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-primary/20 overflow-hidden">
-              {user.profilePhoto ? (
-                <img
-                  src={getProfileUrl(user.profilePhoto)!}
-                  alt="User"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
-              )}
-            </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-xs font-bold leading-none mb-0.5">{user.name || user.username || 'User'}</div>
-              <div className="text-[10px] text-textSecondary leading-none uppercase tracking-wider">{user.title || 'Employee'}</div>
-            </div>
-          </button>
-          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
-            <LogOut className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
- ? 'border-primary text-primary bg-primary/5'
- : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
- }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-primary' : 'text-textSecondary'}`} />
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ModuleTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-        <MobileTabMenu
-          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as Tab)}
-          accentColor="primary"
-        />
-        
         {tab === 'dashboard' && (
           <HRDashboard 
             employees={employees} 
@@ -698,11 +645,6 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
 
   const [rawImage, setRawImage] = useState<string | null>(null);
 
-  const getProfileUrl = (url: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
   const handleSaveCrop = async (blob: Blob) => {
     setError('');
@@ -757,7 +699,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center scrim p-4" onClick={onClose}>
-      <div className="modal-panel rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="sheet modal-panel rounded-3xl w-full max-w-2xl max-h-[90dvh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">
           <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Profile' : 'Create Profile'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-textSecondary"><X className="w-5 h-5" /></button>
@@ -771,7 +713,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
               <div className="w-24 h-24 rounded-[2rem] overflow-hidden bg-white/5 border border-white/10 group-hover:border-primary/50 transition-all">
                 {formData.profilePhoto ? (
                   <img
-                    src={getProfileUrl(formData.profilePhoto)!}
+                    src={profilePhotoUrl(formData.profilePhoto)!}
                     alt="Profile"
                     className="w-full h-full object-cover"
                   />
@@ -801,7 +743,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Full Name</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Slack ID</label>
                   <input type="text" value={formData.slackId || ''} onChange={e => setFormData({ ...formData, slackId: e.target.value })} placeholder="U123456" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -811,7 +753,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                   <input type="date" value={formData.hireDate || ''} onChange={e => setFormData({ ...formData, hireDate: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Email Address</label>
                   <input type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@gaos.org" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -821,7 +763,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                   <input type="tel" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+1 (555) 000-0000" className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">CNIC / ID</label>
                   <input type="text" value={formData.cnic || ''} onChange={e => setFormData({ ...formData, cnic: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -831,7 +773,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                   <input type="date" value={formData.dob || ''} onChange={e => setFormData({ ...formData, dob: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Emergency Contact</label>
                   <input type="text" value={formData.emergencyContact || ''} onChange={e => setFormData({ ...formData, emergencyContact: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -900,7 +842,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
 
             <div className="space-y-4 pt-4 border-t border-white/5">
               <h3 className="text-sm font-black text-primary uppercase tracking-widest">Employment Details</h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Designation</label>
                   <input type="text" value={formData.designation || ''} onChange={e => setFormData({ ...formData, designation: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -922,7 +864,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Contract Start</label>
                   <input type="date" value={formData.contractStartDate || ''} onChange={e => setFormData({ ...formData, contractStartDate: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
@@ -940,7 +882,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
 
             <div className="space-y-4 pt-4 border-t border-white/5">
               <h3 className="text-sm font-black text-primary uppercase tracking-widest">Financial & Compliance</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Bank Details (JSON string)</label>
                   <textarea rows={2} value={formData.bankDetails || ''} onChange={e => setFormData({ ...formData, bankDetails: e.target.value })} placeholder='{"bank": "...", "account": "..."}' className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 resize-none font-mono" />
@@ -955,7 +897,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
             {initialData?.id && (
               <div className="space-y-4 pt-4 border-t border-white/5">
                 <h3 className="text-sm font-black text-primary uppercase tracking-widest">Asset Assignment</h3>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                   <div>
                     <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1 mb-2">Assigned Assets</label>
                     <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
@@ -988,7 +930,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
               </div>
             )}
 
-            <div className="grid grid-cols-4 gap-4 pt-4 border-t border-white/5">
+            <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4 sm:grid-cols-4">
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Status</label>
                 <select value={formData.employmentStatus} onChange={e => setFormData({ ...formData, employmentStatus: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50">
@@ -1012,7 +954,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
             </div>
             <div className="space-y-3">
               <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Departments</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
                 {DEPARTMENT_OPTIONS.filter(opt => opt.value).map(opt => {
                   const isSelected = ((formData.department || '') || '').split(',').includes(opt.value);
                   return (

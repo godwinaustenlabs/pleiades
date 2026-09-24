@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import type React from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Shield, Users, Briefcase, Activity, Code, Target, Settings, LogOut, LayoutDashboard, Lock, Loader2, UserCog, ArrowUpRight, Sparkles } from 'lucide-react';
 import Logo from '../components/Logo';
+import UserAvatar from '../components/UserAvatar';
+import { useCurrentUser } from '../lib/useCurrentUser';
 import { Link } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
 import { usePermissions } from '../lib/usePermissions';
@@ -167,25 +169,9 @@ function Home() {
   const { grants: userPermissions, loaded } = usePermissions();
   const loading = !loaded;
 
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('ga_user') || '{}'));
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setUser(JSON.parse(localStorage.getItem('ga_user') || '{}'));
-    };
-    window.addEventListener('ga_user_updated', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-    return () => {
-      window.removeEventListener('ga_user_updated', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
-  }, []);
-
-  const getProfileUrl = useCallback((url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  }, []);
+  // The hook already re-reads on `ga_user_updated` and on a cross-tab storage
+  // event, so the listener pair that used to live here is gone with it.
+  const user = useCurrentUser();
 
   const visibleApps = useMemo(() => {
     if (user.isSuperadmin) return ALL_APPS;
@@ -232,7 +218,7 @@ function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-6 md:p-10 font-sans relative text-textPrimary">
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <header className="z-10 w-full max-w-7xl flex justify-between items-center gap-4 mb-14 md:mb-20 animate-rise">
+      <header className="animate-rise z-10 mb-10 flex w-full max-w-7xl items-center justify-between gap-3 md:mb-20">
         <Link to="/" className="flex items-center gap-2.5 md:gap-3 group">
           <Logo className="w-8 h-8 md:w-9 md:h-9 transition-transform duration-500 group-hover:rotate-[-8deg]" />
           <span className="font-display text-lg md:text-xl font-extrabold tracking-tight">
@@ -248,13 +234,7 @@ function Home() {
               onClick={() => setShowProfile(true)}
               className="flex items-center gap-2.5 pl-1.5 pr-2.5 md:pr-3.5 py-1.5 rounded-full solid-panel hover:border-borderStrong transition-all duration-300 group"
             >
-              <span className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center font-bold text-[11px] text-surface overflow-hidden shrink-0">
-                {user.profilePhoto ? (
-                  <img src={getProfileUrl(user.profilePhoto)!} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  user.name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || '?'
-                )}
-              </span>
+              <UserAvatar name={user.name || user.username} email={user.email} photo={user.profilePhoto} size={30} />
               <span className="text-left hidden sm:block leading-tight">
                 <span className="block text-xs font-semibold">{user.name || user.username || 'Member'}</span>
                 <span className="block text-[10px] text-textTertiary font-medium">{user.title || 'Staff'}</span>
@@ -275,12 +255,12 @@ function Home() {
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="z-10 w-full max-w-7xl mb-10 md:mb-14 animate-rise" style={{ animationDelay: '60ms' }}>
+      <section className="animate-rise z-10 mb-8 w-full max-w-7xl md:mb-14" style={{ animationDelay: '60ms' }}>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-[0.18em] mb-6">
           <Sparkles className="w-3 h-3" />
           {user.id ? `${greeting}${firstName ? `, ${firstName}` : ''}` : 'Secure gateway'}
         </div>
-        <h1 className="font-display text-4xl md:text-6xl lg:text-7xl font-extrabold leading-[1.05] max-w-4xl mb-5">
+        <h1 className="mb-5 max-w-4xl font-display text-3xl font-extrabold leading-[1.08] sm:text-4xl md:text-6xl lg:text-7xl">
           <span className="text-gradient">Everything the lab runs on,</span>
           <br />
           <span className="text-textSecondary">in one place.</span>

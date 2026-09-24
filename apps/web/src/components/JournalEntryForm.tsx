@@ -71,7 +71,7 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 scrim animate-in fade-in duration-300" onClick={onClose} />
-      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-surface/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/10 overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="sheet relative w-full max-w-3xl max-h-[90dvh] flex flex-col bg-surface/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/10 overflow-hidden animate-in zoom-in-95 duration-300">
         
         <div className="p-6 md:p-8 border-b border-white/10 flex items-center justify-between bg-surfaceAlt">
           <h2 className="text-xl md:text-2xl font-black">{initialData ? 'Update Journal Entry' : 'New Journal Entry'}</h2>

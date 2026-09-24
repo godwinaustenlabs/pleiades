@@ -382,7 +382,7 @@ export default function OutreachTracker() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5 md:gap-4">
                 {statCard(MessageSquare, 'DMs Sent',      dmsSent,          setDmsSent,          'blue')}
                 {statCard(Mail,          'Emails Sent',    emailsSent,       setEmailsSent,       'purple')}
                 {statCard(CornerDownRight,'Replies',       repliesReceived,  setRepliesReceived,  'emerald')}
@@ -464,7 +464,7 @@ export default function OutreachTracker() {
 
           {/* Summary cards */}
           {reportData.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5 md:gap-4">
               {[
                 { label: 'Total DMs',      value: reportData.reduce((a, r) => a + (r.dmsSent || 0), 0),          color: '#60a5fa' },
                 { label: 'Total Emails',   value: reportData.reduce((a, r) => a + (r.emailsSent || 0), 0),        color: '#c084fc' },

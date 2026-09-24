@@ -159,14 +159,14 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-160px)] -mt-4 -mb-4 -mx-4 md:-mx-8">
+    <div className="flex flex-col h-[calc(100dvh-160px)] -mt-4 -mb-4 -mx-4 md:-mx-8">
       {/* Header */}
       <div className="flex items-center justify-between p-4 md:px-8 border-b border-white/5 bg-surface/30 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-4">
           <select 
             value={selectedPipelineId || ''} 
             onChange={(e) => setSelectedPipelineId(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm font-bold text-white focus:outline-none focus:border-module min-w-[200px]"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white focus:border-module focus:outline-none sm:w-auto sm:min-w-[200px]"
           >
             {pipelines.length === 0 && <option value="">No Pipelines</option>}
             {pipelines.map(p => (
@@ -245,7 +245,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                   key={stage.id}
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, stage.id)}
-                  className="flex flex-col w-[320px] shrink-0 bg-white/[0.02] border border-white/5 rounded-3xl"
+                  className="flex w-[min(85vw,320px)] shrink-0 flex-col rounded-3xl border border-white/5 bg-white/[0.02]"
                 >
                   <div className="p-4 border-b border-white/5 flex items-center justify-between group">
                     <div>
@@ -253,7 +253,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                       <p className="text-module font-bold text-xs mt-1 flex items-center"><DollarSign className="w-3 h-3 mr-0.5" />{stageTotal.toLocaleString()}</p>
                     </div>
                     {canEdit && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      <div className="flex gap-1 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                         <button onClick={() => { setEditingStage(stage); setShowStageForm(true); }} className="p-1.5 text-textSecondary hover:text-white rounded-lg hover:bg-white/5"><Edit2 className="w-3 h-3" /></button>
                         <button onClick={() => handleDeleteStage(stage.id)} className="p-1.5 text-textSecondary hover:text-danger rounded-lg hover:bg-white/5"><Trash2 className="w-3 h-3" /></button>
                       </div>
@@ -271,7 +271,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-bold text-sm text-white line-clamp-2">{deal.dealName}</h4>
                           {canEdit && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 -mt-1 -mr-1">
+                            <div className="-mr-1 -mt-1 flex gap-1 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                               <button onClick={() => { setEditingDeal(deal); setShowDealForm(true); }} className="p-1 text-textSecondary hover:text-white" title="Edit Deal"><Edit2 className="w-3 h-3" /></button>
                               {canDelete && (
                                 <button onClick={() => handleDeleteDeal(deal.id)} className="p-1 text-textSecondary hover:text-danger" title="Delete Deal"><Trash2 className="w-3 h-3" /></button>
@@ -306,7 +306,7 @@ export default function DealPipelineView({ canEdit, canDelete }: DealPipelineVie
       {/* Forms */}
       {showPipelineForm && (
         <div className="fixed inset-0 scrim z-[100] flex items-center justify-center p-4">
-          <div className="modal-panel w-full max-w-lg rounded-3xl border border-white/10 p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="sheet modal-panel w-full max-w-lg rounded-3xl border border-white/10 p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200 max-h-[90dvh] overflow-y-auto custom-scrollbar">
             <h2 className="text-2xl font-black mb-6">{editingPipeline ? "Edit Pipeline Setup" : "Create New Pipeline"}</h2>
             
             <div className="space-y-6">

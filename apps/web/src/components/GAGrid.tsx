@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, ChevronLeft, ChevronRight, Maximize2, Upload } from 'lucide-react';
 import AssetPreviewModal from './AssetPreviewModal';
+import UserAvatar from './UserAvatar';
 import { previewTypeFor } from '../lib/preview';
 import { token } from '../lib/auth';
 import { statusChipClass, statusTone } from '../lib/status';
@@ -89,7 +90,7 @@ export default function GAGrid({
       case 'badge': {
         const tags = String(value || '').split(',').filter(Boolean).map(v => v.trim());
         return (
-          <div className="flex flex-wrap gap-1 max-w-[200px]">
+          <div className="flex flex-wrap gap-1 max-w-full md:max-w-[200px]">
             {tags.slice(0, 3).map((v, i) => (
               <span key={i} className={`chip chip-${statusTone(v)}`}>
                 {v}
@@ -110,27 +111,21 @@ export default function GAGrid({
           <span className="text-textTertiary text-xs">—</span>
         );
       case 'avatar': {
-        const photoUrl = record.profilePhoto || record.photoUrl;
-        const fullPhotoUrl = photoUrl ? (
-          photoUrl.startsWith('http') || photoUrl.startsWith('/api') 
-            ? photoUrl 
-            : `/api/assets/download/${photoUrl.startsWith('/') ? photoUrl.slice(1) : photoUrl}`
-        ) : null;
         return (
-          <div className="flex items-center gap-3 min-w-[140px]">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center font-bold text-xs shrink-0 shadow-lg shadow-primary/20 overflow-hidden border border-white/10">
-              {fullPhotoUrl ? (
-                <img src={fullPhotoUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                String(value).charAt(0).toUpperCase()
-              )}
-            </div>
-            <span className="text-sm font-bold text-white whitespace-nowrap">{value}</span>
+          <div className="flex min-w-0 items-center gap-3 md:min-w-[140px]">
+            <UserAvatar
+              name={String(value ?? '')}
+              photo={record.profilePhoto || record.photoUrl}
+              size={32}
+              className="shadow-lg shadow-primary/20"
+              ring
+            />
+            <span className="truncate text-sm font-bold text-white">{value}</span>
           </div>
         );
       }
       case 'currency':
-        return <span className="font-mono text-sm">${Number(value).toLocaleString()}</span>;
+        return <span className="font-mono text-sm tabular-nums">${Number(value).toLocaleString()}</span>;
       case 'date':
         return <span className="text-sm text-textSecondary">{value ? new Date(value).toLocaleDateString() : '—'}</span>;
       case 'image':
@@ -168,7 +163,7 @@ export default function GAGrid({
         );
       }
       default:
-        return <span className="text-sm">{value}</span>;
+        return <span className="text-sm break-anywhere">{value}</span>;
     }
   };
 
@@ -181,8 +176,8 @@ export default function GAGrid({
           <p className="text-xs md:text-sm text-textSecondary">{sortedData.length} {entityName}{sortedData.length !== 1 ? 's' : ''} available</p>
         </div>
         
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative group flex-1 sm:flex-initial">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:gap-3">
+          <div className="group relative min-w-0 flex-1 sm:flex-initial">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-textSecondary group-focus-within:text-primary transition-colors" />
             <input 
               type="text" 
@@ -235,7 +230,7 @@ export default function GAGrid({
       {/* Grid Content */}
       <div className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-white/[0.02]">
         {/* Desktop Table View */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="hidden md:block table-scroll">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-white/5 border-b border-white/10">
@@ -337,20 +332,20 @@ export default function GAGrid({
             paginatedData.map((record, idx) => (
               <div key={record?.id || idx} className="p-4 space-y-4 bg-white/[0.01]">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 space-y-3">
+                  <div className="min-w-0 flex-1 space-y-3">
                     {/* Primary Info (First Column) */}
-                    <div className="font-bold text-white break-all max-w-full text-xs">
+                    <div className="min-w-0 break-anywhere text-xs font-bold text-white">
                       {renderCell(columns[0], record)}
                     </div>
                     
                     {/* Other Info Grid */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-3">
                       {columns.slice(1).map(col => (
-                        <div key={col.key} className="space-y-1">
+                        <div key={col.key} className="min-w-0 space-y-1">
                           <div className="text-[10px] font-black uppercase tracking-wider text-textSecondary opacity-60">
                             {col.label}
                           </div>
-                          <div className="text-sm break-all max-w-full">
+                          <div className="min-w-0 break-anywhere text-sm">
                             {renderCell(col, record)}
                           </div>
                         </div>
@@ -395,7 +390,7 @@ export default function GAGrid({
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="p-4 bg-white/5 border-t border-white/10 flex items-center justify-between">
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-white/10 bg-white/5 p-4 sm:flex-row">
             <p className="text-xs text-textSecondary font-medium">
               Showing <span className="text-white">{(page - 1) * pageSize + 1}</span> to <span className="text-white">{Math.min(page * pageSize, sortedData.length)}</span> of <span className="text-white">{sortedData.length}</span> records
             </p>

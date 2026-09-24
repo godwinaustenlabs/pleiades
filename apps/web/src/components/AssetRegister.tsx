@@ -200,7 +200,7 @@ export default function AssetRegister({ canEdit, canDelete }: { canEdit: boolean
 
       {/* What the company owns, in four figures. `unposted` is the one that
           prompts action: depreciation earned but not yet in the ledger. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ['Assets', totals?.count ?? 0, false],
           ['At cost', money(totals?.cost ?? 0), true],

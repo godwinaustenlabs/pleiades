@@ -476,7 +476,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
             )}
           </div>
 
-          <div className="border border-border rounded-xl bg-surface p-5 min-h-[45vh] max-h-[62vh] overflow-y-auto divide-y divide-border">
+          <div className="border border-border rounded-xl bg-surface p-5 min-h-[45dvh] max-h-[62dvh] overflow-y-auto divide-y divide-border">
             {messages.length === 0 && (
               <div className="text-sm text-textSecondary py-12 text-center space-y-2">
                 <p>Ask it about payroll, ledgers, journals or a filing.</p>
@@ -658,7 +658,7 @@ export default function AccountantPanel({ canDrive, canEditConfig }: AccountantP
 
       {preview && (
         <div className="fixed inset-0 z-50 scrim flex items-center justify-center p-4" onClick={() => setPreview(null)}>
-          <div className="bg-surface border border-border rounded-xl max-w-3xl w-full max-h-[80vh] overflow-auto p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="sheet bg-surface border border-border rounded-xl max-w-3xl w-full max-h-[80dvh] overflow-auto p-5" onClick={(e) => e.stopPropagation()}>
             <div className="text-[11px] font-black uppercase tracking-wider mb-3">
               What the agent reads
             </div>

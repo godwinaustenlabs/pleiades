@@ -3,7 +3,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { sign } from 'hono/jwt';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
-import { authMiddleware, UserPayload } from '../middleware/auth';
+import { authMiddleware, SESSION_TTL_SECONDS, UserPayload } from '../middleware/auth';
 import { checkFeaturePermission } from '../middleware/rbac';
 import { ok, badRequest, notFound, forbidden, serverError } from '../utils/response';
 import { generateId } from '../utils/id';
@@ -37,7 +37,7 @@ const LOCKOUT_SECONDS     = 15 * 60; // 15 minutes
 /**
  * POST /auth/login
  * Body: { email: string; password: string }
- * Returns a signed JWT valid for 8 hours.
+ * Returns a signed JWT valid for SESSION_TTL_SECONDS (see middleware/auth.ts).
  */
 authRouter.post('/login', async (c) => {
   try {
@@ -106,7 +106,7 @@ authRouter.post('/login', async (c) => {
       isSuperadmin: user.isSuperadmin || false,
       type: 'human',
       iat: now,
-      exp: now + 60 * 60 * 8, // 8 hours
+      exp: now + SESSION_TTL_SECONDS,
     };
 
     if (!c.env.JWT_SECRET) {
@@ -117,7 +117,7 @@ authRouter.post('/login', async (c) => {
 
     return ok(c, {
       token,
-      expiresIn: 60 * 60 * 8,
+      expiresIn: SESSION_TTL_SECONDS,
       user: {
         id: user.id,
         email: user.email,
@@ -127,6 +127,12 @@ authRouter.post('/login', async (c) => {
         // @ts-ignore — employee is present via `with`
         title: user.employee?.role || user.employee?.department || 'Staff',
         employeeId: user.employeeId,
+        // The header avatar reads this. It used to be absent from the login
+        // payload entirely, so `ga_user.profilePhoto` was undefined until the
+        // user happened to open Profile Settings and upload one in that same
+        // browser — which is why every header showed an initial instead.
+        // @ts-ignore — employee is present via `with`
+        profilePhoto: user.employee?.profilePhoto ?? null,
         isSuperadmin: user.isSuperadmin || false,
       },
     });
@@ -152,10 +158,15 @@ authRouter.get('/whoami', authMiddleware, async (c) => {
 
   return ok(c, {
     ...user,
+    email: userData.email,
     username: userData.username,
     name: userData.name,
     // @ts-ignore — employee is present via `with`
     title: userData.employee?.role || userData.employee?.department || 'Staff',
+    // Kept in step with the login payload so a photo set on another device
+    // shows up here on the next load rather than only after a fresh sign-in.
+    // @ts-ignore — employee is present via `with`
+    profilePhoto: userData.employee?.profilePhoto ?? null,
   });
 });
 

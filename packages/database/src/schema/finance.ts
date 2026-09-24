@@ -101,3 +101,20 @@ export const generalJournals = sqliteTable('general_journals', {
   invoiceId: text('invoice_id').references(() => invoices.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
+
+/**
+ * The currencies an account may be denominated in.
+ *
+ * `code` is the natural key and the value `accounts.currency` stores, so this
+ * table is a catalogue rather than a parent: deactivating a currency stops it
+ * being offered on new accounts without rewriting the ones already using it.
+ */
+export const currencies = sqliteTable('currencies', {
+  id: text('currency_id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name'),
+  symbol: text('symbol'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});

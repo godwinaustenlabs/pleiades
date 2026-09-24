@@ -553,3 +553,177 @@
   background-size: 220% 100%;
   animation: shimmer 1.6s linear infinite;
 }
+
+/* ── Mobile / installed-app layer ─────────────────────────────────────────
+   Everything below is deliberately *unlayered*. Tailwind puts its own rules in
+   `@layer theme/base/components/utilities`, and an unlayered rule outruns every
+   layered one no matter how specific — which is exactly what is needed here,
+   because these rules have to beat utilities like `text-xs` on an input without
+   a forest of `!important`. Keep this block last in the file. */
+
+html {
+  /* Stops iOS inflating body text in landscape, which is what made some pages
+     overflow sideways after a rotation. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Belt and braces with `body`'s own guard: a single wide child should scroll
+     inside its own container, never widen the document. */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* The grey flash on tap is a browser affordance, not an app one. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Kills the 300ms click delay and double-tap-to-zoom on controls, while
+   leaving pinch-zoom on the page as a whole intact. */
+button,
+a,
+label,
+select,
+summary,
+[role='button'],
+[role='tab'] {
+  touch-action: manipulation;
+}
+
+/* The viewport unit that accounts for the mobile browser's collapsing address
+   bar. `100vh` is the *largest* viewport, so a `min-h-screen` page sat ~60px
+   taller than the screen and every page scrolled a little even when empty. */
+@supports (min-height: 100dvh) {
+  .min-h-screen { min-height: 100dvh; }
+  .h-screen { height: 100dvh; }
+  .max-h-screen { max-height: 100dvh; }
+}
+
+/* ── The zoom-on-focus fix ───────────────────────────────────────────────
+   Mobile Safari zooms the viewport when a focused field's text is under 16px,
+   and it does not zoom back out. Most fields in this app are `text-sm` (14px)
+   or `text-xs`, so tapping almost any input threw the layout sideways. Pinning
+   every text-entry control to 16px below the `md` breakpoint is the only fix
+   that does not involve disabling zoom altogether. The visual difference at
+   phone width is small; the difference in usability is not. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  /* A fixed height set for 14px text clips 16px text. `file` is excluded
+     because the CSV importers layer a transparent file input over a styled
+     button with `absolute inset-0`, and growing it would push its hit area
+     past the button it is meant to cover. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select {
+    min-height: 2.75rem;
+  }
+}
+
+/* An opt-in thumb-sized hit area. Deliberately a class rather than a blanket
+   `button { min-height }`: this app sizes a lot of buttons explicitly (the 28px
+   round avatar in every header, the icon buttons in a grid row), and a global
+   minimum turns those into ovals. */
+@media (max-width: 767px) {
+  .tap { min-height: 2.75rem; min-width: 2.75rem; }
+}
+
+/* ── Safe areas ─────────────────────────────────────────────────────────
+   Notch, rounded corners and the home indicator. Zero in a browser tab, so
+   these are safe to apply unconditionally. */
+.safe-t { padding-top: env(safe-area-inset-top); }
+.safe-b { padding-bottom: env(safe-area-inset-bottom); }
+/* For a fixed element that carries no horizontal padding of its own — these
+   set padding outright, so putting one on an element with `px-4` silently
+   removes that gutter. */
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+/* The common case: a footer or action bar that wants its usual 1rem of padding
+   *plus* whatever the home indicator needs. */
+.pt-safe { padding-top: calc(env(safe-area-inset-top) + 1rem); }
+.pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 1rem); }
+@media (min-width: 768px) {
+  .md\:pb-6-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 1.5rem); }
+}
+
+/* ── Installed-app behaviour ────────────────────────────────────────────
+   `.standalone` is set on <html> at boot (see index.html). These are the
+   affordances that should exist in a browser tab and not in an installed app. */
+.standalone body {
+  /* No rubber-band pull-to-refresh under a header that is already sticky. */
+  overscroll-behavior-y: none;
+  /* The landscape notch, handled once here rather than by every sticky header:
+     a `.safe-x` on an element that already has `px-4` would replace that
+     padding rather than add to it. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.standalone button,
+.standalone [role='button'],
+.standalone .no-callout {
+  /* Long-press on a button should not offer to copy its label. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ── Overflow helpers ───────────────────────────────────────────────────
+   The two shapes that caused visible text overflow on phones: an unbroken
+   identifier (`inv_77a2b1c4…`, an email, a URL) in a narrow column, and a flex
+   child that refuses to shrink because its `min-width` defaults to `auto`. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Put on any flex/grid child that contains truncating or wrapping text. */
+.min-w-0-safe { min-width: 0; }
+
+/* A wide table's own scroller, so the page itself never scrolls sideways. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Horizontal strips (tab bars, kanban columns) should not drag the page with
+   them when they hit their end. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+/* ── Dialogs on a phone ─────────────────────────────────────────────────
+   A centred card with `max-h-[90vh]` is the wrong shape on a 390px screen: it
+   leaves dead margin, and the on-screen keyboard pushes its buttons off. Below
+   `sm` a `.sheet` docks to the bottom edge, full width, and stops short of the
+   status bar. */
+@media (max-width: 639px) {
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    max-width: 100%;
+    max-height: 92dvh;
+    margin: 0;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    animation: sheetUp 0.28s var(--ease-out-expo) both;
+  }
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(6%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}

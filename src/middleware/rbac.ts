@@ -125,8 +125,8 @@ async function resolveGrants(c: RbacContext): Promise<Grant[]> {
   const db = getDb(c.env);
 
   // Read grants from the database rather than trusting anything in the JWT.
-  // Tokens live for 8 hours, so a claim would let revoked access keep working
-  // until expiry. An agent key names the user it acts as, and authMiddleware
+  // A token lives for days and slides forward while the user is active, so a
+  // claim baked into it would let revoked access keep working for a week. An agent key names the user it acts as, and authMiddleware
   // already resolves that fresh on every request, so both paths end up here
   // with a user id and nothing else.
   const account = await db.query.usersLogins.findFirst({

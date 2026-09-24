@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Wallet, Receipt, CreditCard, ArrowUpRight, LogOut,
-  FileText, Home, Loader2, Lock, Book, Calculator, Package
+  Wallet, Receipt, CreditCard, ArrowUpRight,
+  FileText, Loader2, Lock, Book, Calculator, Package
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -9,7 +9,8 @@ import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
-import MobileTabMenu from '../components/MobileTabMenu';
+import AppHeader from '../components/AppHeader';
+import ModuleTabs from '../components/ModuleTabs';
 import JournalEntryForm from '../components/JournalEntryForm';
 import DocumentsTab from '../components/DocumentsTab';
 import AccountantPanel from '../components/AccountantPanel';
@@ -78,6 +79,8 @@ function Finance() {
   const [clients, setClients] = useState<any[]>([]);
   const [fundRequests, setFundRequests] = useState<any[]>([]);
   const [showNestedForm, setShowNestedForm] = useState<string | null>(null); // key = which nested form to show
+  const [currencies, setCurrencies] = useState<{ id: string; code: string; name?: string | null; isActive?: boolean }[]>([]);
+  const [showCurrencyForm, setShowCurrencyForm] = useState(false);
 
   // Granular Permissions
   // Grants come from the shared hook, which resolves them from the user's role.
@@ -85,11 +88,6 @@ function Finance() {
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
-  const getProfileUrl = (url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
 
   const getPerm = (feature: string) => {
@@ -153,6 +151,7 @@ function Finance() {
     fetchWithAuth(`${API}/finance/fund-requests`, setFundRequests);
     fetchWithAuth(`${API}/core/committees`, setCommittees);
     fetchWithAuth(`${API}/core/clients`, setClients);
+    fetchWithAuth(`${API}/finance/currencies`, setCurrencies);
   };
 
 
@@ -230,69 +229,50 @@ function Finance() {
     fetchData();
   };
 
+  /**
+   * The currency dropdown, built once for both account forms.
+   *
+   * The list used to be five options written out by hand in each form, which
+   * meant adding a currency was a code change — and meant neither form offered
+   * PKR, the currency every statement this company issues is denominated in.
+   * It comes from `finance/currencies` now, with an "Add a currency" button on
+   * the field itself so a missing one can be added without leaving the form.
+   *
+   * The literals below are a fallback for exactly one situation: an environment
+   * where migration 0037 has not run yet. Once it has, the table is seeded and
+   * this is never reached.
+   */
+  const currencyField = {
+    key: 'currency',
+    label: 'Currency',
+    type: 'select' as const,
+    options: (currencies.length
+      ? currencies.filter(cur => cur.isActive !== false)
+      : ['PKR', 'USD', 'EUR', 'GBP', 'AED', 'INR'].map(code => ({ id: code, code, name: null }))
+    ).map(cur => ({ value: cur.code, label: cur.name ? `${cur.code} — ${cur.name}` : cur.code })),
+    action: getPerm('accounts').canEdit
+      ? { label: '+ Add', onClick: () => setShowCurrencyForm(true) }
+      : undefined,
+  };
+
   const currentFeature = TABS.find(t => t.id === tab)?.feature || 'ledgers';
   const p = getPerm(currentFeature);
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="bg-success/20 p-2 rounded-xl border border-success/20 shadow-lg shadow-success/5">
-            <Wallet className="w-5 h-5 md:w-6 h-6 text-success" />
-          </div>
-          <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-success">FINANCE</span></h1>
-            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Global Controllership</span>
-          </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-success hover:bg-success/10 rounded-xl transition-all">
-            <Home className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
+      <AppHeader
+        icon={Wallet}
+        title="FINANCE"
+        subtitle="Global Controllership"
+        onProfile={() => setShowProfile(true)}
+        onLogout={handleLogout}
+        roleFallback="Controller"
+      />
 
-        <div className="flex items-center gap-2 md:gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-success to-module flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-success/20 overflow-hidden">
-              {user.profilePhoto ? (
-                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
-              ) : (
-                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
-              )}
-            </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Finance'}</div>
-              <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.title || 'Controller'}</div>
-            </div>
-          </button>
-          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
-            <LogOut className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
- ? 'border-success text-success bg-success/5'
- : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
- }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-success' : 'text-textSecondary'}`} />
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ModuleTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-        <MobileTabMenu
-          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as Tab)}
-          accentColor="emerald-400"
-        />
-        {tab === 'ledger-view' && (
+{tab === 'ledger-view' && (
           <div className="space-y-4 animate-in fade-in zoom-in-95 duration-500">
             <div className="flex justify-end">
               <button
@@ -635,6 +615,36 @@ function Finance() {
 
 
 
+      {/* Reached from the "+ Add" button on the currency field of either account
+          form. It stacks over that form, which keeps its own state underneath,
+          so adding a currency does not cost the half-filled account. */}
+      {showCurrencyForm && (
+        <EntityForm
+          title="Add a currency"
+          fields={[
+            { key: 'code', label: 'Code (3 letters, e.g. PKR)', type: 'text' as const, required: true },
+            { key: 'name', label: 'Name', type: 'text' as const },
+            { key: 'symbol', label: 'Symbol', type: 'text' as const },
+          ]}
+          onClose={() => setShowCurrencyForm(false)}
+          onSubmit={async (formData) => {
+            const res = await fetch(`${API}/finance/currencies`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+              body: JSON.stringify(formData),
+            });
+            const body = await res.json().catch(() => null);
+            // A duplicate answers 409 with a sentence worth showing; EntityForm
+            // surfaces whatever a rejected promise carries.
+            if (!res.ok) throw new Error(body?.error || 'Could not add that currency');
+            const list = await fetch(`${API}/finance/currencies`, { headers: { Authorization: `Bearer ${token()}` } })
+              .then(r => r.json()).catch(() => null);
+            if (list?.data) setCurrencies(list.data);
+            setShowCurrencyForm(false);
+          }}
+        />
+      )}
+
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
       <NotificationCenter currentApp="finance" />
 
@@ -712,12 +722,7 @@ function Finance() {
               { key: 'bankName', label: 'Bank Name', type: 'text' as const },
               { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
 
-              {
-                key: 'currency', label: 'Currency', type: 'select' as const, options: [
-                  { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' },
-                  { value: 'GBP', label: 'GBP' }, { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
-                ]
-              },
+              currencyField,
               {
                 key: 'status', label: 'Status', type: 'select' as const, options: [
                   { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'closed', label: 'Closed' },
@@ -774,12 +779,7 @@ function Finance() {
             { key: 'bankName', label: 'Bank Name', type: 'text' as const },
             { key: 'accountNumber', label: 'Account Number', type: 'text' as const },
 
-            {
-              key: 'currency', label: 'Currency', type: 'select' as const, options: [
-                { value: 'USD', label: 'USD' }, { value: 'EUR', label: 'EUR' }, { value: 'GBP', label: 'GBP' },
-                { value: 'AED', label: 'AED' }, { value: 'INR', label: 'INR' },
-              ]
-            },
+            currencyField,
             {
               key: 'status', label: 'Status', type: 'select' as const, options: [
                 { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' },

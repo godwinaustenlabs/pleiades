@@ -1,10 +1,37 @@
 import { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { verify } from 'hono/jwt';
+import { sign, verify } from 'hono/jwt';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@pleiades/database';
 import { schema } from '@pleiades/database';
 import { Env } from '../index';
+
+/**
+ * Session lifetime, and the sliding renewal that keeps it from expiring under
+ * an active user.
+ *
+ * A staff token used to live 8 hours, which meant signing in again most
+ * mornings — the wrong trade for an internal tool that people keep installed on
+ * a phone. The window is now a week of *inactivity*, not a week from login:
+ *
+ *   - a fresh token lasts SESSION_TTL_SECONDS (8 days);
+ *   - any authenticated request made with a token that has less than
+ *     SESSION_REFRESH_BELOW_SECONDS (7 days) left is answered with a brand new
+ *     8-day token in the `X-Refresh-Token` response header, which the client
+ *     swaps into storage (apps/web/src/lib/session.ts).
+ *
+ * The one-day gap between the two numbers is what makes the guarantee exact and
+ * the cost negligible: whoever was active in the last 24 hours always holds a
+ * token with at least 7 days left on it, and a session is re-signed at most
+ * once a day rather than once per request.
+ *
+ * Nothing about authorization is cached in the token — grants are still read
+ * from the database on every request (see rbac.ts) — so a longer session does
+ * not delay a revocation.
+ */
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 8;
+export const SESSION_REFRESH_BELOW_SECONDS = 60 * 60 * 24 * 7;
+export const SESSION_REFRESH_HEADER = 'X-Refresh-Token';
 
 export type UserPayload = {
   /**
@@ -146,6 +173,31 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
     // is behaviour-preserving for every existing caller.
     if (payload.aud) {
       return c.json({ error: 'Invalid or expired token' }, 401);
+    }
+
+    // Sliding renewal. Set before `next()` so it rides out on the response the
+    // handler builds through `utils/response.ts` (which goes via `c.json`, and
+    // therefore picks up prepared headers). A handler that returns a raw
+    // `Response` — a download, a PDF — simply drops it, which is harmless: the
+    // same session will refresh on its next JSON call.
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const exp = typeof payload.exp === 'number' ? payload.exp : 0;
+    if (exp > 0 && exp - nowSeconds < SESSION_REFRESH_BELOW_SECONDS) {
+      c.header(
+        SESSION_REFRESH_HEADER,
+        await sign(
+          {
+            id: payload.id as string,
+            employeeId: (payload.employeeId as string | null) ?? null,
+            isSuperadmin: !!payload.isSuperadmin,
+            type: 'human',
+            iat: nowSeconds,
+            exp: nowSeconds + SESSION_TTL_SECONDS,
+          },
+          c.env.JWT_SECRET,
+          'HS256',
+        ),
+      );
     }
 
     // Only the id is taken from the token. Grants are read from the database on

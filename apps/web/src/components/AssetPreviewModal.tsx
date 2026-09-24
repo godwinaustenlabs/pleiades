@@ -178,7 +178,7 @@ export default function AssetPreviewModal({ url, onClose, type = 'image' }: Asse
             src={url}
             alt="Preview"
             onError={() => setImageBroken(true)}
-            className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+            className="max-w-full max-h-[90dvh] rounded-xl shadow-2xl object-contain"
           />
         ) : (
           // Anything the browser cannot render inline — .docx, .pages, .zip and

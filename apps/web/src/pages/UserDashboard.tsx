@@ -9,17 +9,28 @@ import TaskBoard from '../components/TaskBoard';
 import CalendarView from '../components/CalendarView';
 import ProfileModal from '../components/ProfileModal';
 import NotificationCenter from '../components/NotificationCenter';
+import ModuleTabs from '../components/ModuleTabs';
+import UserAvatar from '../components/UserAvatar';
 import EntityForm from '../components/EntityForm';
-import MobileTabMenu from '../components/MobileTabMenu';
 import Login from './Login';
 import { Share2, RefreshCw, Copy, Check, Eye, Edit2, LogOut } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { API, token } from '../lib/auth';
+import { API, currentUser, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
 
 export default function UserDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes'>('overview');
+
+  const TABS = [
+    { id: 'overview', label: 'Overview', icon: TrendingUp },
+    { id: 'tasks', label: 'Kanban Board', icon: CheckCircle2 },
+    { id: 'calendar', label: 'Schedule', icon: CalendarIcon },
+    { id: 'committees', label: 'Committees', icon: BookOpen },
+    { id: 'appointments', label: 'Appointments', icon: CalendarIcon },
+    { id: 'notes', label: 'Personal Notes', icon: StickyNote },
+  ] as const;
+
   const [data, setData] = useState<any>(null);
   const [attendanceToday, setAttendanceToday] = useState<any>(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
@@ -214,11 +225,6 @@ export default function UserDashboard() {
     }
   };
 
-  const getProfileUrl = (url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -233,10 +239,10 @@ export default function UserDashboard() {
   return (
     <div className="min-h-screen bg-black text-white pb-20">
       {/* Header */}
-      <header className="px-4 py-8 md:p-8 bg-gradient-to-b from-primary/10 to-transparent">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <header className="bg-gradient-to-b from-primary/10 to-transparent px-4 py-6 md:p-8">
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 md:flex-row md:items-center md:gap-6">
           <div>
-            <h1 className="text-2xl md:text-4xl font-black tracking-tight mb-2">
+            <h1 className="mb-2 break-anywhere text-2xl font-black tracking-tight md:text-4xl">
               Welcome back, <span className="text-primary">{data?.employee?.name || data?.user?.username}</span>
             </h1>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -261,18 +267,20 @@ export default function UserDashboard() {
               onClick={() => setShowProfile(true)}
               className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center p-1 hover:bg-white/10 transition-all group"
             >
-              <div className="w-full h-full rounded-lg md:rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center relative overflow-hidden">
-                {data?.user?.profilePhoto ? (
-                  <img 
-                    src={getProfileUrl(data.user.profilePhoto)!} 
-                    alt="Profile" 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
-                  />
-                ) : (
-                  <User className="w-6 h-6 md:w-8 md:h-8 text-white group-hover:scale-90 transition-transform" />
-                )}
-                <div className="absolute inset-0 flex items-center justify-center bg-surfaceAlt rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Camera className="w-4 h-4 text-white" />
+              <div className="relative h-full w-full overflow-hidden rounded-lg md:rounded-xl">
+                {/* `/api/dashboard` names this field `avatarUrl`; the old markup
+                    read `user.profilePhoto`, which the endpoint has never
+                    returned — so this avatar was blank for everyone regardless
+                    of whether a photo had been uploaded. */}
+                <UserAvatar
+                  name={data?.employee?.name || currentUser().name}
+                  email={currentUser().email}
+                  photo={data?.user?.avatarUrl || data?.employee?.profilePhoto}
+                  size={64}
+                  className="h-full w-full rounded-lg md:rounded-xl"
+                />
+                <div className="absolute inset-0 hidden items-center justify-center rounded-xl bg-surfaceAlt opacity-0 transition-opacity group-hover:opacity-100 md:flex">
+                  <Camera className="h-4 w-4 text-white" />
                 </div>
               </div>
             </button>
@@ -281,44 +289,8 @@ export default function UserDashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8">
-        {/* Navigation Tabs */}
-        <MobileTabMenu
-          tabs={[
-            { id: 'overview', label: 'Overview', icon: TrendingUp },
-            { id: 'tasks', label: 'Kanban Board', icon: CheckCircle2 },
-            { id: 'calendar', label: 'Schedule', icon: CalendarIcon },
-            { id: 'committees', label: 'Committees', icon: BookOpen },
-            { id: 'appointments', label: 'Appointments', icon: CalendarIcon },
-            { id: 'notes', label: 'Personal Notes', icon: StickyNote },
-          ]}
-          activeTab={activeTab}
-          onTabChange={(id) => setActiveTab(id as any)}
-          accentColor="primary"
-        />
-
-        <div className="hidden md:block mb-8 bg-white/5 p-1 rounded-2xl border border-white/10 w-full overflow-x-auto no-scrollbar">
-          <div className="flex items-center gap-1 min-w-max">
-            {[
-              { id: 'overview', label: 'Overview', icon: TrendingUp },
-              { id: 'tasks', label: 'Kanban Board', icon: CheckCircle2 },
-              { id: 'calendar', label: 'Schedule', icon: CalendarIcon },
-              { id: 'committees', label: 'Committees', icon: BookOpen },
-              { id: 'appointments', label: 'Appointments', icon: CalendarIcon },
-              { id: 'notes', label: 'Personal Notes', icon: StickyNote },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id
- ? 'bg-primary text-surface shadow-lg shadow-primary/25'
- : 'text-textSecondary hover:text-surface hover:bg-white/5'
- }`}
-              >
-                <tab.icon className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="-mx-4 mb-6 md:mx-0 md:mb-8">
+          <ModuleTabs tabs={TABS} active={activeTab} onChange={(id) => setActiveTab(id as any)} />
         </div>
 
         {/* Overview Tab */}
@@ -645,7 +617,7 @@ export default function UserDashboard() {
                     <h4 className="font-bold text-lg truncate flex-1 mr-2">{note.title}</h4>
                     <div className="flex items-center gap-2">
                       <Star className={`w-4 h-4 ${note.pinned ? 'text-warning fill-warning' : 'text-textSecondary'}`} />
-                      <button onClick={() => handleDeleteNote(note.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-danger transition-all">
+                      <button onClick={() => handleDeleteNote(note.id)} aria-label="Delete note" className="rounded-lg p-1.5 transition-all hover:text-danger md:p-1 md:opacity-0 md:group-hover:opacity-100">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -686,7 +658,7 @@ export default function UserDashboard() {
             {/* View Note Modal */}
             {viewingNote && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
-                <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95">
+                <div className="sheet bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl max-h-[80dvh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in-95">
                   <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-black tracking-tight">{viewingNote.title}</h3>
@@ -723,7 +695,7 @@ export default function UserDashboard() {
             {/* Note Form Modal (Create/Edit) */}
             {showNoteForm && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
-                <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95">
+                <div className="sheet bg-surface border border-white/10 rounded-3xl w-full max-w-lg max-h-[90dvh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95">
                   <div className="p-6 border-b border-white/10 flex items-center justify-between">
                     <h3 className="font-bold">{editingNote ? 'Edit Note' : 'Create New Note'}</h3>
                     <button onClick={() => { setShowNoteForm(false); setEditingNote(null); }}><X className="w-5 h-5" /></button>
@@ -759,7 +731,7 @@ export default function UserDashboard() {
 
       {showSyncModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in">
-          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="sheet bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-lg max-h-[90dvh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-black tracking-tight">Sync to External Calendar</h3>

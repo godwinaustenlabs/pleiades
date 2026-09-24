@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Target, TrendingUp, Calendar, LogOut, DollarSign,
-  Megaphone, UserPlus, Home, Loader2, Lock, MessageSquare, FileText
+  Target, TrendingUp, Calendar, DollarSign,
+  Megaphone, UserPlus, Loader2, Lock, MessageSquare, FileText
 } from 'lucide-react';
 import Login from './Login';
 import OutreachTracker from '../components/OutreachTracker';
@@ -11,7 +11,8 @@ import EntityForm from '../components/EntityForm';
 import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import NotificationCenter from '../components/NotificationCenter';
-import MobileTabMenu from '../components/MobileTabMenu';
+import AppHeader from '../components/AppHeader';
+import ModuleTabs from '../components/ModuleTabs';
 import DealPipelineView from '../components/DealPipelineView';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
@@ -43,11 +44,6 @@ function Acquisition() {
 
   const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
 
-  const getProfileUrl = (url: string) => {
-    if (!url) return null;
-    if (url.startsWith('http') || url.startsWith('/api')) return url;
-    return `/api/assets/download/${url.startsWith('/') ? url.slice(1) : url}`;
-  };
 
 
   const getPerm = (feature: string) => {
@@ -192,64 +188,19 @@ function Acquisition() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans text-textPrimary animate-in fade-in duration-700">
-      <header className="glass-panel sticky top-0 z-50 px-4 py-3 md:px-8 md:py-4 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="bg-module/20 p-2 rounded-xl border border-module/20 shadow-lg shadow-module/5">
-            <Target className="w-5 h-5 md:w-6 h-6 text-module" />
-          </div>
-          <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tighter leading-none"><span className="text-module">ACQUISITION</span></h1>
-            <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-textSecondary font-black leading-none">Growth & Acquisition</span>
-          </div>
-          <button onClick={() => window.location.href = '/'} className="ml-1 md:ml-2 p-2 text-textSecondary hover:text-module hover:bg-module/10 rounded-xl transition-all">
-            <Home className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
+      <AppHeader
+        icon={Target}
+        title="ACQUISITION"
+        subtitle="Growth & Acquisition"
+        onProfile={() => setShowProfile(true)}
+        onLogout={handleLogout}
+        roleFallback="Manager"
+      />
 
-        <div className="flex items-center gap-2 md:gap-4">
-          <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 md:gap-3 pl-2 pr-2 md:pr-4 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
-            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-tr from-module to-module flex items-center justify-center font-bold text-[10px] md:text-xs shadow-lg shadow-module/20 overflow-hidden">
-              {user.profilePhoto ? (
-                <img src={getProfileUrl(user.profilePhoto)!} alt="User" className="w-full h-full object-cover" />
-              ) : (
-                user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()
-              )}
-            </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-xs font-black leading-none mb-0.5">{user.name || user.username || 'Growth'}</div>
-              <div className="text-[10px] text-textSecondary leading-none uppercase tracking-widest font-black">{user.title || 'Manager'}</div>
-            </div>
-          </button>
-          <div className="h-6 md:h-8 w-px bg-white/10 mx-1" />
-          <button onClick={handleLogout} className="p-2 md:p-2.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-xl transition-all">
-            <LogOut className="w-4 h-4 md:w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
-      <div className="hidden md:block border-b border-white/5 bg-surface/30 backdrop-blur-md px-4 md:px-8 overflow-x-auto no-scrollbar">
-        <div className="flex gap-1 md:gap-2 max-w-7xl mx-auto">
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[11px] font-black border-b-2 transition-all uppercase tracking-widest whitespace-nowrap ${tab === t.id
- ? 'border-module text-module bg-module/5'
- : 'border-transparent text-textSecondary hover:text-textPrimary hover:bg-white/5'
- }`}>
-              <t.icon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${tab === t.id ? 'text-module' : 'text-textSecondary'}`} />
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ModuleTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-        <MobileTabMenu
-          tabs={TABS.map(t => ({ id: t.id, label: t.label, icon: t.icon }))}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as Tab)}
-          accentColor="rose-400"
-        />
-        {tab === 'funnels' && (
+{tab === 'funnels' && (
           <FunnelView
             funnels={funnels}
             canEdit={getPerm('funnels').canEdit}

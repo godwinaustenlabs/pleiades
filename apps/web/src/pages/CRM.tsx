@@ -11,7 +11,10 @@ import { previewTypeFor, type PreviewKind } from '../lib/preview';
 import TaskBoard from '../components/TaskBoard';
 import EntityForm from '../components/EntityForm';
 import NotificationCenter from '../components/NotificationCenter';
-import MobileTabMenu from '../components/MobileTabMenu';
+import ModuleTabs from '../components/ModuleTabs';
+import ProfileModal from '../components/ProfileModal';
+import UserAvatar from '../components/UserAvatar';
+import { useCurrentUser } from '../lib/useCurrentUser';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 import { errorMessage } from '../lib/errors';
@@ -26,6 +29,7 @@ export default function CRM() {
   const [committeeSearch, setCommitteeSearch] = useState('');
   const [ticketFilter, setTicketFilter] = useState<'active' | 'resolved'>('active');
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [newTicketLoading, setNewTicketLoading] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [showConversation, setShowConversation] = useState(false);
@@ -44,7 +48,7 @@ export default function CRM() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewType, setPreviewType] = useState<PreviewKind>('image');
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('ga_user') || '{}'), []);
+  const user = useCurrentUser();
 
 
   const getPerm = (feature: string) => {
@@ -412,12 +416,19 @@ export default function CRM() {
                   <div className="px-3 py-1 bg-module/10 text-module text-[9px] font-black uppercase tracking-widest rounded-full border border-module/20">Operational Instance</div>
                   <span className="text-textSecondary text-[10px] font-mono tracking-tighter">REF: {selectedCommittee.id}</span>
                 </div>
-                <h2 className="text-xl md:text-4xl font-black tracking-tight">{selectedCommittee.committeeName}</h2>
+                <h2 className="break-anywhere text-xl font-black tracking-tight md:text-4xl">{selectedCommittee.committeeName}</h2>
               </div>
             </div>
-            <div className="flex items-center gap-2 md:gap-3">
-              <button onClick={() => window.location.href = '/'} className="p-2 md:p-3 bg-white/5 hover:bg-white/10 rounded-xl md:rounded-2xl border border-white/10 transition-all text-textSecondary hover:text-white">
-                <Home className="w-4 h-4 md:w-5 h-5" />
+            <div className="flex shrink-0 items-center gap-2 md:gap-3">
+              <button onClick={() => window.location.href = '/'} aria-label="Home" className="rounded-xl border border-white/10 bg-white/5 p-2 text-textSecondary transition-all hover:bg-white/10 hover:text-white md:rounded-2xl md:p-3">
+                <Home className="h-4 w-4 md:h-5 md:w-5" />
+              </button>
+              <button
+                onClick={() => setShowProfile(true)}
+                aria-label="Profile settings"
+                className="rounded-full border border-white/10 bg-white/5 p-1 transition-all hover:bg-white/10"
+              >
+                <UserAvatar name={user.name || user.username} email={user.email} photo={user.profilePhoto} size={30} />
               </button>
               {getPerm('tickets').canEdit && (
                 <button
@@ -430,43 +441,8 @@ export default function CRM() {
             </div>
           </header>
 
-          <div className="px-4 md:px-8">
-            <MobileTabMenu
-              tabs={[
-                { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-                { id: 'tickets', label: 'Support Tickets', icon: Ticket },
-                { id: 'tasks', label: 'Operational Tasks', icon: CheckCircle2 },
-                { id: 'planner', label: 'Project Planner', icon: Calendar },
-                { id: 'documents', label: 'Resources', icon: FileText },
-              ]}
-              activeTab={activeTab}
-              onTabChange={(id) => setActiveTab(id as any)}
-              accentColor="rose-500"
-            />
-          </div>
 
-          <nav className="hidden md:flex px-8 items-center gap-2 border-b border-white/10">
-            {[
-              { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-              { id: 'tickets', label: 'Support Tickets', icon: Ticket },
-              { id: 'tasks', label: 'Operational Tasks', icon: CheckCircle2 },
-              { id: 'planner', label: 'Project Planner', icon: Calendar },
-              { id: 'documents', label: 'Resources', icon: FileText },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-6 py-5 text-[11px] font-black uppercase tracking-widest transition-all relative ${activeTab === tab.id ? 'text-module' : 'text-textSecondary hover:text-white'
- }`}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                {tab.label}
-                {activeTab === tab.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-module rounded-full animate-in fade-in zoom-in duration-300" />
-                )}
-              </button>
-            ))}
-          </nav>
+          <ModuleTabs tabs={TABS} active={activeTab} onChange={(id) => setActiveTab(id as any)} />
 
           <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
             {activeTab === 'overview' && (
@@ -474,15 +450,15 @@ export default function CRM() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="glass-panel p-6 rounded-3xl bg-gradient-to-br from-module/10 to-transparent border border-white/10">
                     <h4 className="text-[10px] font-black text-module uppercase tracking-widest mb-1">Open Tickets</h4>
-                    <p className="text-5xl font-black">{tickets.filter(t => t.status === 'open').length}</p>
+                    <p className="text-4xl font-black md:text-5xl">{tickets.filter(t => t.status === 'open').length}</p>
                   </div>
                   <div className="glass-panel p-6 rounded-3xl border border-white/10">
                     <h4 className="text-[10px] font-black text-textSecondary uppercase tracking-widest mb-1">Active Tasks</h4>
-                    <p className="text-5xl font-black opacity-20">--</p>
+                    <p className="text-4xl font-black opacity-20 md:text-5xl">--</p>
                   </div>
                   <div className="glass-panel p-6 rounded-3xl border border-white/10">
                     <h4 className="text-[10px] font-black text-success uppercase tracking-widest mb-1">Stability Index</h4>
-                    <p className="text-5xl font-black text-success">98%</p>
+                    <p className="text-4xl font-black text-success md:text-5xl">98%</p>
                   </div>
                 </div>
 
@@ -626,7 +602,7 @@ export default function CRM() {
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 md:gap-6">
                   {documents.map(doc => (
                     <div key={doc.id} className="glass-panel p-6 rounded-3xl group hover:border-module/30 transition-all cursor-pointer border border-white/10 bg-white/[0.02]">
                       <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-4 group-hover:bg-module/10 group-hover:text-module transition-all border border-white/10">
@@ -701,7 +677,7 @@ export default function CRM() {
                       </div>
                       <div className="flex items-center gap-2">
                         {getPerm('planner').canDelete && (
-                          <button onClick={(e) => { e.stopPropagation(); handleDeletePlanner(evt.id); }} className="p-2 text-danger hover:bg-danger/20 rounded-xl transition-all opacity-0 group-hover:opacity-100">
+                          <button onClick={(e) => { e.stopPropagation(); handleDeletePlanner(evt.id); }} className="rounded-xl p-2 text-danger transition-all hover:bg-danger/20 md:opacity-0 md:group-hover:opacity-100">
                             <Trash2 className="w-5 h-5" />
                           </button>
                         )}
@@ -733,7 +709,7 @@ export default function CRM() {
           <div className="w-32 h-32 rounded-[2.5rem] bg-white/[0.02] flex items-center justify-center mb-10 border border-white/10 shadow-2xl">
             <Building2 className="w-16 h-16 text-white/10" />
           </div>
-          <h2 className="text-4xl font-black tracking-tighter mb-4">No Selected Context</h2>
+          <h2 className="mb-4 text-2xl font-black tracking-tighter sm:text-4xl">No Selected Context</h2>
           <p className="text-textSecondary max-w-xs text-sm leading-relaxed font-medium">
             Select a committee from the operational sidebar to synchronize with its CRM instance.
           </p>
@@ -742,7 +718,7 @@ export default function CRM() {
       {/* Create Ticket Modal */}
       {showNewTicket && selectedCommittee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={() => setShowNewTicket(false)}>
-          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <div className="sheet bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-xl max-h-[90dvh] overflow-y-auto custom-scrollbar shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
                 <h2 className="text-xl font-black uppercase tracking-tight">New Support Ticket</h2>
@@ -777,7 +753,7 @@ export default function CRM() {
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Description</label>
                 <textarea name="description" rows={4} placeholder="Detailed description..." className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all resize-none" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest mb-2">Priority</label>
                   <select name="priority" className="w-full bg-surfaceAlt border border-white/10 rounded-2xl px-5 py-3.5 text-sm focus:outline-none focus:border-module transition-all">
@@ -812,7 +788,7 @@ export default function CRM() {
       {/* Ticket Conversation Modal */}
       {showConversation && selectedTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in" onClick={() => setShowConversation(false)}>
-          <div className="bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="sheet bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 h-[80dvh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-8 border-b border-white/10 bg-white/5">
               <div>
                 <h2 className="text-xl font-black uppercase tracking-tight">{selectedTicket.title}</h2>
@@ -905,6 +881,8 @@ export default function CRM() {
           onSubmit={handleEntitySubmit}
         />
       )}
+
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
 
       <NotificationCenter currentApp="crm" />
     </div>

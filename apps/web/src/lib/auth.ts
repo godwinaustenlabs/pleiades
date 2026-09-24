@@ -22,6 +22,12 @@ export interface CurrentUser {
 	/** Job title, for display only. It grants nothing — see usePermissions. */
 	title?: string;
 	employeeId?: string | null;
+	/**
+	 * The employee record's photo, as stored: an absolute URL, an
+	 * `/api/assets/download/...` path, or a bare R2 key. Resolve it with
+	 * `lib/avatar.ts` rather than interpolating it into a `src` directly.
+	 */
+	profilePhoto?: string | null;
 	isSuperadmin?: boolean;
 }
 

@@ -14,6 +14,7 @@ import UserDashboard from './pages/UserDashboard';
 import CRM from './pages/CRM';
 import ClientPortal from './pages/ClientPortal';
 import Admin from './pages/Admin';
+import { redirectToLogin } from './lib/session';
 
 
 /* Every module page has long carried its own accent colour — CRM rose, Ops
@@ -69,12 +70,32 @@ function App() {
       }
     };
 
+    // A session that has run out anywhere in the app lands on the right sign-in
+    // screen, rather than leaving whichever page noticed to render an empty
+    // shell full of failed requests. See lib/session.ts.
+    const handleExpired = (e: Event) => {
+      const portal = !!(e as CustomEvent<{ portal?: boolean }>).detail?.portal;
+      redirectToLogin(portal);
+    };
+
+    // The installed app and the same URL in a browser tab want different chrome;
+    // `.standalone` is set at boot and kept honest here for the case where the
+    // user installs while the page is open.
+    const displayMode = window.matchMedia('(display-mode: standalone)');
+    const handleDisplayMode = () => {
+      document.documentElement.classList.toggle('standalone', displayMode.matches);
+    };
+
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('pleiades:session-expired', handleExpired);
     mediaQuery.addEventListener('change', handleMediaChange);
+    displayMode.addEventListener('change', handleDisplayMode);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('pleiades:session-expired', handleExpired);
       mediaQuery.removeEventListener('change', handleMediaChange);
+      displayMode.removeEventListener('change', handleDisplayMode);
     };
   }, []);
 

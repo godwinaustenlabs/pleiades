@@ -116,7 +116,7 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center scrim p-4" onClick={onClose}>
-      <div className="modal-panel rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="sheet modal-panel rounded-3xl w-full max-w-4xl max-h-[92dvh] overflow-hidden shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 shrink-0">

@@ -2,9 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog } from 'lucide-react';
 import PermissionMatrix from '../components/PermissionMatrix';
+import ProfileModal from '../components/ProfileModal';
+import UserAvatar from '../components/UserAvatar';
 import { useFeatureCatalog } from '../lib/useFeatureCatalog';
-import { API, authHeaders, currentUser, type Grant } from '../lib/auth';
+import { API, authHeaders, type Grant } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
+import { useCurrentUser } from '../lib/useCurrentUser';
 import { errorMessage } from '../lib/errors';
 
 interface AdminUser {
@@ -28,7 +31,7 @@ const displayName = (u: AdminUser) => u.employee?.name || u.name || u.username |
  */
 export default function Admin() {
 	const { can, loaded: permsLoaded } = usePermissions();
-	const me = currentUser();
+	const me = useCurrentUser();
 	const { catalog, loaded: catalogLoaded } = useFeatureCatalog();
 
 	const [users, setUsers] = useState<AdminUser[]>([]);
@@ -41,6 +44,7 @@ export default function Admin() {
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	const [showProfile, setShowProfile] = useState(false);
 
 	const canEditPerms = can('admin', 'permissions', 'edit');
 
@@ -147,17 +151,26 @@ export default function Admin() {
 	return (
 		<div className="p-4 md:p-6 space-y-4">
 			<div className="flex items-center gap-3">
-				<Link to="/" className="text-textSecondary hover:text-text">
+				<Link to="/" className="shrink-0 text-textSecondary hover:text-text">
 					<ArrowLeft className="w-4 h-4" />
 				</Link>
-				<UserCog className="w-5 h-5 text-primary" />
-				<div>
+				<UserCog className="w-5 h-5 shrink-0 text-primary" />
+				<div className="min-w-0">
 					<h1 className="text-lg font-black uppercase tracking-wider leading-none">Access</h1>
-					<p className="text-[10px] text-textSecondary uppercase tracking-wider mt-1">
+					<p className="mt-1 text-[10px] uppercase tracking-wider text-textSecondary">
 						Permissions are granted per person, feature by feature
 					</p>
 				</div>
+				<button
+					onClick={() => setShowProfile(true)}
+					aria-label="Profile settings"
+					className="ml-auto shrink-0 rounded-full border border-border bg-surfaceAlt p-1 transition-all hover:border-borderStrong"
+				>
+					<UserAvatar name={me.name || me.username} email={me.email} photo={me.profilePhoto} size={30} />
+				</button>
 			</div>
+
+			{showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
 
 			{error && (
 				<div className="border border-danger/40 bg-danger/10 text-danger text-xs px-3 py-2 rounded">{error}</div>
@@ -177,7 +190,7 @@ export default function Admin() {
 							className="w-full bg-transparent text-xs outline-none"
 						/>
 					</div>
-					<div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+					<div className="max-h-[60dvh] overflow-y-auto divide-y divide-border">
 						{loadingUsers && (
 							<div className="px-3 py-4 text-xs text-textSecondary flex items-center gap-2">
 								<Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…

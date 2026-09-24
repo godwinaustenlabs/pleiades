@@ -1,0 +1,23 @@
+{
+  "name": "Pleiades",
+  "short_name": "Pleiades",
+  "description": "Godwin Austen Labs' internal operating system.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0C110E",
+  "theme_color": "#0C110E",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "My workspace", "short_name": "Workspace", "url": "/dashboard" },
+    { "name": "Finance", "short_name": "Finance", "url": "/finance" },
+    { "name": "HR", "short_name": "HR", "url": "/hr" }
+  ]
+}

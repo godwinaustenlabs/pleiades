@@ -218,7 +218,7 @@ export default function DocumentsTab({
 
 			{showWizard && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 scrim animate-in fade-in duration-200">
-					<div className="w-full max-w-lg bg-surface border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+					<div className="sheet w-full max-w-lg bg-surface border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl max-h-[90dvh] overflow-y-auto custom-scrollbar">
 						<h3 className="text-xl font-bold text-white mb-6">Upload Document</h3>
 						<form onSubmit={handleUpload} className="space-y-6">
 							<div className="space-y-2">

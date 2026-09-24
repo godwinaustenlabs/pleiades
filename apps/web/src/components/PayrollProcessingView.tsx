@@ -139,10 +139,10 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
       {step === 2 && (
         <div className="space-y-6 animate-in fade-in zoom-in duration-300">
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
             <div className="glass-panel p-5 rounded-2xl border border-white/10 text-center">
               <p className="text-[10px] text-textSecondary uppercase tracking-widest font-bold">Employees</p>
-              <p className="text-3xl font-black mt-1">{previewData.length}</p>
+              <p className="mt-1 text-2xl font-black sm:text-3xl">{previewData.length}</p>
             </div>
             <div className="glass-panel p-5 rounded-2xl border border-white/10 text-center">
               <p className="text-[10px] text-textSecondary uppercase tracking-widest font-bold">Total Gross</p>
@@ -219,7 +219,8 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
 
           {/* Result list */}
           <div className="rounded-3xl overflow-hidden border border-white/10">
-            <table className="w-full text-sm">
+            <div className="table-scroll">
+            <table className="w-full min-w-[34rem] text-sm">
               <thead className="bg-white/5 border-b border-white/10">
                 <tr>
                   <th className="text-left px-4 py-3 text-[10px] font-black text-textSecondary uppercase tracking-widest">Employee</th>
@@ -241,6 +242,7 @@ export default function PayrollProcessingView({ employees, onPayrollGenerated }:
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="flex gap-4">
