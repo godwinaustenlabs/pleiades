@@ -83,6 +83,14 @@ export const USERS = {
 	crm: { id: 'u_crm', roleId: 'role_crm_member', isSuperadmin: false },
 	none: { id: 'u_none', roleId: 'role_none', isSuperadmin: false },
 	tasksOnly: { id: 'u_tasks', roleId: 'role_tasks_only', isSuperadmin: false },
+	/**
+	 * Administers mailboxes without being a superadmin, so the admin/mailboxes
+	 * branch of canUseMailbox is exercised by somebody who does not bypass every
+	 * check. Its own user rather than a grant bolted onto `crm`, because that
+	 * would have handed `crm` an `admin` feature and broken the assertion in
+	 * rbac.test.ts that /api/admin is gated on the admin module.
+	 */
+	mailAdmin: { id: 'u_mail', roleId: 'role_mail_admin', isSuperadmin: false },
 } as const;
 
 export type FixtureUser = keyof typeof USERS;

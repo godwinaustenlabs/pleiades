@@ -7,6 +7,8 @@ import { authMiddleware, SESSION_TTL_SECONDS, UserPayload } from '../middleware/
 import { checkFeaturePermission } from '../middleware/rbac';
 import { ok, badRequest, notFound, forbidden, serverError } from '../utils/response';
 import { generateId } from '../utils/id';
+import { generateToken, sha256hex } from '../utils/token';
+import { notifyResetRequested } from '../email/password-reset';
 import { logAudit } from '../utils/audit';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -14,20 +16,16 @@ const authRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-async function sha256hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/** Generate a cryptographically random URL-safe token string. */
-function generateToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
+/**
+ * The one response `POST /auth/request-reset` ever gives.
+ *
+ * A single constant rather than two matching literals, because two literals drift:
+ * that is exactly how this endpoint came to enumerate accounts.
+ */
+const RESET_REQUEST_RESPONSE = {
+  submitted: true,
+  message: 'If an account exists for that address, a reset request has been queued for HR approval.',
+} as const;
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_SECONDS     = 15 * 60; // 15 minutes
@@ -278,7 +276,19 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
  * Creates a pending token. The owning HR Manager (or CEO) must approve it
  * before the employee can set a new password.
  *
- * Always returns { submitted: true } — never reveals whether the email exists.
+ * Always returns the IDENTICAL response, whether or not the email exists.
+ *
+ * That was not true until now. Both branches returned 200 and `submitted: true`,
+ * but with different `message` text — "Your password reset request has been
+ * queued" for a real account and "If this email exists…" for an unknown one. So
+ * the endpoint enumerated staff addresses to anybody who read the body, which is
+ * step one of a phishing or credential-stuffing campaign against a company whose
+ * logins are all at one domain. One constant is now used for both.
+ *
+ * A timing difference remains — the real path mints a token and writes rows — and
+ * is deliberately not chased here: closing it properly means doing that work for
+ * a non-existent account too, and over the internet the signal is buried in noise.
+ * Worth revisiting if this is ever seen being probed.
  */
 authRouter.post('/request-reset', async (c) => {
   try {
@@ -291,9 +301,10 @@ authRouter.post('/request-reset', async (c) => {
       where: eq(schema.usersLogins.email, email.toLowerCase().trim()),
     });
 
-    // Return the same response whether or not the user exists (prevents email enumeration)
+    // Return the same response whether or not the user exists (prevents email
+    // enumeration). Byte-identical, not merely the same shape — see the note above.
     if (!user || !user.isActive) {
-      return ok(c, { submitted: true, message: 'If this email exists, a reset request has been queued for HR approval.' });
+      return ok(c, RESET_REQUEST_RESPONSE);
     }
 
     // Cancel any existing pending tokens for this user
@@ -324,14 +335,19 @@ authRouter.post('/request-reset', async (c) => {
       email,
     });
 
-    // In a production system, notify the owner HR Manager here (email/Slack).
-    // The HR Manager finds the request at GET /admin/pending-resets.
+    // Tell HR. Nothing announced a pending request before this: it sat on
+    // GET /admin/pending-resets until somebody thought to look.
+    //
+    // Note what is NOT sent here, and that it is the security-relevant half: the
+    // person who requested the reset gets no email at all, and no token is minted
+    // until a human approves. This endpoint is unauthenticated, so anything it
+    // mailed to the named address would be mail a stranger could cause to appear
+    // in a colleague's inbox, as often as they liked.
+    c.executionCtx.waitUntil(notifyResetRequested(c.env, user.id, id));
 
-    return ok(c, {
-      submitted: true,
-      message: 'Your password reset request has been queued. Your HR Manager must approve it before you can set a new password.',
-      // DO NOT return rawToken here — it is for internal use only when email delivery is wired up
-    });
+    // Identical to the unknown-account branch above. If you change one, change both
+    // — or better, keep using the constant.
+    return ok(c, RESET_REQUEST_RESPONSE);
   } catch (err) {
     return serverError(c, err);
   }

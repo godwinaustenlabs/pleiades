@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Shield, Activity,
   Key, Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
+, Mail
 } from 'lucide-react';
 import Login from './Login';
 import { profilePhotoUrl } from '../lib/avatar';
@@ -14,6 +15,8 @@ import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
+import PendingResets from '../components/PendingResets';
+import MailboxTab from '../components/MailboxTab';
 import HRDashboard from '../components/HRDashboard';
 import HRReports from '../components/HRReports';
 import PayrollProcessingView from '../components/PayrollProcessingView';
@@ -26,7 +29,7 @@ import { errorMessage } from '../lib/errors';
 
 
 
-type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets' | 'reports' | 'sops';
+type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets' | 'reports' | 'sops' | 'email';
 
 const DEPARTMENT_OPTIONS = [
   { value: '', label: 'None (e.g. CEO)' },
@@ -157,6 +160,7 @@ function HR() {
       { id: 'reports', label: 'Reports', icon: FileText, feature: 'employees' },
       { id: 'sops', label: 'SOPs', icon: FileText, feature: 'employees' },
       { id: 'resets', label: 'Resets', icon: Key, badge: pendingCount, feature: 'resets' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -403,15 +407,7 @@ function HR() {
           />
         )}
 
-        {tab === 'resets' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold">Password Reset Requests</h2>
-            <div className="glass-panel rounded-3xl p-12 text-center text-textSecondary border border-white/10">
-              <Key className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p className="text-sm">Delegated reset approval flow is active. Only users with "Resets" permission can approve.</p>
-            </div>
-          </div>
-        )}
+        {tab === 'resets' && <PendingResets canApprove={getPerm('resets').canEdit} />}
 
         {tab === 'payroll' && (
           <div className="space-y-12">
@@ -491,6 +487,13 @@ function HR() {
           />
         )}
 
+        {tab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'app', app: 'hr' }}
+            heading="HR mail"
+            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+          />
+        )}
         {tab === 'tasks' && <TaskBoard department="HR" canEdit={getPerm('tasks').canEdit} />}
       </main>
 

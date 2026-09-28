@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users } from 'lucide-react';
 import PermissionMatrix from '../components/PermissionMatrix';
+import MailboxAdmin from '../components/MailboxAdmin';
+import AutomationsPanel from '../components/AutomationsPanel';
 import ProfileModal from '../components/ProfileModal';
 import UserAvatar from '../components/UserAvatar';
 import { useFeatureCatalog } from '../lib/useFeatureCatalog';
@@ -17,6 +19,7 @@ interface AdminUser {
 	name?: string | null;
 	isActive?: boolean | null;
 	isSuperadmin?: boolean | null;
+	recoveryEmail?: string | null;
 	employee?: { name?: string | null; department?: string | null; role?: string | null } | null;
 }
 
@@ -45,8 +48,19 @@ export default function Admin() {
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [showProfile, setShowProfile] = useState(false);
+	/** Access | Mailboxes | Automations. Three jobs on one page, too much to stack. */
+	const [section, setSection] = useState<'access' | 'mailboxes' | 'automations'>('access');
+	const [recovery, setRecovery] = useState('');
+	const [savingRecovery, setSavingRecovery] = useState(false);
 
 	const canEditPerms = can('admin', 'permissions', 'edit');
+	const canEditMailboxes = can('admin', 'mailboxes', 'edit');
+	// Derived from the server's catalogue rather than listed here, so an app that
+	// gains or loses mail does not need this file edited.
+	const mailApps = useMemo(
+		() => Object.keys(catalog).filter((a) => catalog[a]?.includes('email')).sort(),
+		[catalog],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -90,6 +104,40 @@ export default function Admin() {
 	function select(userId: string) {
 		setSelectedId(userId);
 		loadGrants(userId);
+		setRecovery(users.find((u) => u.id === userId)?.recoveryEmail || '');
+	}
+
+	/**
+	 * Saves the recovery address.
+	 *
+	 * Separate from the permission save because it is a different kind of fact and
+	 * a different kind of mistake: getting a grant wrong is visible the next time
+	 * somebody opens a page, whereas getting this wrong is invisible until
+	 * somebody is locked out and cannot be let back in. The server refuses an
+	 * address on a domain Pleiades hosts the mail for — otherwise resetting a
+	 * password would require already being able to log in — and the message it
+	 * returns is shown verbatim.
+	 */
+	async function saveRecovery() {
+		if (!selectedId) return;
+		setSavingRecovery(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const res = await fetch(`${API}/admin/users/${selectedId}`, {
+				method: 'PATCH',
+				headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+				body: JSON.stringify({ recoveryEmail: recovery.trim() }),
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(body?.error || `Could not save (${res.status})`);
+			setUsers((prev) => prev.map((u) => (u.id === selectedId ? { ...u, recoveryEmail: recovery.trim() || null } : u)));
+			setNotice('Recovery address saved.');
+		} catch (e) {
+			setError(errorMessage(e));
+		} finally {
+			setSavingRecovery(false);
+		}
 	}
 
 	async function save() {
@@ -179,7 +227,47 @@ export default function Admin() {
 				<div className="border border-primary/40 bg-primary/10 text-primary text-xs px-3 py-2 rounded">{notice}</div>
 			)}
 
-			<div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
+			{/* A scrolling row of pills rather than a dropdown, and horizontal at every
+			    width: three items fit on a 390px screen, and hiding them behind a tap
+			    costs a second tap just to discover what is here. */}
+			<div className="scroll-x no-scrollbar mb-4 flex gap-2">
+				{([
+					{ id: 'access', label: 'Access', icon: Users },
+					{ id: 'mailboxes', label: 'Mailboxes', icon: Mail },
+					{ id: 'automations', label: 'Automations', icon: Bot },
+				] as const)
+					// Access always shows — reaching this page at all required
+					// admin/permissions. The other two carry their own grants.
+					.filter((t) => t.id === 'access'
+						|| (t.id === 'mailboxes' && can('admin', 'mailboxes', 'view'))
+						|| (t.id === 'automations' && can('admin', 'email_config', 'view')))
+					.map((t) => (
+						<button
+							key={t.id}
+							onClick={() => setSection(t.id)}
+							className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-[11px] font-bold transition-all active:scale-[0.97] ${
+								section === t.id
+									? 'border-primary/40 bg-primary/15 text-primary'
+									: 'border-border bg-surfaceAlt text-textSecondary'
+							}`}
+						>
+							<t.icon className="h-3.5 w-3.5" />
+							{t.label}
+						</button>
+					))}
+			</div>
+
+			{section === 'automations' && <AutomationsPanel />}
+
+			{section === 'mailboxes' && can('admin', 'mailboxes', 'view') && (
+				<MailboxAdmin
+					apps={mailApps}
+					people={users.map((u) => ({ id: u.id, name: displayName(u), email: u.email }))}
+					disabled={!canEditMailboxes}
+				/>
+			)}
+
+			<div className={`grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 ${section === 'access' ? '' : 'hidden'}`}>
 				<div className="border border-border rounded-lg overflow-hidden self-start">
 					<div className="flex items-center gap-2 px-3 py-2 border-b border-border">
 						<Search className="w-3.5 h-3.5 text-textSecondary" />
@@ -263,6 +351,41 @@ export default function Admin() {
 								</div>
 							)}
 
+							<div className="border border-border rounded p-3 bg-surfaceAlt">
+								<div className="flex items-center gap-1.5 mb-1">
+									<LifeBuoy className="w-3.5 h-3.5 text-textSecondary" />
+									<span className="text-[10px] font-black uppercase tracking-wider text-textSecondary">
+										Password recovery address
+									</span>
+								</div>
+								<p className="text-[11px] text-textSecondary mb-2">
+									Where a reset link is sent. It must be off the company domain — once mail lives in
+									Pleiades, sending a reset to {selected.email} would mean logging in to read the email
+									that lets you log in. Without one set, a reset cannot be delivered at all.
+								</p>
+								<div className="flex gap-2">
+									<input
+										value={recovery}
+										onChange={(e) => setRecovery(e.target.value)}
+										placeholder="personal@example.com"
+										disabled={!canEditPerms}
+										className="min-w-0 flex-1 rounded border border-border bg-surface px-2 py-1.5 outline-none"
+									/>
+									<button
+										onClick={saveRecovery}
+										disabled={savingRecovery || !canEditPerms || recovery.trim() === (selected.recoveryEmail || '')}
+										className="shrink-0 flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-onScrim disabled:opacity-40"
+									>
+										{savingRecovery && <Loader2 className="w-3 h-3 animate-spin" />} Save
+									</button>
+								</div>
+								{!selected.recoveryEmail && (
+									<p className="mt-1.5 text-[11px] text-warning">
+										Not set — this person cannot be sent a password reset.
+									</p>
+								)}
+							</div>
+
 							{loadingGrants ? (
 								<div className="flex items-center gap-2 py-8 text-xs text-textSecondary">
 									<Loader2 className="w-4 h-4 animate-spin" /> Loading permissions…
@@ -279,6 +402,7 @@ export default function Admin() {
 					)}
 				</div>
 			</div>
+
 		</div>
 	);
 }

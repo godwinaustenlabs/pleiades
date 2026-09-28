@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Target, TrendingUp, Calendar, DollarSign,
-  Megaphone, UserPlus, Loader2, Lock, MessageSquare, FileText
+  Megaphone, UserPlus, Loader2, Lock, MessageSquare, FileText, Mail
 } from 'lucide-react';
 import Login from './Login';
 import OutreachTracker from '../components/OutreachTracker';
@@ -13,13 +13,14 @@ import TaskBoard from '../components/TaskBoard';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
 import DealPipelineView from '../components/DealPipelineView';
+import MailboxTab from '../components/MailboxTab';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
 
 
 
-type Tab = 'funnels' | 'campaigns' | 'deals' | 'leads' | 'content' | 'sprints' | 'tasks' | 'outreach';
+type Tab = 'funnels' | 'campaigns' | 'deals' | 'leads' | 'content' | 'sprints' | 'tasks' | 'outreach' | 'email';
 
 function Acquisition() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -94,11 +95,21 @@ function Acquisition() {
       { id: 'funnels', label: 'Marketing Funnels', icon: Target, feature: 'funnels' },
       { id: 'deals', label: 'Deals Pipeline', icon: DollarSign, feature: 'funnels' },
       { id: 'campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
-      { id: 'leads', label: 'Leads & Contacts', icon: UserPlus, feature: 'leads' },
+      // `feature` was 'leads', which APP_FEATURES does not declare — so getPerm
+      // returned all-false and this tab was superadmin-only by accident, the same
+      // bug as finance/ledgers. The routes it reads gate on `contacts`.
+      //
+      // Two similar mismatches are left alone deliberately: the Deals tab gates on
+      // `funnels` while /deal-* routes gate on `deals`, and Outreach gates on
+      // `campaigns` while /outreach gates on `outreach`. Those at least WORK —
+      // migration 0024 granted all four from campaigns — so changing them would
+      // move access around for no fix, which belongs in its own change.
+      { id: 'leads', label: 'Leads & Contacts', icon: UserPlus, feature: 'contacts' },
       { id: 'content', label: 'Documents', icon: FileText, feature: 'content' },
       { id: 'sprints', label: 'Sprints', icon: TrendingUp, feature: 'sprints' },
       { id: 'tasks', label: 'Tasks', icon: Calendar, feature: 'tasks' },
       { id: 'outreach', label: 'Outreach Tracker', icon: MessageSquare, feature: 'campaigns' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -215,13 +226,20 @@ function Acquisition() {
           />
         )}
         {tab === 'outreach' && <OutreachTracker />}
+        {tab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'app', app: 'acquisition' }}
+            heading="Acquisition mail"
+            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+          />
+        )}
         {tab === 'deals' && (
           <DealPipelineView
             canEdit={getPerm('funnels').canEdit}
             canDelete={getPerm('funnels').canDelete}
           />
         )}
-        {tab !== 'tasks' && tab !== 'funnels' && tab !== 'deals' && tab !== 'outreach' && (
+        {tab !== 'tasks' && tab !== 'funnels' && tab !== 'deals' && tab !== 'outreach' && tab !== 'email' && (
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Acquisition'}
             entityName={tab === 'leads' ? 'contact' : tab === 'content' ? 'document' : tab.slice(0, -1)}

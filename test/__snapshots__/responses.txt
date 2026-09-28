@@ -47,7 +47,7 @@
 /api/admin/permissions
     200 ok data=array<empty>
 /api/admin/users
-    200 ok data=array<{createdAt,createdByUserId,email,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,ownership,passwordUpdatedAt,permissions,phone,username}>
+    200 ok data=array<{createdAt,createdByUserId,email,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,ownership,passwordUpdatedAt,permissions,phone,recoveryEmail,username}>
 /api/admin/users/:id
     404 err="Record not found"
 /api/admin/users/:id/permissions
@@ -55,7 +55,7 @@
 /api/admin/users/my-team
     404 err="Record not found"
 /api/auth/profile
-    200 ok data={createdAt,createdByUserId,email,employee,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,passwordUpdatedAt,phone,profilePhoto,username}
+    200 ok data={createdAt,createdByUserId,email,employee,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,passwordUpdatedAt,phone,profilePhoto,recoveryEmail,username}
 /api/auth/whoami
     200 ok data={email,employeeId,id,isSuperadmin,name,profilePhoto,title,type,username}
 /api/core/clients
@@ -110,6 +110,22 @@
     200 ok data=array<empty>
 /api/dashboard/preferences
     200 ok data={}
+/api/email/automations
+    200 ok data={events,recentFailures,sender}
+/api/email/mailboxes
+    200 ok data=array<{address,appName,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,transport,updatedAt}>
+/api/email/mailboxes/:id/grants
+    200 ok data=array<empty>
+/api/email/mailboxes/:id/messages
+    403 err="You cannot read that mailbox."
+/api/email/messages/:id
+    404 err="Message not found"
+/api/email/mine
+    200 ok data=array<{address,appName,canBulk,canSend,displayName,id,isActive,kind,transport}>
+/api/email/prefs
+    200 ok data=array<{changeable,description,enabled,key,kind}>
+/api/email/templates
+    200 ok data=array<{appName,bodyHtml,bodyText,createdAt,description,id,isActive,key,name,scope,subject,updatedAt,updatedBy,variables}>
 /api/finance/accounts
     200 ok data=array<empty>
 /api/finance/accounts/:id

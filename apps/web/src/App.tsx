@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import Home from './pages/Home';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import HR from './pages/HR';
 import Finance from './pages/Finance';
 import Tech from './pages/Tech';
@@ -103,6 +104,9 @@ function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login onLogin={() => window.location.href = '/'} />} />
+      {/* Where the emailed reset link lands. Without this route the link was a dead
+          end — the SPA fallback served index.html and the router matched nothing. */}
+      <Route path="/reset" element={<ResetPassword />} />
       <Route path="/hr" element={<ModuleTheme hue="var(--app-hr)"><HR /></ModuleTheme>} />
       <Route path="/finance" element={<ModuleTheme hue="var(--app-finance)"><Finance /></ModuleTheme>} />
       <Route path="/tech" element={<ModuleTheme hue="var(--app-tech)"><Tech /></ModuleTheme>} />

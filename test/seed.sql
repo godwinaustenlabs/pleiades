@@ -5,7 +5,17 @@
 -- users_logins, so the accounts are inserted before their grants.
 
 
--- Truncate in dependency order: grants reference users_logins.
+-- Truncate in dependency order: grants reference users_logins, and the mail
+-- tables reference both. email_delivery and email_attachments point at
+-- email_messages, which points at mailboxes, so they go first.
+DELETE FROM email_delivery;
+DELETE FROM email_attachments;
+DELETE FROM email_messages;
+DELETE FROM email_threads;
+DELETE FROM email_prefs;
+DELETE FROM email_templates;
+DELETE FROM mailbox_grants;
+DELETE FROM mailboxes;
 DELETE FROM compliance_config;
 DELETE FROM user_app_permissions;
 DELETE FROM users_logins;
@@ -16,6 +26,7 @@ INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_supe
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_crm','u_crm@test.local','u_crm','u_crm','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts,recovery_email) VALUES ('u_mail','u_mail@test.local','u_mail','u_mail','x',1,0,0,0,'u_mail@personal.test');
 
 -- u_tasks holds nothing but the `tasks` feature of four modules. Before those
 -- routers were gated per feature, app-level access let that grant alone read and
@@ -298,3 +309,53 @@ VALUES ('cc_daily_runner_actor', 'daily_runner_actor', 'company', 'Daily runner 
 DELETE FROM currencies;
 INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_pkr','PKR','Pakistani Rupee','Rs',1,0);
 INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_usd','USD','United States Dollar','$',1,0);
+
+
+-- ── Mail fixture ────────────────────────────────────────────────────────────
+--
+-- Shaped so the interesting authorization cases are all reachable, because
+-- canUseMailbox has four branches and only one of them is the ordinary one:
+--
+--   mbx_hr       an app mailbox     -> u_tech reads it via hr/email (view only)
+--   mbx_acq      another app's      -> u_tech must NOT reach it; u_mkt sends from it
+--   mbx_mkt      personal, u_mkt's  -> u_mkt only, and NOT u_ceo-by-grant
+--   mbx_payroll  hr, with grants    -> the override: u_crm is listed, so u_tech is
+--                                     denied even though he holds hr/email
+--   mbx_system   no-reply@          -> nobody, not even a grant holder
+--
+-- Addresses are on godwinausten.org because the create route refuses anything
+-- else, and a fixture that could not be created through the API is a fixture
+-- that proves less than it appears to.
+-- On `auto` like the rest. The pin that stops a secret-bearing message touching a
+-- third party lives on the MESSAGE now (dispatch sets it for `sensitive` events),
+-- because pinning the mailbox meant no-reply@ could not reach an own-domain address
+-- at all on the Free plan — and could not fall back either.
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,transport,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_system','no-reply@godwinausten.org','Pleiades','system',NULL,NULL,'auto',2000,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_catchall','catchall@godwinausten.org','Catch-all','catchall',NULL,NULL,0,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_hr','hr@godwinausten.org','People','app',NULL,'hr',200,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_acq','sales@godwinausten.org','Sales','app',NULL,'acquisition',200,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_payroll','payroll@godwinausten.org','Payroll','app',NULL,'hr',50,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_mkt','mkt@godwinausten.org','Marketing Lead','personal','u_mkt',NULL,100,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,forwards_to_mailbox_id,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_alias','info@godwinausten.org','Info','alias',NULL,NULL,'mbx_hr',200,1,0,0);
+
+-- The override. Only u_crm is listed, which must deny u_tech despite hr/email.
+INSERT INTO mailbox_grants (mailbox_id,user_id,can_read,can_send,created_at) VALUES ('mbx_payroll','u_crm',1,1,0);
+
+-- Mail grants. u_tech reads HR's mail but cannot send; u_mkt runs acquisition's.
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_tech_hr_email','u_tech','hr','email',1,0,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_email','u_mkt','acquisition','email',1,1,0,0,0);
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mkt_acquisition_email_templates','u_mkt','acquisition','email_templates',1,1,1,0,0);
+-- u_mail administers mailboxes without being a superadmin. Deliberately NOT a
+-- grant on u_crm: admin/mailboxes is an `admin` feature, so giving it to u_crm
+-- would let them through requireAppAccess('admin') and break rbac.test.ts's
+-- assertion that /api/admin is gated on the admin module. The fixture has to
+-- add a user, not widen one.
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES ('uap_u_mail_admin_mailboxes','u_mail','admin','mailboxes',1,1,1,0,0);
+
+-- The three system templates dispatch() renders through. Bodies are one line
+-- here; the real ones are in migration 0038.
+INSERT INTO email_templates (template_id,key,scope,app_name,name,subject,body_text,variables,is_active,created_at,updated_at) VALUES ('tpl_task_assigned','task_assigned','system',NULL,'Task assigned','New task: {{taskTitle}}','Hi {{assigneeName}}, you have been assigned {{taskTitle}} in {{department}}. Due {{dueDate}}. {{taskUrl}}','[{"name":"assigneeName","label":"Assignee","required":true},{"name":"taskTitle","label":"Title","required":true},{"name":"department","label":"Department","required":true},{"name":"dueDate","label":"Due","required":false},{"name":"taskUrl","label":"Link","required":true}]',1,0,0);
+INSERT INTO email_templates (template_id,key,scope,app_name,name,subject,body_text,variables,is_active,created_at,updated_at) VALUES ('tpl_password_reset','password_reset','system',NULL,'Password reset','Your Pleiades password reset is ready','Hi {{userName}}, choose a new password: {{resetUrl}} (expires {{expiresAt}}).','[{"name":"userName","label":"Name","required":true},{"name":"resetUrl","label":"Link","required":true},{"name":"expiresAt","label":"Expiry","required":true}]',1,0,0);
+INSERT INTO email_templates (template_id,key,scope,app_name,name,subject,body_text,variables,is_active,created_at,updated_at) VALUES ('tpl_reset_requested','reset_requested','system',NULL,'Reset awaiting approval','Password reset awaiting approval: {{userName}}','{{userName}} ({{userEmail}}) requested a reset at {{requestedAt}}. Approve at {{approvalUrl}}.','[{"name":"userName","label":"Name","required":true},{"name":"userEmail","label":"Email","required":true},{"name":"approvalUrl","label":"Link","required":true},{"name":"requestedAt","label":"When","required":true}]',1,0,0);
+-- An app-scoped template, to prove scope filtering in GET /templates.
+INSERT INTO email_templates (template_id,key,scope,app_name,name,subject,body_text,variables,is_active,created_at,updated_at) VALUES ('tpl_acq_intro','acq_intro','app','acquisition','Intro email','Hello from {{company}}','Hi {{firstName}}, a note from {{company}}.','[{"name":"firstName","label":"First name","required":true},{"name":"company","label":"Company","required":true}]',1,0,0);

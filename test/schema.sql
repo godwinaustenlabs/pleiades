@@ -1003,7 +1003,8 @@ CREATE TABLE "users_logins" (
 	name text,
 	username text,
 	is_superadmin INTEGER DEFAULT 0,
-	phone TEXT
+	phone TEXT,
+	recovery_email text
 );
 CREATE INDEX agent_approvals_requester_idx
 	ON agent_approvals (requested_by, created_at);
@@ -1045,3 +1046,142 @@ CREATE INDEX user_app_permissions_user_idx
 	ON user_app_permissions (user_id);
 CREATE UNIQUE INDEX users_logins_email_unique ON users_logins (email);
 CREATE UNIQUE INDEX users_logins_username_unique ON users_logins (username);
+
+-- ── Mail system (migration 0038_email.sql) ─────────────────────────────────
+
+-- ── Mail system (migration 0038_email.sql) ─────────────────────────────────
+CREATE TABLE mailboxes (
+  mailbox_id             TEXT PRIMARY KEY,
+  address                TEXT NOT NULL UNIQUE,
+  display_name           TEXT,
+  kind                   TEXT NOT NULL,
+  owner_user_id          TEXT REFERENCES users_logins (id),
+  app_name               TEXT,
+  forwards_to_mailbox_id TEXT REFERENCES mailboxes (mailbox_id),
+  -- Counted from email_delivery per mailbox per UTC day. Exceeding it fails the
+  -- enqueue with a 400 rather than dropping the message silently.
+  daily_send_cap         INTEGER NOT NULL DEFAULT 200,
+  is_active              INTEGER NOT NULL DEFAULT 1,
+  created_by             TEXT REFERENCES users_logins (id),
+  created_at             INTEGER NOT NULL,
+  updated_at             INTEGER NOT NULL
+, transport text DEFAULT 'auto' NOT NULL);
+CREATE TABLE mailbox_grants (
+  mailbox_id TEXT NOT NULL REFERENCES mailboxes (mailbox_id),
+  user_id    TEXT NOT NULL REFERENCES users_logins (id),
+  can_read   INTEGER NOT NULL DEFAULT 1,
+  can_send   INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT REFERENCES users_logins (id),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (mailbox_id, user_id)
+);
+CREATE TABLE email_threads (
+  thread_id       TEXT PRIMARY KEY,
+  mailbox_id      TEXT NOT NULL REFERENCES mailboxes (mailbox_id),
+  subject         TEXT,
+  -- Set when the counterparty is a known lead, so an Acquisition thread can be
+  -- read next to the deal it belongs to.
+  contact_id      TEXT,
+  last_message_at INTEGER NOT NULL,
+  message_count   INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL
+);
+CREATE TABLE email_messages (
+  message_id         TEXT PRIMARY KEY,
+  mailbox_id         TEXT NOT NULL REFERENCES mailboxes (mailbox_id),
+  thread_id          TEXT REFERENCES email_threads (thread_id),
+  direction          TEXT NOT NULL,
+  folder             TEXT NOT NULL,
+  from_address       TEXT NOT NULL,
+  from_name          TEXT,
+  to_addresses       TEXT NOT NULL,
+  cc_addresses       TEXT,
+  bcc_addresses      TEXT,
+  subject            TEXT,
+  body_text          TEXT NOT NULL,
+  body_html          TEXT,
+  -- The RFC 5322 headers, kept so a reply can be threaded back to us.
+  message_id_header  TEXT,
+  in_reply_to_header TEXT,
+  references_header  TEXT,
+  raw_key            TEXT,
+  raw_size           INTEGER,
+  spf_result         TEXT,
+  dkim_result        TEXT,
+  dmarc_result       TEXT,
+  spam_score         REAL,
+  spam_verdict       TEXT,
+  is_read            INTEGER NOT NULL DEFAULT 0,
+  is_starred         INTEGER NOT NULL DEFAULT 0,
+  received_at        INTEGER,
+  created_by         TEXT REFERENCES users_logins (id),
+  created_at         INTEGER NOT NULL
+, event_key text);
+CREATE TABLE email_delivery (
+  message_id          TEXT PRIMARY KEY REFERENCES email_messages (message_id),
+  status              TEXT NOT NULL DEFAULT 'queued',
+  attempts            INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at     INTEGER,
+  scheduled_for       INTEGER,
+  provider_message_id TEXT,
+  error_code          TEXT,
+  error_message       TEXT,
+  idempotency_key     TEXT NOT NULL UNIQUE,
+  queued_at           INTEGER NOT NULL,
+  sent_at             INTEGER
+, transport text, transport_override text);
+CREATE TABLE email_attachments (
+  attachment_id TEXT PRIMARY KEY,
+  message_id    TEXT NOT NULL REFERENCES email_messages (message_id),
+  filename      TEXT NOT NULL,
+  content_type  TEXT,
+  size_bytes    INTEGER,
+  r2_key        TEXT NOT NULL,
+  disposition   TEXT NOT NULL DEFAULT 'attachment',
+  content_id    TEXT,
+  created_at    INTEGER NOT NULL
+, transport_override text);
+CREATE TABLE email_templates (
+  template_id TEXT PRIMARY KEY,
+  key         TEXT NOT NULL UNIQUE,
+  scope       TEXT NOT NULL DEFAULT 'app',
+  app_name    TEXT,
+  name        TEXT NOT NULL,
+  description TEXT,
+  subject     TEXT NOT NULL,
+  body_text   TEXT NOT NULL,
+  body_html   TEXT,
+  variables   TEXT NOT NULL DEFAULT '[]',
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  updated_by  TEXT REFERENCES users_logins (id),
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE TABLE email_prefs (
+  user_id    TEXT NOT NULL REFERENCES users_logins (id),
+  event_key  TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, event_key)
+);
+
+CREATE INDEX idx_mailboxes_owner  ON mailboxes (owner_user_id);
+CREATE INDEX idx_mailboxes_app    ON mailboxes (app_name);
+CREATE INDEX idx_mailboxes_kind   ON mailboxes (kind);
+CREATE INDEX idx_mailboxes_active ON mailboxes (is_active);
+CREATE INDEX idx_mailbox_grants_user ON mailbox_grants (user_id);
+CREATE INDEX idx_email_threads_mailbox ON email_threads (mailbox_id, last_message_at);
+CREATE INDEX idx_email_threads_contact ON email_threads (contact_id);
+CREATE INDEX idx_email_messages_box    ON email_messages (mailbox_id, folder, created_at);
+CREATE INDEX idx_email_messages_thread ON email_messages (thread_id, created_at);
+CREATE INDEX idx_email_messages_msgid  ON email_messages (message_id_header);
+CREATE INDEX idx_email_messages_from   ON email_messages (from_address);
+CREATE INDEX idx_email_messages_rawkey ON email_messages (raw_key);
+CREATE INDEX idx_email_delivery_sweep    ON email_delivery (status, next_attempt_at);
+CREATE INDEX idx_email_delivery_provider ON email_delivery (provider_message_id);
+CREATE INDEX idx_email_attachments_msg   ON email_attachments (message_id);
+CREATE INDEX idx_email_attachments_key   ON email_attachments (r2_key);
+CREATE INDEX idx_email_templates_scope ON email_templates (scope, app_name);
+CREATE INDEX idx_mailboxes_transport ON mailboxes (transport);
+CREATE INDEX idx_email_delivery_transport ON email_delivery (transport, queued_at);
+CREATE INDEX idx_email_messages_event ON email_messages (event_key, created_at);

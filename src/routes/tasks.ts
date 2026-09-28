@@ -8,6 +8,7 @@ import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
 import { postToSlack } from '../utils/slack';
+import { notifyTaskAssigned } from '../email/task-notify';
 
 const tasksRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 tasksRouter.use('*', authMiddleware);
@@ -165,6 +166,16 @@ tasksRouter.post('/', async (c) => {
       } catch (err) {
         console.error('[Slack Notification Error]', err);
       }
+
+      // Email as well as Slack. Not instead: the Slack post above only reaches
+      // people with a slack_id on file, which is not everybody. waitUntil so a
+      // slow provider does not hold up the 201 — the outbox row is already
+      // written by then, and the cron sweeps anything that does not go out.
+      c.executionCtx.waitUntil(notifyTaskAssigned(
+        c.env,
+        { id, title: body.title, department: body.department, dueDate: body.dueDate ?? null },
+        body.assigneeIds,
+      ));
     }
 
     await logAudit(c.env, user.id, 'CREATE', 'universal_tasks', id, body);
@@ -211,6 +222,22 @@ tasksRouter.patch('/:id', async (c) => {
 
     // Update Assignments
     if (assigneeIds !== undefined) {
+      // Read the current set BEFORE deleting it. This handler rewrites every
+      // assignment row on every edit, so "who is assigned now" and "who was just
+      // assigned" are different questions, and only the second one should
+      // produce an email. Renaming a task must not notify the whole team.
+      //
+      // Not the guarantee, though: that is the `task_assigned:<task>:<employee>`
+      // idempotency key in task-notify.ts, which is enforced by a UNIQUE column
+      // and holds even if this diff is wrong. This is the second lock, and it is
+      // what keeps a ten-person task from doing thirty queries per edit to
+      // discover there is nothing to send.
+      const previous = await db.query.taskAssignments.findMany({
+        where: eq(schema.taskAssignments.taskId, id),
+        columns: { employeeId: true },
+      });
+      const before = new Set(previous.map((a) => a.employeeId));
+
       await db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id));
       if (Array.isArray(assigneeIds) && assigneeIds.length > 0) {
         const assignmentsToInsert = assigneeIds.filter((empId: string) => empId).map((empId: string) => ({
@@ -221,6 +248,26 @@ tasksRouter.patch('/:id', async (c) => {
         }));
         if (assignmentsToInsert.length > 0) {
           await db.insert(schema.taskAssignments).values(assignmentsToInsert);
+        }
+
+        const added = assignmentsToInsert
+          .map((a) => a.employeeId)
+          .filter((empId: string) => !before.has(empId));
+
+        if (added.length > 0) {
+          // The task row was just updated, so re-read the fields the template
+          // needs rather than trusting the patch body to carry them.
+          const task = await db.query.universalTasks.findFirst({
+            where: eq(schema.universalTasks.id, id),
+            columns: { title: true, department: true, dueDate: true },
+          });
+          if (task) {
+            c.executionCtx.waitUntil(notifyTaskAssigned(
+              c.env,
+              { id, title: task.title, department: task.department, dueDate: task.dueDate },
+              added,
+            ));
+          }
         }
       }
     }

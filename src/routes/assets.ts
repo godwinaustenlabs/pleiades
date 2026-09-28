@@ -2,7 +2,10 @@ import { Hono } from 'hono';
 import { authMiddleware, UserPayload } from '../middleware/auth';
 import { checkFeaturePermission } from '../middleware/rbac';
 import { ok, badRequest, notFound, serverError } from '../utils/response';
+import { eq } from 'drizzle-orm';
+import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
+import { canUseMailbox } from '../email/mailboxes';
 
 const assetsRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 
@@ -179,7 +182,46 @@ const PUBLIC_PREFIXES = ['avatars/', 'profiles/'];
 
 const isPublicKey = (key: string) => PUBLIC_PREFIXES.some((p) => key.startsWith(p));
 
+/**
+ * Mail objects, which no static grant list can express.
+ *
+ * Every other prefix here maps to a fixed set of features. A stored message does
+ * not: it is readable by whoever may read the MAILBOX it arrived in, which is a
+ * per-row question — a static rule listing every app's `email` feature would hand
+ * anyone with `hr/email` the Legal mailbox's attachments.
+ *
+ * So the object is looked up by its key and the decision delegated to
+ * `canUseMailbox`, the single implementation of that question. An object with no
+ * row behind it is refused: an orphan in the bucket is not something to reason
+ * about, and this is also what stops a guessed key being served.
+ */
+const MAIL_PREFIXES = ['email-raw/', 'email-att/'];
+
+async function mayReadMailKey(
+  c: Parameters<typeof canUseMailbox>[0],
+  key: string,
+): Promise<boolean> {
+  const db = getDb(c.env);
+
+  const message = key.startsWith('email-raw/')
+    ? await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.rawKey, key) })
+    : await db.query.emailAttachments
+      .findFirst({ where: eq(schema.emailAttachments.r2Key, key) })
+      .then(async (att) => (att
+        ? db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, att.messageId) })
+        : null));
+
+  if (!message) return false;
+  return canUseMailbox(c, message.mailboxId, 'read');
+}
+
 async function mayReadKey(c: Parameters<typeof checkFeaturePermission>[0], key: string): Promise<boolean> {
+  // Checked before the prefix table, since these are decided per row rather than
+  // per prefix.
+  if (MAIL_PREFIXES.some((p) => key.startsWith(p))) {
+    return mayReadMailKey(c as Parameters<typeof canUseMailbox>[0], key);
+  }
+
   const rule = READ_RULES.find((r) => key.startsWith(r.prefix));
   // An unrecognised prefix cannot be reasoned about, so it is not served.
   if (!rule) return false;

@@ -5,6 +5,7 @@ import {
   ChevronRight, Calendar, FileText, LayoutDashboard,
   Shield, Home, Lock, Loader2, X, Send, Trash2, Menu as MenuIcon,
   PanelLeftClose, PanelLeftOpen
+, Mail
 } from 'lucide-react';
 import AssetPreviewModal from '../components/AssetPreviewModal';
 import { previewTypeFor, type PreviewKind } from '../lib/preview';
@@ -12,6 +13,7 @@ import TaskBoard from '../components/TaskBoard';
 import EntityForm from '../components/EntityForm';
 import NotificationCenter from '../components/NotificationCenter';
 import ModuleTabs from '../components/ModuleTabs';
+import MailboxTab from '../components/MailboxTab';
 import ProfileModal from '../components/ProfileModal';
 import UserAvatar from '../components/UserAvatar';
 import { useCurrentUser } from '../lib/useCurrentUser';
@@ -23,7 +25,7 @@ import { errorMessage } from '../lib/errors';
 export default function CRM() {
   const [committees, setCommittees] = useState<any[]>([]);
   const [selectedCommittee, setSelectedCommittee] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'tickets' | 'tasks' | 'planner' | 'documents'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tickets' | 'tasks' | 'planner' | 'documents' | 'email'>('overview');
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
   const [committeeSearch, setCommitteeSearch] = useState('');
@@ -247,6 +249,7 @@ export default function CRM() {
       { id: 'tasks', label: 'Task Board', icon: CheckCircle2, feature: 'tasks' },
       { id: 'planner', label: 'Planner', icon: Calendar, feature: 'planner' },
       { id: 'documents', label: 'Documents', icon: FileText, feature: 'documents' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -588,6 +591,17 @@ export default function CRM() {
               <div className="animate-in fade-in zoom-in-95 duration-500">
                 <TaskBoard department="CRM" committeeId={selectedCommittee.id} accentColor="rose-500" canEdit={getPerm('tasks').canEdit} />
               </div>
+            )}
+            {/* Inside the committee scope like every other tab here, but the
+                mailbox itself is NOT committee-scoped: it belongs to `crm` as an
+                app, so the same mail shows whichever committee is selected.
+                Restructuring this page to hoist it out is its own change. */}
+            {activeTab === 'email' && (
+              <MailboxTab
+                scope={{ kind: 'app', app: 'crm' }}
+                heading="CRM mail"
+                description="Mailboxes the CRM holds. Not per-committee — who can read and send is managed on the Access page."
+              />
             )}
 
             {activeTab === 'documents' && (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Key, AlertCircle, Loader2 } from 'lucide-react';
+import { Key, AlertCircle, Loader2, Check } from 'lucide-react';
 import Logo from '../components/Logo';
 import { API } from '../lib/auth';
 
@@ -9,6 +9,36 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  /**
+   * The reset request, inline rather than on a page of its own.
+   *
+   * The whole delegated-reset flow existed server-side with no way for a locked-out
+   * person to start it — no button, no link, nothing. A second route would be more
+   * ceremony than this needs: the address is already typed into the field above.
+   */
+  const [resetting, setResetting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  async function requestReset() {
+    setResetting(true);
+    setError('');
+    try {
+      await fetch(`${API}/auth/request-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: identifier.trim() }),
+      });
+      // Shown whatever the server said. The endpoint answers identically for an
+      // address that exists and one that does not — branching on the response here
+      // would hand back the enumeration the endpoint is careful not to give.
+      setResetSent(true);
+    } catch {
+      setResetSent(true);
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -142,6 +172,34 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
               )}
             </button>
           </form>
+
+          {resetSent ? (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-[11px] leading-relaxed text-success">
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                If an account exists for that address, the request has gone to your HR manager for
+                approval. Once they approve it, a link to choose a new password arrives at your
+                recovery address — not at your work address, which you cannot reach if you are
+                locked out.
+              </span>
+            </div>
+          ) : (
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={requestReset}
+                disabled={resetting || identifier.trim() === ''}
+                title={identifier.trim() === '' ? 'Enter your email or username above first' : undefined}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary disabled:opacity-40"
+              >
+                {resetting && <Loader2 className="h-3 w-3 animate-spin" />}
+                Forgotten your password?
+              </button>
+              {identifier.trim() === '' && (
+                <p className="mt-1 text-[10px] text-textTertiary">Enter your email above first.</p>
+              )}
+            </div>
+          )}
 
           <p className="mt-8 text-xs text-textTertiary leading-relaxed">
             By signing in you agree to the Godwin Austen Labs organizational data policy and

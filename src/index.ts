@@ -20,6 +20,7 @@ import dashboardRouter from './routes/dashboard';
 import permissionsRouter from './routes/permissions';
 import assetsRouter from './routes/assets';
 import notificationsRouter from './routes/notifications';
+import emailRouter from './routes/email';
 import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
 import slackAgentRouter from './agents/slack';
@@ -91,6 +92,24 @@ export type Env = {
    * Read by: src/utils/model.ts, agents/accountant/{knowledge,journal}.ts
    */
   AI?: Ai;
+  /**
+   * Cloudflare Email Service, outbound. `env.EMAIL.send(...)`.
+   *
+   * Optional, and the fallback it enables is the point: `src/email/transport.ts`
+   * logs the message instead of sending it when this is absent, the same way
+   * `utils/model.ts` falls back to the bare AI binding without a gateway token.
+   * So a deployment that lost this block degrades to "mail is not going out,
+   * loudly in the logs" rather than throwing inside every task assignment.
+   *
+   * Miniflare simulates `send_email` locally, writing each message to a temp file,
+   * so tests drive the real binding rather than that fallback.
+   *
+   * Inbound is not a binding. It is the `email()` handler on the default export
+   * below, reached only because a routing rule in the dashboard points at this
+   * script.
+   * Read by: src/email/transport.ts
+   */
+  EMAIL?: SendEmail;
   /** The Slack agent Durable Object — one instance per Slack conversation. */
   SLACK_AGENT: DurableObjectNamespace;
   /** The accountant agent Durable Object — one instance per conversation. */
@@ -125,6 +144,21 @@ export type Env = {
    * Read by: src/agents/slack/index.ts, src/utils/slack.ts
    */
   SLACK_BOT_OAUTH_TOKEN?: string;
+  /**
+   * Resend API key, for mail to anyone outside the company.
+   *
+   * **The sixth secret, and the reason there are now six.** CLAUDE.md said five
+   * for a long time and the count was load-bearing — it is how you notice an
+   * integration appearing. This one exists because the account is on the Workers
+   * FREE plan, where `EMAIL` above reaches verified destination addresses only:
+   * free for staff, refused for every prospect and client. Resend carries those.
+   *
+   * Unset, `transport.ts` logs the message and reports success, so a missing key
+   * is "outreach is not going out, loudly in the logs" rather than a throw inside
+   * whatever handler was sending.
+   * Read by: src/email/transport.ts
+   */
+  RESEND_API_KEY?: string;
   /**
    * AI Gateway auth token. Both gateways have Authenticated Gateway enabled,
    * so it is sent as `cf-aig-authorization` on every model call. Unset, the
@@ -201,6 +235,10 @@ app.route('/api/dashboard', dashboardRouter);
 app.route('/api/permissions', permissionsRouter);
 app.route('/api/assets', assetsRouter);
 app.route('/api/notifications', notificationsRouter);
+// Mail — mailboxes, sending, templates. Top-level rather than inside a
+// department: `<app>/email` gates each route, because mail is a feature of
+// every department and an app of none.
+app.route('/api/email', emailRouter);
 app.route('/api/public/calendar', calendarRouter);
 app.route('/api/messages', messagesRouter);
 
@@ -240,6 +278,33 @@ export default {
   fetch: app.fetch,
 
   /**
+   * Inbound mail.
+   *
+   * Invoked for every message a Cloudflare Email Routing rule aims at this
+   * script. That rule lives only in the dashboard, so nothing in this repository
+   * can tell you whether mail is actually being received — `wrangler.jsonc` shows
+   * the outbound binding and says nothing about this handler being reachable.
+   *
+   * It must never throw. Email Routing keeps no copy of a message, so an
+   * exception here does not retry into a queue — it bounces or loses somebody's
+   * real mail. `handleInbound` guards every step and writes the raw bytes to R2
+   * before parsing anything, so a message survives even when reading it fails;
+   * this outer catch is the last line of that defence, not the only one.
+   *
+   * Not awaited via waitUntil: the handler IS the work, and returning before it
+   * finishes lets the platform cancel it halfway — the same reasoning as
+   * `scheduled` below.
+   */
+  async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
+    try {
+      const { handleInbound } = await import('./email/inbound');
+      await handleInbound(message, env);
+    } catch (err) {
+      console.error('[email] inbound handler threw at the top level:', err);
+    }
+  },
+
+  /**
    * The accountant's scheduled check.
    *
    * `ctx.waitUntil` is not used: the run *is* the work, and returning before it
@@ -261,17 +326,43 @@ export default {
       }
     }
 
-    try {
-      const { runDailyCheck } = await import('./agents/accountant/daily-runner');
-      // A scheduled run has no request to take an origin from. The var keeps a
-      // preview deployment from calling back into production.
-      const result = await runDailyCheck(env, env.WORKER_ORIGIN);
-      console.log(
-        `[daily-runner] ${event.cron}:`,
-        result.ran ? `posted ${result.messageId}` : `skipped — ${result.reason}`,
-      );
-    } catch (err) {
-      console.error('[daily-runner] failed:', err);
+    // Guarded on the cron expression, and it has to be.
+    //
+    // This block used to run for EVERY cron event, which was harmless while the
+    // only two were twelve hours apart. The email sweep below fires every five
+    // minutes, so leaving it unguarded would post an agent turn 288 times a day
+    // — the same suggestion, over and over, to the same Slack channel.
+    if (event.cron === '0 6 * * *' || event.cron === '0 17 * * *') {
+      try {
+        const { runDailyCheck } = await import('./agents/accountant/daily-runner');
+        // A scheduled run has no request to take an origin from. The var keeps a
+        // preview deployment from calling back into production.
+        const result = await runDailyCheck(env, env.WORKER_ORIGIN);
+        console.log(
+          `[daily-runner] ${event.cron}:`,
+          result.ran ? `posted ${result.messageId}` : `skipped — ${result.reason}`,
+        );
+      } catch (err) {
+        console.error('[daily-runner] failed:', err);
+      }
+    }
+
+    // The outbox reaper. An enqueue already sends immediately through
+    // ctx.waitUntil, so everything here is a message that did not go out first
+    // time: a retryable provider failure whose backoff has elapsed, one whose
+    // Worker was evicted mid-send, or a scheduled send coming due.
+    if (event.cron === '*/5 * * * *') {
+      try {
+        const { sweep } = await import('./email/outbox');
+        const result = await sweep(env);
+        // Silent on an empty tick. This fires 288 times a day and a log line
+        // saying "nothing to do" that often is a log nobody reads.
+        if (result.attempted > 0) {
+          console.log(`[email] swept ${result.attempted}: ${result.sent} sent, ${result.failed} failed`);
+        }
+      } catch (err) {
+        console.error('[email] sweep failed:', err);
+      }
     }
   },
 };

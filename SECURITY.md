@@ -58,3 +58,157 @@ the hash column (so no issued key could ever authenticate), and
   Do not add a path that queries D1 directly for agent data.
 - `.dev.vars` is gitignored and untracked. Keep it that way; secrets belong in
   `wrangler secret put`.
+
+### Mail (added with `src/email`)
+
+- **`PATCH /api/admin/users/:id` used to be a denylist and let anyone with
+  `admin/users` edit set `is_superadmin` on themselves.** It spread the request
+  body into the update behind `delete body.passwordHash; delete body.password;`,
+  so the flag CLAUDE.md describes as settable "only by direct DB access, never
+  through the API" was in fact settable through the API, bypassing every
+  permission check in the system. It is now an allowlist — the failure mode of a
+  denylist is silent, and it had already claimed a second victim in waiting:
+  `recovery_email` would have been writable the moment the column existed.
+  Rejected keys are recorded in the audit log rather than dropped, so an attempt
+  is findable.
+- **Nothing ever emails a password.** The reset flow delivers a single-use,
+  one-hour link, and the token is minted **at approval** rather than at request —
+  `POST /auth/request-reset` is unauthenticated, so a token minted there would be
+  mail a stranger could cause to arrive in any staff inbox, repeatedly. Emailing
+  a generated password would instead let anyone who knows an address lock the real
+  user out without reading the mail, and would leave a working credential sitting
+  in a mailbox — which, now that mail is stored in D1, means sitting in this
+  database.
+- **Reset mail goes to `users_logins.recovery_email`, which is validated to be off
+  the company domain.** Once the apex MX moves to Cloudflare, `users_logins.email`
+  is a mailbox inside Pleiades, and a reset sent there tells a locked-out person
+  to read a mailbox they cannot log in to reach. Unset is refused with a reason,
+  never silently substituted.
+- **`email-raw/` and `email-att/` are not in `ALLOWED_UPLOAD_PREFIXES`.** The
+  Worker writes them directly with `env.CRM_BUCKET.put()`. A caller able to write
+  there could forge received mail — a message that appears to have arrived from
+  anybody.
+- **The inbound handler never auto-replies.** `message.reply()` to a possibly
+  spoofed sender is a backscatter vector, and Cloudflare's own constraints (one
+  reply per event, inbound DMARC must pass) make it a footgun.
+- **Mail content in D1 is now among the most sensitive data in this database**,
+  alongside `users_logins`, `api_keys`, `payroll_records` and `employees.cnic`.
+  That strengthens rather than changes the rule above about never adding a
+  `query_d1`-style arbitrary-SQL agent tool: prompt injection inside a received
+  message is now a path into the mail store.
+- **A mailbox can only be created on a domain this Worker can send as**
+  (`SENDABLE_DOMAINS` in `src/routes/email.ts`). Cloudflare would refuse a send
+  from an unverified domain anyway, but relying on the provider to enforce our own
+  naming rule is how that becomes a real hole the day a second sending domain is
+  onboarded for an unrelated reason.
+- **`no-reply@` is `kind='system'`: no person can read it or send as it**, not even
+  a superadmin-adjacent `admin/mailboxes` holder. A message from that address is
+  what recipients have been taught to read as automated, so a human being able to
+  send one is the impersonation risk.
+
+### Found in the adversarial pass over the mail subsystem
+
+All four were found by writing the attack rather than reading the code, and all
+four are pinned by `test/email-adversarial.test.ts` — each one turns a test red if
+the fix is reverted.
+
+- **`POST /auth/request-reset` enumerated staff accounts.** Both branches returned
+  200 with `submitted: true`, but different `message` text — "Your password reset
+  request has been queued" for a real account against "If this email exists…" for
+  an unknown one. The function's own comment claimed it "never reveals whether the
+  email exists". Every login at this company is on one domain, so a list of valid
+  addresses is the first step of a phishing or credential-stuffing campaign. Both
+  branches now return one shared constant. A timing difference remains — the real
+  path mints a token and writes rows — and is noted rather than chased.
+- **A sender could forge their own authentication verdict.** `authResults()` read
+  whatever `Authentication-Results` header was first, and anybody can put
+  `Authentication-Results: mx; dmarc=pass` in a message they send. A receiving MTA
+  prepends its own above that and the parser keeps the first occurrence, so
+  Cloudflare's verdict normally wins — but if Cloudflare ever adds none, the
+  sender's is read, and that single header defeats the one rule that catches
+  somebody claiming to be us. That rule is what stands between the company and
+  invoice redirection. The authserv-id is now checked against `TRUSTED_AUTHSERV`
+  and an unattributable header yields no verdicts, which fails closed: absent
+  authentication plus an our-domain sender scores as spam.
+- **The same header parser read a policy tag as a verdict.** `spf=(\w+)`
+  unanchored matches the `spf=` inside `aspf=r`, and real DMARC results carry
+  `dmarc=pass (p=REJECT sp=REJECT aspf=r)`. It reported an SPF verdict of "r" for
+  a message whose SPF was never evaluated. Anchored on a delimiter now.
+- **`PATCH /api/email/messages/:id` accepted a folder change at read level**, so a
+  view-only holder of `<app>/email` could move a department's correspondence to the
+  trash. Filing mail is working the mailbox; it needs `send`.
+
+Two more of the same shape as the `is_superadmin` finding above, both fixed by
+replacing a body spread with an allowlist:
+
+- **`PATCH /api/email/mailboxes/:id`** would have accepted `address`, `kind`,
+  `ownerUserId`, `appName` and `forwardsToMailboxId`. Changing an address or kind
+  re-points every message already stored against that mailbox; re-owning a personal
+  one hands one person's mail to another; and `forwardsToMailboxId` would have let
+  a PATCH build the alias chain that create deliberately refuses.
+- **`PATCH /api/email/templates/:id`** would have accepted `scope` and `appName`,
+  so a caller holding only `acquisition/email_templates` could promote a template
+  to `scope='system'` and thereby own every department's automated mail — including
+  the password-reset email.
+
+Outbound header fields (`subject`, display names, addresses) are stripped of CR,
+LF, U+2028/9 and NUL before sending. Neither provider concatenates our strings
+into a header block today, so this is not a live injection path; it is there for
+the version of `transport.ts` that builds raw MIME, where a smuggled `Bcc:` would
+be invisible on the message we stored.
+
+### Found by the independent review pass
+
+Two exploitable findings, both in code added by this change, both now covered by
+`test/email-adversarial.test.ts`.
+
+- **Any authenticated user could emit the company's own password-reset email.**
+  The template gate in `POST /api/email/send` read
+  `if (tpl.scope === 'app' && tpl.appName && !perm)`, so a `scope='system'`
+  template fell through with no check at all — and the seeded system templates
+  include `password_reset`, whose `{{resetUrl}}` is a required variable the caller
+  supplies. Anyone who could send from any mailbox, including their own personal
+  one with no department grant whatsoever, could therefore produce the real reset
+  email, verbatim, DKIM-signed and DMARC-aligned, from a genuine
+  `@godwinausten.org` address, pointing at a link of their choosing — and have it
+  stored in the recipient's Pleiades inbox as a legitimate internal message.
+  Sending one to themselves also dumped the text of every system template that
+  `GET /templates` deliberately withholds. System templates are now refused from
+  that route entirely, for everybody including a superadmin: `EMAIL_EVENTS` renders
+  them, and a reset mail a person composed is a phishing mail by definition. The
+  same fix closes the `scope='app'` with a null `appName` case that the `&&`
+  short-circuit waved through.
+
+- **Two grantable admin permissions could be walked up to superadmin.** A
+  non-superadmin holding `admin/users` edit and `admin/resets` edit could point a
+  superadmin's `recovery_email` at their own inbox, trigger the unauthenticated
+  `request-reset`, approve it themselves (the approve route treats `admin/users`
+  edit as blanket authority and skips the `user_ownership` check), receive the
+  token, and set the superadmin's password. **This change created the path**: the
+  chain was inert while the token was minted and discarded, and wiring up delivery
+  activated it — the same commit whose allowlist was written to stop
+  `is_superadmin` being set through the API opened an indirect route to the same
+  outcome. Closed at three independent points, each covered by its own test: the
+  approve route refuses a superadmin target before any token is minted;
+  `PATCH /users/:id` refuses a `recoveryEmail` write on a superadmin by anyone but
+  that account; and `sendResetApprovedEmail` refuses to deliver one. A superadmin's
+  password is reset by direct database access, the same rule that governs the flag.
+
+Three further weaknesses fixed from the same pass:
+
+- **A live reset link sat in plaintext in D1.** `token.ts` stores only a hash so
+  that a database read yields nothing usable, and then the sent-mail row kept the
+  rendered body containing the working link — for the sixty minutes the token was
+  valid, the hash and the secret it guards were in the same database. Events marked
+  `sensitive` have their stored body replaced after the transport has read it.
+  (The first attempt redacted before the send and would have delivered the
+  placeholder; `drainOne` reads the body back out of the row.)
+- **Inbound thread matching was not scoped to the mailbox.** `References:` is
+  attacker-controlled, and the `provider_message_id` lookup was global, so a
+  guessed id would file a stranger's message into another mailbox's thread. Nothing
+  reads messages by thread alone today, so it disclosed nothing — it would have
+  become a disclosure the day a thread view was added.
+- **`parseAddrs` accepted several addresses in one entry.** The bulk threshold
+  counts entries, so a string a provider might split on would let the count and the
+  actual recipients disagree. Entries containing a separator, bracket, whitespace or
+  a second `@` are now refused.

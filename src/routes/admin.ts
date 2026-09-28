@@ -1,4 +1,4 @@
-import { Context, Hono } from 'hono';
+import { Context, Hono, type MiddlewareHandler } from 'hono';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
@@ -9,6 +9,7 @@ import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
 import { hashPassword } from '../utils/password';
+import { sendResetApprovedEmail, validateRecoveryAddress } from '../email/password-reset';
 
 
 const adminRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
@@ -150,10 +151,71 @@ adminRouter.patch('/users/:id', requireFeatureAccess('admin', 'users', 'edit'), 
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const body = await c.req.json(); const id = c.req.param('id')!;
-    delete body.passwordHash; delete body.password;
-    await db.update(schema.usersLogins).set(body).where(eq(schema.usersLogins.id, id));
-    await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', id, body);
-    return ok(c, { id });
+
+    // An allowlist, not a denylist.
+    //
+    // This spread the whole body into the update behind two `delete`s, which
+    // meant `is_superadmin` was settable through the API — so anybody granted
+    // admin/users edit could PATCH themselves superadmin and bypass every
+    // permission check in the system. CLAUDE.md states that flag is set only by
+    // direct database access, and this is the route that made that untrue.
+    //
+    // A denylist cannot hold: the failure mode of forgetting an entry is silent
+    // and it is exactly what happened here, twice over — `recovery_email`, added
+    // for password reset, would have been writable the moment the column existed.
+    const ALLOWED = ['name', 'email', 'username', 'phone', 'employeeId', 'isActive', 'recoveryEmail'] as const;
+    const patch: Record<string, unknown> = {};
+    const rejected: string[] = [];
+    for (const [key, value] of Object.entries(body)) {
+      if ((ALLOWED as readonly string[]).includes(key)) patch[key] = value;
+      else rejected.push(key);
+    }
+
+    // A recovery address on a domain this system hosts the mail for would mean a
+    // locked-out person has to log in to read the email that lets them log in.
+    if (typeof patch.recoveryEmail === 'string' && patch.recoveryEmail !== '') {
+      const problem = validateRecoveryAddress(patch.recoveryEmail);
+      if (problem) return badRequest(c, problem);
+    }
+    if (patch.recoveryEmail === '') patch.recoveryEmail = null;
+
+    /**
+     * Whose recovery address is being changed matters.
+     *
+     * A recovery address decides where a reset link is delivered, so writing one
+     * on somebody else's account is the first step of taking it over. On a
+     * superadmin that is the whole game — see the note in
+     * src/email/password-reset.ts for the four-step chain. Refused here as well as
+     * there, because two independent checks are what makes the chain stay broken
+     * when one of them is later refactored.
+     */
+    const target = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, id),
+      columns: { isSuperadmin: true, recoveryEmail: true },
+    });
+    if (!target) return notFound(c);
+    if ('recoveryEmail' in patch && target.isSuperadmin && id !== actor.id) {
+      return c.json({
+        success: false,
+        error: "A superadmin's recovery address can only be changed by that account itself. It decides where a password reset is delivered.",
+      }, 403);
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return badRequest(c, `Nothing to change. This route accepts: ${ALLOWED.join(', ')}.`);
+    }
+
+    await db.update(schema.usersLogins).set(patch).where(eq(schema.usersLogins.id, id));
+    // Rejected keys are recorded rather than ignored: an attempt to set
+    // is_superadmin through here is worth being able to find later. So is the
+    // PREVIOUS recovery address — without it, a redirect that was later reverted
+    // leaves no trace of where the reset mail went in between.
+    await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', id, {
+      ...patch,
+      ...('recoveryEmail' in patch ? { previousRecoveryEmail: target.recoveryEmail ?? null } : {}),
+      ...(rejected.length ? { rejectedFields: rejected } : {}),
+    });
+    return ok(c, { id, ...(rejected.length ? { ignored: rejected } : {}) });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -332,7 +394,29 @@ adminRouter.post(
 
 // ── DELEGATED RESET APPROVAL ──────────────────────────────────────────────────
 
-adminRouter.get('/pending-resets', requireFeatureAccess('admin', 'resets', 'view'), async (c) => {
+/**
+ * Reset approval is reachable through either `admin/resets` or `hr/resets`.
+ *
+ * These routes live under /api/admin because that is where the file is, and they
+ * were gated on `admin/resets` alone — while the screen that drives them is HR's
+ * Resets tab, which gates on `hr/resets`. Both features are declared in
+ * APP_FEATURES and in production one person holds each, so an HR manager with
+ * `hr/resets` was shown a tab whose every request came back 403.
+ *
+ * Accepting either is the non-breaking direction: it admits exactly the people who
+ * were already being offered the screen. Approving is still `edit`, so the widening
+ * is on which grant names the capability, not on what the capability is.
+ */
+function requireResetAccess(level: 'view' | 'edit'): MiddlewareHandler {
+  return async (c, next) => {
+    const ctx = c as Parameters<typeof checkFeaturePermission>[0];
+    if (await checkFeaturePermission(ctx, 'admin', 'resets', level)) return next();
+    if (await checkFeaturePermission(ctx, 'hr', 'resets', level)) return next();
+    return c.json({ error: `Forbidden: cannot ${level} password resets` }, 403);
+  };
+}
+
+adminRouter.get('/pending-resets', requireResetAccess('view'), async (c) => {
   try {
     const db = getDb(c.env);
     const actor = c.get('user')!!;
@@ -369,7 +453,7 @@ adminRouter.get('/pending-resets', requireFeatureAccess('admin', 'resets', 'view
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/pending-resets/:tokenId/approve', requireFeatureAccess('admin', 'resets', 'edit'), async (c) => {
+adminRouter.post('/pending-resets/:tokenId/approve', requireResetAccess('edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const tokenId = c.req.param('tokenId')!;
@@ -384,6 +468,32 @@ adminRouter.post('/pending-resets/:tokenId/approve', requireFeatureAccess('admin
     if (new Date(resetRecord.expiresAt) < new Date()) {
       await db.update(schema.passwordResetTokens).set({ status: 'expired' }).where(eq(schema.passwordResetTokens.id, tokenId));
       return badRequest(c, 'Token has expired');
+    }
+
+    /**
+     * A superadmin's reset is not approvable here at all.
+     *
+     * The branch below treats admin/users edit as blanket authority and skips the
+     * ownership check. That is reasonable for a staff account and is not reasonable
+     * for the account that bypasses every permission in the system.
+     *
+     * Third of three checks on one chain — the others are the `recoveryEmail` write
+     * in PATCH /users/:id and the guard in sendResetApprovedEmail. This is the
+     * earliest of the three: refusing here means no token is minted, so there is
+     * nothing to deliver even if the other two are later refactored away.
+     */
+    const subject = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, resetRecord.userId),
+      columns: { isSuperadmin: true },
+    });
+    if (subject?.isSuperadmin) {
+      await logAudit(c.env, actor.id, 'RESET', 'password_reset_tokens', tokenId, {
+        action: 'reset_approval_refused', reason: 'target is a superadmin',
+      });
+      return c.json({
+        success: false,
+        error: "A superadmin's password is reset by direct database access, never through this flow.",
+      }, 403);
     }
 
     // This previously read user_app_access, a table with no rows in production,
@@ -407,11 +517,34 @@ adminRouter.post('/pending-resets/:tokenId/approve', requireFeatureAccess('admin
       .where(eq(schema.passwordResetTokens.id, tokenId));
 
     await logAudit(c.env, actor.id, 'UPDATE', 'password_reset_tokens', tokenId, { action: 'reset_approved' });
-    return ok(c, { tokenId, approved: true });
+
+    // Mint the token and mail the link, and AWAIT it rather than using waitUntil:
+    // the approver is the only person who can fix the common failure, which is
+    // that the user has no recovery address on file. Telling them so in this
+    // response is the difference between an instruction and a mystery.
+    //
+    // The approval itself stands either way. A reset that is approved but unsent
+    // can be re-sent; one that is refused because the email failed would have to
+    // be requested again by a person who is already locked out.
+    const mail = await sendResetApprovedEmail(c.env, tokenId);
+    if (!mail.sent) {
+      await logAudit(c.env, actor.id, 'UPDATE', 'password_reset_tokens', tokenId, {
+        action: 'reset_email_failed', reason: mail.reason,
+      });
+    }
+
+    return ok(c, {
+      tokenId,
+      approved: true,
+      emailSent: mail.sent,
+      // Named `emailProblem` rather than `error`: the approval succeeded, and a
+      // client that treats this as a failed request would be wrong.
+      emailProblem: mail.sent ? null : mail.reason,
+    });
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.post('/pending-resets/:tokenId/reject', requireFeatureAccess('admin', 'resets', 'edit'), async (c) => {
+adminRouter.post('/pending-resets/:tokenId/reject', requireResetAccess('edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;
     const tokenId = c.req.param('tokenId')!;

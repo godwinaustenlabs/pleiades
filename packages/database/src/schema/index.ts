@@ -9,4 +9,5 @@ export * from './acquisition';
 export * from './unified_tasks';
 export * from './crm';
 export * from './notifications';
+export * from './email';
 export * from './relations';

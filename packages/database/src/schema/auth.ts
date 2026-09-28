@@ -41,6 +41,16 @@ export const usersLogins = sqliteTable('users_logins', {
   lockedUntil: integer('locked_until', { mode: 'timestamp' }),           // null = not locked
   createdByUserId: text('created_by_user_id'),  // FK to usersLogins.id (HR Mgr who provisioned)
   passwordUpdatedAt: integer('password_updated_at', { mode: 'timestamp' }),
+  /**
+   * Where password-reset mail is sent. Deliberately NOT `email` above.
+   *
+   * `email` is the login identifier and, once the apex MX moves to Cloudflare,
+   * also a mailbox inside Pleiades — so sending a reset there would mean telling
+   * a locked-out person to read a mailbox they cannot log in to reach. This must
+   * be an address off the company domain; src/routes/auth.ts refuses to send a
+   * reset when it is unset rather than falling back and mailing the void.
+   */
+  recoveryEmail: text('recovery_email'),
 });
 
 export const apiKeys = sqliteTable('api_keys', {

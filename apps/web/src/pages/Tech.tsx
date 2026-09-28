@@ -3,6 +3,7 @@ import {
   Code,
   Layout, AlertCircle, Rocket, Loader2, Lock,
   Server, GitMerge, List
+, Mail
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -11,11 +12,12 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
+import MailboxTab from '../components/MailboxTab';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
 
-type Tab = 'projects' | 'environments' | 'releases' | 'issues' | 'tasks' | 'deployments';
+type Tab = 'projects' | 'environments' | 'releases' | 'issues' | 'tasks' | 'deployments' | 'email';
 
 function Tech() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -90,6 +92,7 @@ function Tech() {
       { id: 'issues', label: 'Issues', icon: AlertCircle, feature: 'issues' },
       { id: 'deployments', label: 'Deployments', icon: Rocket, feature: 'deployments' },
       { id: 'tasks', label: 'Tasks', icon: List, feature: 'tasks' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -343,7 +346,7 @@ function Tech() {
       <ModuleTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-{tab !== 'tasks' && (
+{tab !== 'tasks' && tab !== 'email' && (
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Engineering'}
             entityName={tab.slice(0, -1)}
@@ -360,6 +363,13 @@ function Tech() {
             canAdd={p.canEdit}
             canEdit={p.canEdit}
             canDelete={p.canDelete}
+          />
+        )}
+        {tab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'app', app: 'tech' }}
+            heading="Tech mail"
+            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
           />
         )}
         {tab === 'tasks' && <TaskBoard department="Tech" canEdit={getPerm('tasks').canEdit} />}

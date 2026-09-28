@@ -14,8 +14,26 @@ export type PermissionLevel = 'view' | 'edit' | 'delete';
  * APP_FEATURES defines the canonical list of features for each app.
  * This is the single source of truth used by the permissions UI and backend.
  */
+/**
+ * Mail is a feature of every department, not an app of its own.
+ *
+ * `<app>/email` is what the Access page calls "who may use this department's
+ * mail": view reads that app's mailboxes, edit sends from them, delete archives
+ * and permits a bulk send. `<app>/email_templates` is separate because writing
+ * the message everyone receives is a different act from sending one.
+ *
+ * A PERSONAL mailbox appears in none of this. It is reachable by the person it
+ * belongs to and nobody else, decided by `owner_user_id` in
+ * src/email/mailboxes.ts rather than by a grant — the same reasoning that makes
+ * `dashboard` app-gated, since ownership already answers the question. Adding a
+ * `dashboard/email` feature would imply somebody could be granted access to
+ * another person's private mail, which is exactly what must not be grantable.
+ *
+ * `core` has no mail: it is shared reference data (employees, labs, clients),
+ * not a department anyone writes to.
+ */
 export const APP_FEATURES: Record<string, string[]> = {
-  hr: ['employees', 'appointments', 'payroll', 'resets', 'tasks'],
+  hr: ['employees', 'appointments', 'payroll', 'resets', 'tasks', 'email', 'email_templates'],
   // `ledgers`, `journals` and `trial_balance` are gated by the Finance UI but
   // were missing here, so getPerm() always returned false and those tabs were
   // superadmin-only by accident. They are real features; declare them.
@@ -31,6 +49,7 @@ export const APP_FEATURES: Record<string, string[]> = {
     // quotes are different levels of trust, and collapsing them would mean
     // anyone who can ask it a question can also change what the law says.
     'agent', 'agent_config',
+    'email', 'email_templates',
   ],
   // legal, tech, acquisition and ops were gated only by requireAppAccess, so a
   // role holding just `<app>/tasks` could read and write everything else in the
@@ -40,18 +59,23 @@ export const APP_FEATURES: Record<string, string[]> = {
   // made getPerm() return false and hid those tabs from everyone but a
   // superadmin. Migration 0024 grants each new feature to whoever already holds
   // the app, so no role gains or loses access.
-  legal: ['agreements', 'templates', 'compliance', 'ip', 'tasks', 'parties', 'requests', 'sops'],
-  tech: ['projects', 'issues', 'deployments', 'tasks', 'epics', 'stories', 'releases', 'environments'],
+  legal: ['agreements', 'templates', 'compliance', 'ip', 'tasks', 'parties', 'requests', 'sops', 'email', 'email_templates'],
+  tech: ['projects', 'issues', 'deployments', 'tasks', 'epics', 'stories', 'releases', 'environments', 'email', 'email_templates'],
   acquisition: [
     'campaigns', 'contacts', 'content', 'sprints', 'tasks',
     'funnels', 'outreach', 'activity', 'deals',
+    'email', 'email_templates',
   ],
-  ops: ['labs', 'committees', 'clients', 'docs', 'tasks', 'reports'],
-  crm: ['tickets', 'documents', 'planner', 'tasks'],
+  ops: ['labs', 'committees', 'clients', 'docs', 'tasks', 'reports', 'email', 'email_templates'],
+  crm: ['tickets', 'documents', 'planner', 'tasks', 'email', 'email_templates'],
   dashboard: ['overview', 'notes', 'tasks'],
   core: ['employees', 'labs', 'clients', 'committees', 'docs'],
   // `roles` was an admin feature until 0025 removed roles from the model.
-  admin: ['permissions', 'users', 'api_keys', 'audit_logs', 'resets'],
+  // `mailboxes` creates and assigns them; `email_config` edits the system
+  // templates every department's automated mail renders through. Split for the
+  // same reason finance/agent and finance/agent_config are: whoever can send a
+  // message should not thereby be able to change the address it comes from.
+  admin: ['permissions', 'users', 'api_keys', 'audit_logs', 'resets', 'mailboxes', 'email_config'],
 };
 
 /** The role whose grants a committee member inherits for CRM. */

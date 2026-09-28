@@ -38,7 +38,15 @@
 	"triggers": {
 		"crons": [
 			"0 6 * * *",
-			"0 17 * * *"
+			"0 17 * * *",
+			// The email outbox sweep. An enqueue already sends immediately via
+			// waitUntil, so this is only the reaper: retries with backoff, plus
+			// sends whose scheduled_for has arrived.
+			//
+			// scheduled() in src/index.ts MUST branch on event.cron. It used to run
+			// the accountant's daily check for every cron event, so adding this
+			// trigger without that guard would post an agent turn every 5 minutes.
+			"*/5 * * * *"
 		]
 	},
 	// The Worker bound to itself. Agent tools call back into this Worker's own
@@ -112,6 +120,21 @@
 		{
 			"binding": "VECTORIZE",
 			"index_name": "pleiades-compliance"
+		}
+	],
+	// Cloudflare Email Service, outbound half. There is no resource to
+	// provision and no API key, which is the reason this is the transport:
+	// the binding IS the integration, so Pleiades stays a five-secret Worker
+	// and no external quota can stall a payroll notification.
+	//
+	// Inbound does not appear here. It arrives through the email() handler on
+	// the default export in src/index.ts, aimed at this Worker by a routing
+	// rule that only exists in the dashboard — so wrangler.jsonc cannot show
+	// you that mail is being received. src/email/inbound.ts is where to look.
+	// Read by: src/email/transport.ts
+	"send_email": [
+		{
+			"name": "EMAIL"
 		}
 	]
 }

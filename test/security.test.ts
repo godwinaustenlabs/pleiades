@@ -457,6 +457,23 @@ describe('asset download authorization', () => {
 		expect(res.status).toBe(403);
 	});
 
+	// The Acquisition department's two documents were uploaded under
+	// `new_record/` — another prefix taken from the form's title, and the one
+	// the legacy list above missed. No rule covered it, so the clause below
+	// ("refuses a prefix no rule covers") refused every attempt to open them and
+	// the Documents tab could not display a file that was sitting in the bucket
+	// intact. The objects were moved onto the canonical prefix; these two cases
+	// keep that prefix both readable and gated.
+	it('serves an acquisition document to a holder of acquisition/content', async () => {
+		const res = await get('mkt', 'acquisition-docs/scope.pdf');
+		expect(res.status).not.toBe(403);
+	});
+
+	it('refuses an acquisition document to a role with no acquisition grant', async () => {
+		const res = await get('crm', 'acquisition-docs/scope.pdf');
+		expect(res.status).toBe(403);
+	});
+
 	it('finds an object whose name contains a space', async () => {
 		// Upload decodes the key before storing, so a space is stored as a space.
 		// Download did not decode, so it asked R2 for the literal "%20" and every

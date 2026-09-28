@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Wallet, Receipt, CreditCard, ArrowUpRight,
   FileText, Loader2, Lock, Book, Calculator, Package
+, Mail
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -10,6 +11,7 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
+import MailboxTab from '../components/MailboxTab';
 import JournalEntryForm from '../components/JournalEntryForm';
 import DocumentsTab from '../components/DocumentsTab';
 import AccountantPanel from '../components/AccountantPanel';
@@ -20,7 +22,7 @@ import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 
 
-type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'statements' | 'agent';
+type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'statements' | 'agent' | 'email';
 
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -178,6 +180,7 @@ function Finance() {
       { id: 'assets', label: 'Assets', icon: Package, feature: 'assets' },
       { id: 'statements', label: 'Statements', icon: FileText, feature: 'docs' },
       { id: 'agent', label: 'Accountant', icon: Calculator, feature: 'agent' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -395,7 +398,7 @@ function Finance() {
             record lists; drawing it for these produced an empty accounts table,
             a "0 agens available" count and an "Add agen" button above the
             accountant, because the header is derived from the tab id. */}
-        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && tab !== 'agent' && tab !== 'assets' && tab !== 'statements' && (
+        {tab !== 'tasks' && tab !== 'trial-balance' && tab !== 'ledger-view' && tab !== 'docs' && tab !== 'agent' && tab !== 'assets' && tab !== 'statements' && tab !== 'email' && (
           <div className="space-y-4">
             {tab === 'journals' && (
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
@@ -579,6 +582,13 @@ function Finance() {
               </div>
             </div>
           </div>
+        )}
+        {tab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'app', app: 'finance' }}
+            heading="Finance mail"
+            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+          />
         )}
         {tab === 'docs' && (
           <DocumentsTab

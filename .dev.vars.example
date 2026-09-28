@@ -33,3 +33,16 @@ SLACK_BOT_OAUTH_TOKEN=xoxb-<Slack app > OAuth & Permissions>
 # AI sees it, so the agents fall back to the direct binding and log that they did.
 # Read by: src/utils/model.ts
 CF_AIG_TOKEN=<Cloudflare dashboard > AI Gateway > token>
+
+# Resend API key — mail to anyone OUTSIDE the company.
+#
+# The sixth secret. It exists because this account is on the Workers Free plan,
+# where the EMAIL binding reaches verified destination addresses only: free for
+# staff, refused for every prospect and client. Resend carries those.
+#
+# Obtain: resend.com -> API Keys -> Create. Verify a SUBDOMAIN there
+# (outreach.godwinausten.org), never the apex — the apex SPF is a hard fail that
+# GoDaddy's mailboxes depend on and must not be edited.
+#
+# Unset, outreach mail is logged rather than sent, and says so in the logs.
+RESEND_API_KEY=

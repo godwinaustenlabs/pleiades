@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (18 files, 349 tests)
+npm test          # vitest — see test/ (22 files, 511 tests)
 npm run test:watch
 ```
 
@@ -481,10 +481,218 @@ never computes access itself — it renders what the server says the role grants
 
 Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_token` for the client portal, `theme` for the dark-mode class toggled on `<html>` in `App.tsx`. Tailwind v4 via PostCSS; dark mode is class-based.
 
+### Mail (`src/email`)
+
+Pleiades sends and stores email. Outbound goes through Cloudflare Email Service's
+`send_email` binding (`EMAIL`); inbound arrives at the `email()` handler on the
+default export in `src/index.ts`. **Neither product stores anything** — Email
+Routing forwards or hands the Worker a raw message and keeps no copy — so
+`email_messages` plus R2 *are* the mail store, and the consequences of that
+(spam filtering, durability, no IMAP) are Pleiades' problem now.
+
+A mailbox is one row in `mailboxes`, discriminated by `kind`:
+
+| `kind` | means | requires |
+|---|---|---|
+| `personal` | one staff member's own mail | `owner_user_id` |
+| `app` | a department's mail | `app_name` |
+| `alias` | delivers into another mailbox, **one hop only** | `forwards_to_mailbox_id` |
+| `catchall` | anything unmatched (apex-only in Cloudflare) | — |
+| `system` | `no-reply@`, machine identity, never listed in a UI | — |
+
+There is no separate senders table: **a mailbox is a sending identity.** The
+`From` line on an outbound message is a `mailboxes` row the caller was authorised
+to send from, and is never read from a request body — the same discipline
+`company_documents.department` follows.
+
+**Access has one implementation, `canUseMailbox` in `src/email/mailboxes.ts`, and
+the order of its branches is the security property:**
+
+1. A `personal` mailbox is reached by the person it belongs to. Ownership *is*
+   the permission — there is no `dashboard/email` feature, deliberately, because
+   access to somebody else's private mail must not be grantable.
+2. **If any `mailbox_grants` row exists for a mailbox, those rows are the whole
+   answer and the app grant stops applying.** That is what lets `payroll@` be
+   narrower than `hr/email`, and it widens as well as narrows. Not an OR with the
+   app grant — `test/email-rbac.test.ts` fails if the two are ever combined.
+3. Otherwise an `app` mailbox is reached through `<app>/email`, an ordinary
+   feature on the Access page.
+
+`<app>/email` is declared for `hr`, `finance`, `legal`, `tech`, `acquisition`,
+`ops` and `crm` (not `core` — shared reference data is not a department anyone
+writes to). `view` reads, `edit` sends, `delete` archives and permits a bulk send
+(more than `BULK_RECIPIENT_THRESHOLD` recipients in one action — a third level
+rather than a fourth feature). `<app>/email_templates` is separate because
+writing the message everybody receives is not the same act as sending one, and
+migration `0039` grants it **view-only**, so authoring is deliberate.
+`admin/mailboxes` creates and assigns mailboxes and confers **no** ability to
+read one; `admin/email_config` edits the `scope='system'` templates.
+
+**The outbox is a row before it is an attempt.** `enqueue()` writes
+`email_messages` + `email_delivery` (`status='queued'`), then the caller does
+`ctx.waitUntil(drainOne(...))`; the `*/5 * * * *` cron is only the reaper for
+retries, evicted sends and `scheduled_for`. `drainOne` claims with a conditional
+`UPDATE ... WHERE status IN ('queued','failed')` and proceeds only on
+`.meta.changes === 1`, which is what stops a `waitUntil` and a cron tick sending
+the same row twice. **That claim is a lease**, not a flag: it stamps an expiry into
+`next_attempt_at`, because `status='sending'` was otherwise a one-way door — a
+Worker evicted between the claim and the result left the row there permanently,
+invisible to the sweep, and the message was never sent and never reported. On a
+`failed` row a null `next_attempt_at` means *given up*, and the sweep's three
+eligibility cases are spelled out separately for that reason: as one loose OR it
+read null as "due now" and retried terminal failures until they burned all five
+attempts. `email_delivery.idempotency_key` is **UNIQUE in the
+database** — a transactional send keys on `<event>:<entity>:<recipient>`, so
+`PATCH /api/tasks/:id` rewriting every assignment row on every edit cannot
+re-mail the team. `suppressed` is a distinct status from `failed`: Cloudflare
+maintains the bounce/complaint list itself and retrying against it is how a
+domain's reputation gets worse, which is also why there is no suppression table
+here.
+
+Automated mail is catalogued in `EMAIL_EVENTS` (`src/email/events.ts`) and
+rendered from a `scope='system'` template. `transactional` events ignore
+`email_prefs`; `notification` ones can be switched off, and absence of a row
+means enabled. Templates are `{{name}}` substitution only — values are
+HTML-escaped into the HTML part and raw into the text part, a missing **required**
+variable refuses the send naming every gap, and an **undeclared** `{{x}}` is
+rejected when the template is *saved* rather than when it is sent.
+
+Templates are edited in place, unlike `compliance_config`, and the asymmetry is
+deliberate: a rate must not be rewritten because past payroll used the old one,
+whereas a rendered subject and body are snapshotted onto the message at send
+time, so an email's history is already immutable.
+
+`transport.ts` is the only place a message leaves the Worker, and **there are two
+providers, because this account is on the Workers Free plan.** Cloudflare Email
+Sending splits on exactly that line: sending to a *verified destination address*
+is free on every plan and uncapped, sending to an arbitrary recipient needs
+Workers Paid. So:
+
+| service | reaches | limit |
+|---|---|---|
+| `env.EMAIL` (Cloudflare) | verified destination addresses only — staff | none, free |
+| Resend | anybody | **90/day across the whole account** |
+
+`mailboxes.transport` picks between them and takes three values. **`auto` is the
+default and decides per message: Cloudflare first, Resend when it refuses.** The
+alternative was a fixed choice per mailbox, and that is wrong half the time —
+`hr@` pinned to Resend spends the day's allowance telling staff their tasks
+changed, and pinned to Cloudflare it cannot write to a candidate at all. A
+department mailbox has both kinds of recipient.
+
+The fallback triggers on any refusal **except** two, which are facts about the
+message rather than about the plan: `E_RECIPIENT_SUPPRESSED` (Cloudflare has the
+address on its bounce/complaint list — sending it via Resend anyway is how a
+sender reaches a blocklist) and `E_CONTENT_TOO_LARGE` (Resend's ceiling is no
+higher). Which service actually carried a message is recorded on
+`email_delivery.transport`, so a fallback is visible rather than silent — and that
+column, not the mailbox configuration, is what the daily quota is counted from.
+Under `auto` the two differ by definition, and counting the configuration would
+charge the quota for every internal message the free path carried for nothing.
+
+`cloudflare` and `resend` remain as explicit pins, and **nothing currently uses
+them** — every send is `auto`, including the password-reset link. That is a
+reversal arrived at twice over, and the history matters because the obvious design
+is the broken one:
+
+`mbx_system` was pinned to `cloudflare` so a reset notice could not traverse a
+third party. Production refused the first send with `E_RECIPIENT_NOT_ALLOWED` — on
+the Free plan the Cloudflare path reaches only *verified destination addresses*,
+which are the external addresses Email Routing forwards TO, so an own-domain
+recipient cannot be one, and a pinned mailbox cannot fall back. Moving the pin to
+the message (`sensitive` events only) fixed the collateral damage and left the
+reset link itself undeliverable, because Email Sending is not verified on this
+account at all: `cf-bounce._domainkey` publishes an empty `p=`. A password reset
+that does not arrive is not a safer password reset.
+
+So the link goes through Resend, and the trade is stated rather than hidden:
+Resend sees a single-use link for up to sixty minutes. `sensitive` still governs
+**redaction**, which was always the part worth having. To restore the pin, verify
+Email Sending, confirm `cf-bounce._domainkey` has a non-empty key, and set
+`transport` in `dispatch` back to `spec.sensitive ? 'cloudflare' : 'auto'`.
+
+Why no list of verified destinations here: Cloudflare holds it, and mirroring it
+would be a second copy of somebody else's truth that drifts the first time an
+address is added on one side only. Trying and falling back needs no list.
+
+**Resend sends from any address at a verified domain** with no per-address setup,
+and its SPF and MX sit on a `send.` subdomain — the same shape as Cloudflare's
+`cf-bounce` — so the apex SPF that GoDaddy's mailboxes depend on is never edited
+and the two DKIM selectors (`resend._domainkey` vs `cf-bounce`) do not collide.
+Verify the apex with Resend; a subdomain is not required.
+
+Both paths fall back to a console transport with a warning when their binding or
+key is absent, so a misconfigured deploy is "mail is not going out, loudly in the
+logs" rather than a throw inside whatever was sending. **Miniflare simulates
+`send_email`**, so the suite drives the real binding on the Cloudflare path.
+
+Moving to Workers Paid collapses all of this: pin every mailbox to `cloudflare`,
+drop the sixth secret, and the account cap stops applying.
+
+**Password reset depends on mail, so it must not depend on this mail.**
+`users_logins.recovery_email` is where a reset link goes, validated to be off the
+company domain — once the apex MX moves to Cloudflare, sending a reset to
+`users_logins.email` tells a locked-out person to read a mailbox they cannot log
+in to reach. The flow in `src/routes/auth.ts` already existed and was sound
+(hashed single-use token, HR approval, non-enumerating response); what it lacked
+was delivery, and the token is now minted **at approval** rather than at request
+so an unauthenticated stranger cannot cause mail to reach any staff address.
+Nothing ever emails a password.
+
+**Inbound** is `src/email/inbound.ts`, plus `mime.ts` (a reader, not a MIME
+library — nothing in the runtime parses MIME) and `spam.ts`. Three rules, and all
+three exist because Email Routing keeps no copy of a message, so whatever the
+handler fails to write is gone:
+
+1. **It never throws.** A thrown `email()` bounces or loses real mail.
+2. **The raw bytes go to R2 before anything is parsed.** Parsing is the step most
+   likely to be wrong; the original is the part that cannot be rebuilt.
+3. **Nothing is ever rejected.** `setReject()` is never called, unknown addresses
+   go to the catch-all rather than bouncing (a bounce tells a stranger which
+   addresses exist), and suspected spam is filed in the `spam` folder rather than
+   dropped — a false positive on a client's reply costs more than a messy folder.
+
+Threading matches `In-Reply-To`/`References` against
+`email_delivery.provider_message_id`, then falls back to the most recent thread in
+that mailbox from the same counterparty within 30 days, recorded in `matched_by`
+rather than hidden. Per-message VERP reply addresses would be exact and are not
+available: Cloudflare's subdomain routing takes **literal recipient addresses
+only**, so there is no `r+<id>@` to route.
+
+**The Workers Free plan allows 10ms of CPU per invocation**, and MIME parsing is
+real CPU where D1 and R2 calls are not. A message over `MAX_PARSE_BYTES` (512 KiB)
+gets its headers read and a placeholder body, with the raw file linked — being
+killed mid-parse would leave the message in R2 with no row behind it, received and
+invisible, which is the worst outcome available. Raise that ceiling on Workers
+Paid, where the limit is 30s.
+
+**Spam filtering is the weakest part of this and should be treated as such** —
+Cloudflare does phishing detection, not spam filtering. The DMARC verdict does
+most of the work because it is the only signal that is not a guess; the heaviest
+rule is that a From on one of our own domains which did not pass DMARC is a
+forgery, which is the case that makes invoice redirection work.
+
+R2 holds raw MIME under `email-raw/` and attachments under `email-att/`, written
+directly with `env.CRM_BUCKET.put()` and **not** added to
+`ALLOWED_UPLOAD_PREFIXES` — a caller who could write there could forge received
+mail. Their read rule in `src/routes/assets.ts` is the first **dynamic** one:
+a stored message is readable by whoever may read the mailbox it arrived in, which
+is a per-row question, so it is resolved by looking the object up and delegating
+to `canUseMailbox`. A static rule listing every app's `email` feature would hand
+anyone with `hr/email` the Legal mailbox's attachments.
+
+The UI is one component, `apps/web/src/components/MailboxTab.tsx`, mounted per
+scope: `{ kind: 'app', app: '<name>' }` in each module page and
+`{ kind: 'personal' }` in the workspace. Mailboxes are created and assigned in
+`components/MailboxAdmin.tsx` on the Access page. **HTML from an inbound message
+is never rendered** — `body_text` with the raw source as a download.
+
 ### Bindings and secrets
 
 `wrangler.jsonc` defines `DB` (D1 `pleiades-db`), `ASSETS`, `SELF` (this Worker,
-bound to itself), `AI`, `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
+bound to itself), `AI`, `EMAIL` (Cloudflare Email Service, outbound — no resource
+to provision and no API key, but on the Free plan it reaches verified destination
+addresses only, which is why there is a sixth secret), `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
 `pleiades-docs`, used by `/api/assets` for uploads/downloads),
 `COMPLIANCE_BUCKET` (R2 `pleiades-compliance-docs`), and the two Durable Object
 bindings `SLACK_AGENT` / `ACCOUNTANT_AGENT` (classes `SlackAgent` /
@@ -505,7 +713,7 @@ and `journal.ts` depend on them, and they exist only on the live index; nothing
 in this repo recreates them. If the index is ever rebuilt, recreate all three or
 filtering silently stops narrowing.
 
-There are exactly **five secrets**, and the same five exist both in production
+There are exactly **six secrets**, and the same six exist both in production
 (`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
 step — a secret in one and not the other means local and deployed behaviour
 differ silently:
@@ -517,8 +725,9 @@ differ silently:
 | `SLACK_SIGNING_SECRET` | Verifies Slack's HMAC over the raw body | `agents/slack/lib/slack.ts` |
 | `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack/index.ts`, `utils/slack.ts` |
 | `CF_AIG_TOKEN` | AI Gateway auth (`cf-aig-authorization`); both gateways require it | `utils/model.ts` |
+| `RESEND_API_KEY` | Mail to anyone outside the company. The sixth, and the plan is why — see Mail | `email/transport.ts` |
 
-`.dev.vars.example` is the committed template listing all five with a note on
+`.dev.vars.example` is the committed template listing all six with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
 
 Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`:
@@ -542,6 +751,12 @@ secret surface as "every agent tool call 401s" instead of "the Worker is
 misconfigured".
 
 ## Gotchas
+
+- **`scheduled()` in `src/index.ts` must branch on `event.cron`.** It runs three
+  crons now — `0 6`, `0 17` and `*/5` — and the accountant's daily check used to
+  run for *every* cron event, which was harmless while the only two were twelve
+  hours apart. Adding the email sweep without that guard posts an agent turn 288
+  times a day. Any new trigger needs its own branch.
 
 - **Match the indentation of the file you are editing**, and note that
   `apps/web/src/components/*` is 2-space while `apps/web/src/lib/*` is tabs.

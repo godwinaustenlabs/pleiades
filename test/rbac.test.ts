@@ -29,6 +29,11 @@ const EXPECTED: Record<FixtureUser, string[]> = {
 	// Holds only <app>/tasks. The module data routes are gated on their own
 	// features now, so none of these paths are reachable for it.
 	tasksOnly: [],
+	// Holds hr/email and admin/mailboxes. `hr/email` gets it through
+	// requireAppAccess('hr'), but every route below is gated on its own feature,
+	// so none of them open. Listed rather than omitted: this table is iterated by
+	// its own keys, so a user left out of it is a user silently untested.
+	mailAdmin: [],
 };
 
 async function isAuthorized(user: FixtureUser, path: string): Promise<boolean> {

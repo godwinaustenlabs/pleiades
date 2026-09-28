@@ -3,13 +3,14 @@ import {
   User, CheckCircle2, Clock, AlertCircle, TrendingUp, 
   BookOpen, Calendar as CalendarIcon, 
   ChevronRight, Plus, StickyNote, Star, Trash2, X,
-  Home, Camera
+  Home, Camera, Mail
 } from 'lucide-react';
 import TaskBoard from '../components/TaskBoard';
 import CalendarView from '../components/CalendarView';
 import ProfileModal from '../components/ProfileModal';
 import NotificationCenter from '../components/NotificationCenter';
 import ModuleTabs from '../components/ModuleTabs';
+import MailboxTab from '../components/MailboxTab';
 import UserAvatar from '../components/UserAvatar';
 import EntityForm from '../components/EntityForm';
 import Login from './Login';
@@ -20,7 +21,7 @@ import { errorMessage } from '../lib/errors';
 
 
 export default function UserDashboard() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes' | 'email'>('overview');
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
@@ -29,6 +30,11 @@ export default function UserDashboard() {
     { id: 'committees', label: 'Committees', icon: BookOpen },
     { id: 'appointments', label: 'Appointments', icon: CalendarIcon },
     { id: 'notes', label: 'Personal Notes', icon: StickyNote },
+    // Personal mail. Unconditional, unlike a department's Email tab: a personal
+    // mailbox is reached by owning it rather than by a grant, so there is no
+    // feature to gate this on. MailboxTab renders its own empty state for
+    // somebody who has not been assigned one.
+    { id: 'email', label: 'Email', icon: Mail },
   ] as const;
 
   const [data, setData] = useState<any>(null);
@@ -601,6 +607,13 @@ export default function UserDashboard() {
         )}
 
         {/* Notes Tab */}
+        {activeTab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'personal' }}
+            heading="Your mail"
+            description="Only you can read this mailbox. It is reached by owning it, not by a permission anyone can be granted."
+          />
+        )}
         {activeTab === 'notes' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between mb-8">

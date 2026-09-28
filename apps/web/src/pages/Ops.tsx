@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Settings,
   FlaskConical, Users, Briefcase, FileText, Shield, X, Check, Loader2, Lock, Key, AlertCircle, Trash2, BarChart2
+, Mail
 } from 'lucide-react';
 import Login from './Login';
 import GAGrid from '../components/GAGrid';
@@ -10,12 +11,13 @@ import ProfileModal from '../components/ProfileModal';
 import TaskBoard from '../components/TaskBoard';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
+import MailboxTab from '../components/MailboxTab';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 import { errorMessage } from '../lib/errors';
 
 
-type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'reports' | 'tasks';
+type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'reports' | 'tasks' | 'email';
 
 function Ops() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
@@ -109,6 +111,7 @@ function Ops() {
       { id: 'docs', label: 'Documents', icon: FileText, feature: 'documents' },
       { id: 'reports', label: 'Monthly Reports', icon: BarChart2, feature: 'reports' },
       { id: 'tasks', label: 'Tasks', icon: Settings, feature: 'tasks' },
+      { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
@@ -194,7 +197,7 @@ function Ops() {
       <ModuleTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 md:space-y-8 animate-in slide-in-from-bottom-2 duration-500">
-{tab !== 'tasks' && (
+{tab !== 'tasks' && tab !== 'email' && (
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Operations'}
             entityName={tab.slice(0, -1)}
@@ -327,6 +330,13 @@ function Ops() {
           </div>
         )}
 
+        {tab === 'email' && (
+          <MailboxTab
+            scope={{ kind: 'app', app: 'ops' }}
+            heading="OPS mail"
+            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+          />
+        )}
         {tab === 'tasks' && <TaskBoard department="Ops" canEdit={getPerm('tasks').canEdit} />}
       </main>
 
