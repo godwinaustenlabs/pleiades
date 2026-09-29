@@ -268,3 +268,54 @@ Two things this does **not** defend against, by nature rather than by omission:
   mail capability, not an escalation. Paste is still sanitised — the draft is stored
   and we render our own sent mail — but nothing tries to stop a colleague writing
   whatever HTML they like into a message they were already permitted to send.
+
+### The Resend delivery webhook (`POST /api/webhooks/resend`)
+
+**This is the only unauthenticated route in the system that writes to the database.**
+There is no session, no user and no grant behind it; the Svix signature over the request
+body is the entire authorization. What it can change — whether a message reads as
+delivered or bounced — is small but it is exactly the kind of record somebody would want
+to falsify, either to hide that a message never arrived or to claim one did not.
+
+Everything about it fails closed:
+
+- **An unset `RESEND_WEBHOOK_SECRET` refuses every request.** The tempting graceful
+  degradation, accepting unsigned events with a warning in the logs, would let anyone on
+  the internet rewrite delivery status. "Trust everybody when misconfigured" is never
+  the right failure mode for an authorization check, and it is worse than having no
+  webhook at all.
+- **The signature is verified over the raw bytes before any parse.** Parsing and
+  re-serialising changes the bytes and fails every genuine signature; `test/email-webhook.test.ts`
+  covers a body altered after signing, which is how a captured webhook would be replayed
+  against a different `email_id`.
+- **Timestamps outside five minutes are refused**, in both directions, so a captured
+  request has a short useful life.
+- **Comparison is constant-time and every candidate is compared** — the loop is not
+  broken out of on a match — so neither the answer nor which signature matched leaks
+  through timing. Multiple `v1,` entries are accepted because that is how Svix rotates a
+  secret.
+- **It lives at its own top-level path**, not under `/api/email`. Every other router
+  begins with `authMiddleware`; hanging an unauthenticated route inside one would mean
+  either an exemption in a router whose premise is that everything in it is
+  authenticated, or a path that only works because of Hono's matching order.
+- **It returns no data.** A webhook endpoint that answers questions is an unauthenticated
+  read, and rejections carry a bare `ok: false` — the reasons (bad signature, stale
+  timestamp, missing secret) would otherwise be a map for whoever is probing it.
+
+Two correctness properties that are also security properties:
+
+- **Status only ever moves forward** (`STATUS_RANK`). Webhooks are unordered and are
+  redelivered on any non-2xx, so a replayed `delivered` arriving after a `bounced` is
+  ordinary rather than exotic, and clearing a bounce would restore exactly the false
+  confidence this endpoint exists to remove. `complained` outranks everything, because
+  continuing to mail an address that reported you is how a sending domain is destroyed,
+  and that state must not be quietly cleared by anything.
+- **`email.opened` and `email.clicked` are dropped without being stored.** They are read
+  receipts, deliberately excluded from this system, and the surest way for a feature not
+  to leak is for the data never to exist. It is the same tracking the reader refuses on
+  the way in by blocking remote images.
+
+One accepted limitation, stated so it is not mistaken for a bug: a verified event naming
+a message with no delivery row answers **200**, not an error. The message may have been
+pruned by retention or sent by another system on the same domain, and a retry loop would
+never make it exist.

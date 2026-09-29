@@ -21,6 +21,7 @@ import permissionsRouter from './routes/permissions';
 import assetsRouter from './routes/assets';
 import notificationsRouter from './routes/notifications';
 import emailRouter from './routes/email';
+import { webhooksRouter } from './routes/webhooks';
 import calendarRouter from './routes/calendar';
 import messagesRouter from './routes/messages';
 import slackAgentRouter from './agents/slack';
@@ -146,6 +147,17 @@ export type Env = {
    */
   RESEND_API_KEY?: string;
   /**
+   * Svix signing secret for Resend's delivery webhook (`whsec_...`), from the webhook's
+   * page in the Resend dashboard.
+   *
+   * Unlike `RESEND_API_KEY`, an unset value here does NOT degrade gracefully: the route
+   * refuses every request. It is the only authorization an unauthenticated write has, and
+   * a signature check that accepts anything when misconfigured would let a stranger mark
+   * a bounced message delivered.
+   * Read by: src/routes/webhooks.ts, src/email/webhook.ts
+   */
+  RESEND_WEBHOOK_SECRET?: string;
+  /**
    * AI Gateway auth token. Both gateways have Authenticated Gateway enabled,
    * so it is sent as `cf-aig-authorization` on every model call. Unset, the
    * agents log a warning and call the AI binding directly.
@@ -225,6 +237,11 @@ app.route('/api/notifications', notificationsRouter);
 // department: `<app>/email` gates each route, because mail is a feature of
 // every department and an app of none.
 app.route('/api/email', emailRouter);
+/**
+ * Signature-verified, unauthenticated by necessity, and deliberately NOT under
+ * `/api/email` — see src/routes/webhooks.ts for why it is its own trust domain.
+ */
+app.route('/api/webhooks', webhooksRouter);
 app.route('/api/public/calendar', calendarRouter);
 app.route('/api/messages', messagesRouter);
 

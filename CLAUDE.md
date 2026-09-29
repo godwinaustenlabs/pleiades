@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (23 files, 562 tests)
+npm test          # vitest — see test/ (24 files, 587 tests)
 npm run test:watch
 ```
 
@@ -546,10 +546,41 @@ read null as "due now" and retried terminal failures until they burned all five
 attempts. `email_delivery.idempotency_key` is **UNIQUE in the
 database** — a transactional send keys on `<event>:<entity>:<recipient>`, so
 `PATCH /api/tasks/:id` rewriting every assignment row on every edit cannot
-re-mail the team. `suppressed` is a distinct status from `failed`: Cloudflare
-maintains the bounce/complaint list itself and retrying against it is how a
-domain's reputation gets worse, which is also why there is no suppression table
-here.
+re-mail the team. `suppressed` is a distinct status from `failed`: retrying against a
+bounce or a complaint is how a domain's reputation gets worse, which is also why
+there is no suppression table here.
+
+**`status='sent'` means Resend accepted the message, NOT that it arrived**, and the
+states past it come from Resend's webhook at `POST /api/webhooks/resend`
+(`src/routes/webhooks.ts` + `src/email/webhook.ts`): `delivered`, `bounced`,
+`complained`, `delayed`. Without it a hard bounce read as "Sent" in the mailbox
+forever and the only record was Resend's dashboard — so `sent_at` and
+`delivered_at` are deliberately separate columns, the first being when we handed the
+message over and the second when the receiving server took it.
+
+**That route is the only unauthenticated POST in the system that writes**, so the
+Svix signature *is* the authorization and everything about it fails closed. An unset
+`RESEND_WEBHOOK_SECRET` refuses every request rather than degrading to trust:
+"accept anything when misconfigured" is never the graceful option for an
+authorization check. The signature is verified over the raw bytes before any parse,
+timestamps outside five minutes are refused so a captured request cannot be replayed,
+and the comparison is constant-time. It lives under `/api/webhooks` rather than
+`/api/email` because it is a different trust domain — every other router opens with
+`authMiddleware`, and an exemption buried inside one of them is worse than a separate
+path. Rejections return a bare `ok: false` with no reason; the reason goes to the logs.
+
+Two rules in that handler are easy to undo. **Webhooks are unordered and redelivered
+on any non-2xx**, so events are ranked (`STATUS_RANK`) and the row only ever moves
+up — a replayed `delivered` cannot clear a `bounced`, and `complained` outranks
+everything because continuing to mail that address is the reputational damage. And
+**`email.opened`/`email.clicked` are dropped without being stored**: they are read
+receipts, excluded from this system on purpose, and data that does not exist cannot
+leak. Do not add them to `RESEND_EVENT_STATUS`.
+
+Everything verified-but-unusable still answers **200** — an event naming a pruned
+message, an unknown type, a signed payload that is not JSON — because a non-2xx makes
+Resend retry and none of those improve on a retry. `500` is reserved for "we failed to
+write", which is the one case that genuinely wants one.
 
 Automated mail is catalogued in `EMAIL_EVENTS` (`src/email/events.ts`) and
 rendered from a `scope='system'` template. `transactional` events ignore
@@ -735,7 +766,7 @@ and `journal.ts` depend on them, and they exist only on the live index; nothing
 in this repo recreates them. If the index is ever rebuilt, recreate all three or
 filtering silently stops narrowing.
 
-There are exactly **six secrets**, and the same six exist both in production
+There are exactly **seven secrets**, and the same seven exist both in production
 (`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
 step — a secret in one and not the other means local and deployed behaviour
 differ silently:
@@ -748,8 +779,9 @@ differ silently:
 | `SLACK_BOT_OAUTH_TOKEN` | Posts messages back into Slack | `agents/slack/index.ts`, `utils/slack.ts` |
 | `CF_AIG_TOKEN` | AI Gateway auth (`cf-aig-authorization`); both gateways require it | `utils/model.ts` |
 | `RESEND_API_KEY` | Mail to anyone outside the company. The sixth, and the plan is why — see Mail | `email/transport.ts` |
+| `RESEND_WEBHOOK_SECRET` | Svix signing secret for the delivery webhook. **The only secret whose absence is a refusal, not a degraded mode** — it is the sole authorization on an unauthenticated write | `routes/webhooks.ts`, `email/webhook.ts` |
 
-`.dev.vars.example` is the committed template listing all six with a note on
+`.dev.vars.example` is the committed template listing all seven with a note on
 where each is obtained; `.dev.vars` itself is gitignored.
 
 Plaintext, non-sensitive config lives in `wrangler.jsonc` under `vars`:

@@ -406,3 +406,4 @@ POST   /api/tech/tasks
 DELETE /api/tech/tasks/:id
 GET    /api/tech/tasks/:id
 PATCH  /api/tech/tasks/:id
+POST   /api/webhooks/resend

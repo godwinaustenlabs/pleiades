@@ -404,6 +404,26 @@ emailRouter.get('/mailboxes/:id/messages', async (c) => {
       limit: 100,
     });
 
+    /**
+     * Delivery state for the outbound rows on this page, in ONE query.
+     *
+     * The list is where a bounce has to be visible: a failure you only discover by
+     * opening the message is a failure nobody discovers. Fetched as a single
+     * `inArray` rather than per row — a hundred messages would otherwise be a hundred
+     * round trips, and D1 charges for each.
+     */
+    const outboundIds = rows.filter((m) => m.direction === 'outbound').map((m) => m.id);
+    const deliveries = outboundIds.length
+      ? await db.select({
+        messageId: schema.emailDelivery.messageId,
+        status: schema.emailDelivery.status,
+        errorCode: schema.emailDelivery.errorCode,
+      })
+        .from(schema.emailDelivery)
+        .where(inArray(schema.emailDelivery.messageId, outboundIds))
+      : [];
+    const byMessage = new Map(deliveries.map((d) => [d.messageId, d]));
+
     // Bodies are deliberately omitted from a list. A hundred full messages is a
     // response measured in megabytes, and the list only renders a preview.
     return ok(c, rows.map((m) => ({
@@ -419,6 +439,9 @@ emailRouter.get('/mailboxes/:id/messages', async (c) => {
       isRead: m.isRead,
       isStarred: m.isStarred,
       spamVerdict: m.spamVerdict,
+      /** Null on anything inbound, and on a draft, which has no delivery row. */
+      deliveryStatus: byMessage.get(m.id)?.status ?? null,
+      deliveryError: byMessage.get(m.id)?.errorCode ?? null,
       receivedAt: m.receivedAt,
       createdAt: m.createdAt,
     })));
@@ -504,6 +527,12 @@ emailRouter.get('/messages/:id', async (c) => {
       })),
       delivery: delivery ? {
         status: delivery.status, attempts: delivery.attempts, sentAt: delivery.sentAt,
+        /**
+         * `deliveredAt` is the receiving server's acceptance, from Resend's webhook,
+         * and is what separates "we handed it over" from "it arrived" — which is all
+         * `sentAt` ever meant, while the UI called it Sent.
+         */
+        deliveredAt: delivery.deliveredAt,
         errorCode: delivery.errorCode, errorMessage: delivery.errorMessage,
       } : null,
     });

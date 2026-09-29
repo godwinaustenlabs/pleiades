@@ -25,6 +25,17 @@ export default defineConfig({
 					 * exercised with nothing leaving the machine.
 					 */
 					RESEND_API_KEY: '',
+					/**
+					 * A throwaway Svix secret, so `test/email-webhook.test.ts` can compute
+					 * real signatures and drive the route the way Resend does. It must be
+					 * valid base64 after the `whsec_` prefix — that is what the verifier
+					 * decodes into HMAC key bytes.
+					 *
+					 * The fail-closed case (no secret at all) is asserted on
+					 * `verifyResendSignature` directly, since a binding cannot be unset
+					 * from inside a test.
+					 */
+					RESEND_WEBHOOK_SECRET: 'whsec_cGxlaWFkZXNfdGVzdF9zZWNyZXRfMzJieXRlc19sb25n',
 				},
 			},
 		}),

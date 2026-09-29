@@ -73,6 +73,9 @@ interface MessageSummary {
   isRead: boolean;
   isStarred: boolean;
   spamVerdict?: string | null;
+  /** Outbound only. Null on inbound mail and on drafts, which have no delivery row. */
+  deliveryStatus?: string | null;
+  deliveryError?: string | null;
   receivedAt?: number | null;
   createdAt: number;
 }
@@ -105,6 +108,7 @@ interface MessageDetail extends MessageSummary {
   attachments: Attachment[];
   delivery: {
     status: string; attempts: number; sentAt: number | null;
+    deliveredAt: number | null;
     errorCode: string | null; errorMessage: string | null;
   } | null;
 }
@@ -696,7 +700,15 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
                       <span className={`truncate text-xs ${m.isRead ? 'text-textSecondary' : 'font-bold text-textPrimary'}`}>
                         {m.direction === 'outbound' ? `To: ${addressList(m.toAddresses)}` : (m.fromName || m.fromAddress)}
                       </span>
-                      <span className="shrink-0 text-[10px] text-textSecondary">{when(m.receivedAt ?? m.createdAt)}</span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {/* Only when it is worth interrupting for: a plain `sent` badge on
+                            every row in the Sent folder would be noise that hides the
+                            bounce sitting two rows below it. */}
+                        {m.deliveryStatus && DELIVERY[m.deliveryStatus]?.tone !== 'muted' && (
+                          <DeliveryBadge status={m.deliveryStatus} />
+                        )}
+                        <span className="text-[10px] text-textSecondary">{when(m.receivedAt ?? m.createdAt)}</span>
+                      </span>
                     </span>
                     <span className={`mt-0.5 block truncate text-xs ${m.isRead ? 'text-textSecondary' : 'text-textPrimary'}`}>
                       {m.subject || '(no subject)'}
@@ -856,6 +868,49 @@ function SwipeRow({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * How a delivery state is described to a person, in one place.
+ *
+ * The distinction this exists to draw: **`sent` means Resend accepted the message, not
+ * that anybody received it.** Before the webhook there was nothing past that point, so
+ * the mailbox said "Sent" whether the message arrived or bounced ten seconds later. The
+ * wording here is deliberately unequal — "Sent" is hedged, "Delivered" is not.
+ */
+const DELIVERY: Record<string, { label: string; tone: 'good' | 'bad' | 'warn' | 'muted'; hint?: string }> = {
+  queued: { label: 'Queued', tone: 'muted', hint: 'Waiting to go out.' },
+  sending: { label: 'Sending', tone: 'muted' },
+  scheduled: { label: 'Scheduled', tone: 'muted' },
+  sent: { label: 'Sent', tone: 'muted', hint: 'Accepted by the mail provider. Delivery not confirmed yet.' },
+  delivered: { label: 'Delivered', tone: 'good', hint: 'The receiving server accepted it.' },
+  delayed: { label: 'Delayed', tone: 'warn', hint: 'The receiving server is deferring it. It may still arrive.' },
+  bounced: { label: 'Bounced', tone: 'bad', hint: 'It did not arrive.' },
+  complained: { label: 'Marked as spam', tone: 'bad', hint: 'The recipient reported it. Do not send here again.' },
+  suppressed: { label: 'Blocked', tone: 'bad' },
+  failed: { label: 'Failed', tone: 'bad' },
+  cancelled: { label: 'Cancelled', tone: 'muted' },
+};
+
+const TONE: Record<string, string> = {
+  good: 'bg-success/15 text-success',
+  bad: 'bg-danger/15 text-danger',
+  warn: 'bg-warning/15 text-warning',
+  muted: 'bg-surfaceAlt text-textSecondary',
+};
+
+/** The badge in a list row, so a bounce does not need the message opened to be seen. */
+function DeliveryBadge({ status }: { status: string }) {
+  const d = DELIVERY[status];
+  // An unrecognised status is shown verbatim rather than hidden: a provider adding a
+  // state should look unfamiliar, not look like nothing happened.
+  const label = d?.label ?? status;
+  const tone = TONE[d?.tone ?? 'muted'];
+  return (
+    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}>
+      {label}
+    </span>
   );
 }
 
@@ -1020,17 +1075,35 @@ function MessageView({
         {message.direction === 'outbound' && message.bccAddresses && addressList(message.bccAddresses) && (
           <Row label="Bcc" value={addressList(message.bccAddresses)} />
         )}
-        {message.delivery && (
-          <Row
-            label="Delivery"
-            value={
-              message.delivery.status === 'sent' ? 'Sent'
-                : message.delivery.errorMessage
-                  ? `${message.delivery.status} — ${message.delivery.errorMessage}`
-                  : `${message.delivery.status} (attempt ${message.delivery.attempts})`
-            }
-          />
-        )}
+        {message.delivery && (() => {
+          const d = message.delivery;
+          const meta = DELIVERY[d.status];
+          const when_ = d.deliveredAt ?? d.sentAt;
+          return (
+            <div className="flex gap-2">
+              <span className="w-14 shrink-0 font-bold uppercase tracking-wider text-textSecondary">
+                Delivery
+              </span>
+              <span className="min-w-0 flex-1 break-words text-textPrimary">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <DeliveryBadge status={d.status} />
+                  {when_ ? <span className="text-textSecondary">{when(when_)}</span> : null}
+                  {d.attempts > 1 && d.status !== 'delivered' && (
+                    <span className="text-textSecondary">after {d.attempts} attempts</span>
+                  )}
+                </span>
+                {/* The reason a message did not arrive is the whole value of the webhook,
+                    so it is shown in full rather than behind a hover. */}
+                {d.errorMessage && (
+                  <span className="mt-1 block text-danger">{d.errorMessage}</span>
+                )}
+                {!d.errorMessage && meta?.hint && (
+                  <span className="mt-0.5 block text-textSecondary">{meta.hint}</span>
+                )}
+              </span>
+            </div>
+          );
+        })()}
         {message.threadId && (
           <button onClick={onOpenThread} className="flex items-center gap-1 pt-0.5 text-[11px] font-bold text-module">
             <CornerUpLeft className="h-3 w-3" /> View whole conversation

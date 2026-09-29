@@ -1129,7 +1129,7 @@ CREATE TABLE email_delivery (
   idempotency_key     TEXT NOT NULL UNIQUE,
   queued_at           INTEGER NOT NULL,
   sent_at             INTEGER
-, transport text);
+, transport TEXT, delivered_at  INTEGER, last_event_at INTEGER);
 CREATE TABLE email_attachments (
   attachment_id TEXT PRIMARY KEY,
   message_id    TEXT NOT NULL REFERENCES email_messages (message_id),

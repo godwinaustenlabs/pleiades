@@ -179,7 +179,24 @@ export const emailDelivery = sqliteTable('email_delivery', {
   transport: text('transport'),
   idempotencyKey: text('idempotency_key').notNull().unique(),
   queuedAt: integer('queued_at', { mode: 'timestamp' }).notNull(),
+  /** When we handed the message to Resend — NOT when it arrived. */
   sentAt: integer('sent_at', { mode: 'timestamp' }),
+  /**
+   * When the receiving server accepted it, from Resend's `email.delivered` webhook.
+   *
+   * Distinct from `sentAt` deliberately: that one says the API took the message, which
+   * is what "Sent" used to mean in the UI and is not the same claim. A row with
+   * `sentAt` and no `deliveredAt` after a few minutes is the interesting case.
+   */
+  deliveredAt: integer('delivered_at', { mode: 'timestamp' }),
+  /**
+   * The timestamp of the last webhook event applied to this row.
+   *
+   * Webhooks arrive out of order and are redelivered on any non-2xx, so this plus the
+   * status ranking in `src/email/webhook.ts` is what stops a replayed `delivered`
+   * overwriting a `bounced`.
+   */
+  lastEventAt: integer('last_event_at', { mode: 'timestamp' }),
 });
 
 /**

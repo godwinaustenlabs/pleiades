@@ -1,0 +1,33 @@
+-- Real delivery status, from Resend's webhook.
+--
+-- `status='sent'` has meant "Resend's API accepted the message", which is not the
+-- same thing as it arriving, and the mailbox presented it as "Sent" either way. A
+-- hard bounce — a dead address, a full inbox, a spam block — happens seconds to
+-- minutes later, is reported only over a webhook, and so was invisible: the message
+-- read as delivered forever and the only record was Resend's own dashboard. For a
+-- company whose proposals go out this way, "I thought they got it" is the expensive
+-- failure.
+--
+-- So `email_delivery.status` gains states past `sent`, and the webhook is what sets
+-- them: `delivered`, `bounced`, `complained`, `delayed`. The column has no CHECK
+-- constraint, so no rewrite is needed for the values themselves — what is added here
+-- is the two facts a status alone cannot carry.
+--
+-- `delivered_at` is separate from `sent_at` on purpose. `sent_at` is when we handed
+-- the message over; `delivered_at` is when the receiving server took it. Keeping both
+-- is what lets a slow path be told apart from a stalled one, and collapsing them
+-- would destroy the distinction this migration exists to draw.
+--
+-- `last_event_at` is the ordering guard. Webhooks arrive out of order and are
+-- redelivered on any non-2xx, so a stale `delivered` can land after a `bounced`. The
+-- application side ranks the states and refuses to move backwards
+-- (`src/email/webhook.ts`), and this column records the event time it last acted on
+-- so a replayed delivery is a no-op rather than a regression.
+--
+-- Note there is no `opened` or `clicked` here, and the webhook drops those events
+-- without storing them. Read receipts were excluded deliberately: knowing when a
+-- colleague opened your email is surveillance, and it is also the feature that makes
+-- a mail client load tracking pixels by default.
+
+ALTER TABLE email_delivery ADD COLUMN delivered_at  INTEGER;
+ALTER TABLE email_delivery ADD COLUMN last_event_at INTEGER;

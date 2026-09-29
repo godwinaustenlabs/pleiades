@@ -46,3 +46,21 @@ CF_AIG_TOKEN=<Cloudflare dashboard > AI Gateway > token>
 #
 # Unset, outreach mail is logged rather than sent, and says so in the logs.
 RESEND_API_KEY=
+
+# Svix signing secret for Resend's delivery webhook.
+#
+# The seventh secret, and the only one whose absence is a hard refusal rather than a
+# degraded mode. POST /api/webhooks/resend is the one unauthenticated route in this
+# system that WRITES, so this signature is its entire authorization — accepting
+# unsigned events would let anyone mark a bounced message delivered, or a delivered
+# one bounced.
+#
+# Obtain: resend.com -> Webhooks -> add an endpoint pointing at
+# https://pleiades.galabs.workers.dev/api/webhooks/resend, then copy its signing
+# secret. It starts with `whsec_` and the part after that prefix is base64.
+#
+# Subscribe the endpoint to: email.sent, email.delivered, email.delivery_delayed,
+# email.bounced, email.complained. Do NOT subscribe email.opened or email.clicked —
+# those are read receipts, they are excluded from this system deliberately, and the
+# handler drops them rather than storing them.
+RESEND_WEBHOOK_SECRET=
