@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Inbox, Send, FileEdit, Archive, ShieldAlert, Trash2, Loader2, Plus, Star, X,
   ChevronLeft, AlertCircle, Paperclip, Reply, ReplyAll, Forward, Search, Bell,
-  MailOpen, RefreshCw, CornerUpLeft, Clock, Download, FileText,
+  MailOpen, RefreshCw, CornerUpLeft, Clock, Download, FileText, Type,
 } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 import TemplateEditor from './TemplateEditor';
+import { MailHtml, type InlineAttachment } from './MailHtml';
+import RichText from './RichText';
 
 /**
  * The mail client, mounted once per place mail is read.
@@ -81,6 +83,14 @@ interface Attachment {
   contentType: string | null;
   sizeBytes: number | null;
   url: string;
+  /**
+   * `inline` means the attachment is part of the body — a logo in a signature, a
+   * screenshot pasted into the message — referenced from the HTML by `contentId`.
+   * Both are needed to resolve a `cid:` image, and inline parts are kept out of the
+   * attachment strip so a signature logo does not look like a file to open.
+   */
+  disposition?: string;
+  contentId?: string | null;
 }
 
 interface MessageDetail extends MessageSummary {
@@ -174,6 +184,8 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
 
   const [term, setTerm] = useState('');
   const [results, setResults] = useState<MessageSummary[] | null>(null);
+  /** The last message swiped to trash, offered back for a few seconds. */
+  const [undo, setUndo] = useState<{ message: MessageSummary; at: number } | null>(null);
 
   /**
    * `scheduled` and `templates` sit in the folder rail but are not folders.
@@ -339,6 +351,9 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
           bcc: addressesOf(detail.bccAddresses).map((a) => a.email).join(', '),
           subject: detail.subject ?? '',
           text: detail.bodyText,
+          // Reopens in the mode it was written in. Without this a formatted draft came
+          // back as plain text and quietly lost its markup on the next save.
+          ...(detail.bodyHtml ? { html: detail.bodyHtml } : {}),
           attachments: detail.attachments,
         });
         return;
@@ -363,6 +378,27 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     } catch (e) {
       setError(errorMessage(e));
     }
+  }
+
+  // The offer expires; a stale Undo pointing at a message you have since emptied from
+  // trash would fail rather than help.
+  useEffect(() => {
+    if (!undo) return;
+    const t = window.setTimeout(() => setUndo(null), 7000);
+    return () => window.clearTimeout(t);
+  }, [undo]);
+
+  /**
+   * Trash, with a way back.
+   *
+   * A swipe is easy to do by accident while scrolling a list one-handed, and the row
+   * under your thumb might be the only copy of a client's reply. Trash is already a
+   * recoverable folder, so this costs one piece of state and removes the only
+   * irreversible-feeling gesture in the app.
+   */
+  function trashWithUndo(m: MessageSummary) {
+    patchMessage(m.id, { folder: 'trash' });
+    setUndo({ message: m, at: Date.now() });
   }
 
   async function patchMessage(id: string, patch: Record<string, unknown>, removeFromList = true) {
@@ -636,8 +672,13 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
                 </div>
               )}
               {list.map((m) => (
-                <div
+                <SwipeRow
                   key={m.id}
+                  isRead={m.isRead}
+                  onRead={() => patchMessage(m.id, { isRead: !m.isRead }, false)}
+                  onTrash={() => trashWithUndo(m)}
+                >
+                <div
                   className={`flex items-start gap-2 border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-surfaceAlt md:px-4 ${
                     m.isRead ? '' : 'bg-module/[0.04]'
                   }`}
@@ -666,11 +707,33 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
                     <span className="mt-0.5 block truncate text-[11px] text-textSecondary">{m.preview}</span>
                   </button>
                 </div>
+                </SwipeRow>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {undo && (
+        <div
+          className="fixed inset-x-3 bottom-3 z-40 flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-lg sm:left-auto sm:right-4 sm:w-80"
+          style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+        >
+          <span className="min-w-0 flex-1 truncate text-[11px] text-textPrimary">
+            Moved to trash — {undo.message.subject || '(no subject)'}
+          </span>
+          <button
+            onClick={() => {
+              patchMessage(undo.message.id, { folder: undo.message.folder }, false);
+              setMessages((prev) => (prev ? [undo.message, ...prev.filter((m) => m.id !== undo.message.id)] : prev));
+              setUndo(null);
+            }}
+            className="shrink-0 text-[11px] font-black uppercase tracking-wider text-module"
+          >
+            Undo
+          </button>
+        </div>
+      )}
 
       {composing && boxes.length > 0 && (
         <Composer
@@ -692,6 +755,110 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
 
 // ── Reader ──────────────────────────────────────────────────────────────────
 
+/**
+ * Swipe a row on a touch screen: right toggles read, left moves to trash.
+ *
+ * Three things make this behave rather than fight the page:
+ *
+ * - **`touch-action: pan-y`** is what claims the horizontal axis for us and leaves
+ *   the vertical one to the scroller. Without it the browser owns both and the row
+ *   either never moves or the list stops scrolling — and `preventDefault` is not
+ *   available to fix it, because React attaches touch listeners passively.
+ * - **The axis is decided once per gesture**, on the first 10px, and never revisited.
+ *   Deciding per move means a diagonal drag flickers between scrolling and swiping.
+ * - **A pointer that is not coarse gets none of this.** On a desktop the same drag is
+ *   a text selection, and stealing it to delete mail would be indefensible.
+ */
+function SwipeRow({
+  children, onRead, onTrash, isRead,
+}: {
+  children: React.ReactNode;
+  onRead: () => void;
+  onTrash: () => void;
+  isRead: boolean;
+}) {
+  const [dx, setDx] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const gesture = useRef<{ x: number; y: number; axis: 'x' | 'y' | null }>({ x: 0, y: 0, axis: null });
+
+  /** How far the row must travel before letting go does anything. */
+  const THRESHOLD = 72;
+  const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
+  if (!touch) return <>{children}</>;
+
+  const end = () => {
+    const { axis } = gesture.current;
+    const travelled = dx;
+    gesture.current = { x: 0, y: 0, axis: null };
+    if (axis !== 'x') { setDx(0); return; }
+
+    setAnimating(true);
+    setDx(0);
+    window.setTimeout(() => setAnimating(false), 180);
+
+    if (travelled >= THRESHOLD) onRead();
+    else if (travelled <= -THRESHOLD) onTrash();
+  };
+
+  const armed = Math.abs(dx) >= THRESHOLD;
+
+  return (
+    <div className="relative overflow-hidden">
+      {/* The action under the row, revealed by the drag. Which side shows is the
+          sign of the travel, so the reader sees what letting go will do. */}
+      <div
+        className={`absolute inset-0 flex items-center px-4 ${
+          dx > 0 ? 'justify-start bg-module/15' : 'justify-end bg-danger/15'
+        } ${dx === 0 ? 'opacity-0' : 'opacity-100'}`}
+      >
+        <span className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${
+          dx > 0 ? 'text-module' : 'text-danger'
+        } ${armed ? '' : 'opacity-50'}`}
+        >
+          {dx > 0
+            ? <><MailOpen className="h-3.5 w-3.5" />{isRead ? 'Unread' : 'Read'}</>
+            : <><Trash2 className="h-3.5 w-3.5" />Trash</>}
+        </span>
+      </div>
+
+      <div
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: animating ? 'transform 0.18s ease-out' : 'none',
+          touchAction: 'pan-y',
+        }}
+        className="relative bg-surface"
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          gesture.current = { x: t.clientX, y: t.clientY, axis: null };
+        }}
+        onTouchMove={(e) => {
+          const t = e.touches[0];
+          const g = gesture.current;
+          const ddx = t.clientX - g.x;
+          const ddy = t.clientY - g.y;
+          if (g.axis === null) {
+            if (Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy)) g.axis = 'x';
+            else if (Math.abs(ddy) > 10) g.axis = 'y';
+            else return;
+          }
+          if (g.axis !== 'x') return;
+          // Resists past the threshold rather than stopping dead, so the gesture
+          // still feels attached to the finger once it has done its job.
+          const over = Math.max(0, Math.abs(ddx) - THRESHOLD);
+          const eased = Math.sign(ddx) * (Math.min(Math.abs(ddx), THRESHOLD) + over * 0.3);
+          setDx(eased);
+        }}
+        onTouchEnd={end}
+        onTouchCancel={end}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2">
@@ -702,10 +869,13 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function Attachments({ items }: { items: Attachment[] }) {
-  if (items.length === 0) return null;
+  // An inline part with a Content-ID is rendered inside the message body, so listing
+  // it here as well presents a signature logo as a file worth opening.
+  const shown = items.filter((a) => !(a.disposition === 'inline' && a.contentId));
+  if (shown.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 border-t border-border px-3 py-3 md:px-4">
-      {items.map((a) => (
+      {shown.map((a) => (
         <a
           key={a.id}
           href={a.url}
@@ -720,26 +890,63 @@ function Attachments({ items }: { items: Attachment[] }) {
   );
 }
 
+/**
+ * Plain text is the default view, and formatting is one tap away.
+ *
+ * That ordering is deliberate rather than conservative-by-habit. The words are what
+ * you came for and they render instantly; the sandboxed frame is built only when you
+ * ask for it, so the riskiest machinery in the app is exercised per message on
+ * purpose instead of automatically on every open. It also means a malformed or
+ * hostile HTML part can never stop you reading what somebody said.
+ */
 function Body({ message }: { message: MessageDetail }) {
+  const [formatted, setFormatted] = useState(false);
+  const hasHtml = !!message.bodyHtml?.trim();
+
   return (
     <>
-      {/* Plain text only. A stranger's HTML never enters this DOM — see the component
-          header. It is offered as a download instead. */}
-      <pre className="whitespace-pre-wrap break-words px-3 py-4 text-xs leading-relaxed text-textPrimary md:px-4">
-        {message.bodyText}
-      </pre>
-      {message.bodyHtml && message.direction === 'inbound' && message.rawKey && (
-        <div className="px-3 pb-3 md:px-4">
-          <a
-            href={`${API}/assets/download/${encodeURIComponent(message.rawKey)}`}
-            className="text-[11px] text-textSecondary underline"
+      {hasHtml && (
+        <div className="flex flex-wrap items-center gap-2 px-3 pt-3 md:px-4">
+          <button
+            onClick={() => setFormatted((v) => !v)}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt"
           >
-            This message had an HTML part — download the original
-          </a>
+            {formatted ? <FileText className="h-3.5 w-3.5" /> : <Type className="h-3.5 w-3.5" />}
+            {formatted ? 'Plain text' : 'Show formatted'}
+          </button>
+          {message.direction === 'inbound' && message.rawKey && (
+            <a
+              href={`${API}/assets/download/${encodeURIComponent(message.rawKey)}`}
+              className="text-[11px] text-textSecondary underline"
+            >
+              Download original
+            </a>
+          )}
         </div>
+      )}
+
+      {formatted && hasHtml ? (
+        <div className="px-3 py-3 md:px-4">
+          <MailHtml html={message.bodyHtml!} attachments={inlineParts(message.attachments)} />
+        </div>
+      ) : (
+        <pre className="whitespace-pre-wrap break-words px-3 py-4 text-xs leading-relaxed text-textPrimary md:px-4">
+          {message.bodyText}
+        </pre>
       )}
     </>
   );
+}
+
+/** Shapes the message's attachments for the renderer's `cid:` lookup. */
+function inlineParts(items: Attachment[] | undefined): InlineAttachment[] {
+  return (items ?? []).map((a) => ({
+    id: a.id,
+    contentId: a.contentId ?? null,
+    disposition: a.disposition ?? 'attachment',
+    url: a.url,
+    contentType: a.contentType,
+  }));
 }
 
 function ReplyBar({
@@ -901,6 +1108,8 @@ interface ComposerSeed {
   bcc: string;
   subject: string;
   text: string;
+  /** Set when reopening a draft that was written with formatting. */
+  html?: string;
   attachments: Attachment[];
 }
 
@@ -922,12 +1131,29 @@ function Composer({
   const [showCc, setShowCc] = useState(!!(seed.cc || seed.bcc));
   const [subject, setSubject] = useState(seed.subject);
   const [text, setText] = useState(seed.text);
+  /**
+   * The HTML part, empty in plain mode.
+   *
+   * `text` is maintained in both modes rather than derived at send time, because
+   * `body_text` is NOT NULL in the DDL and is what a client with images off — or a
+   * screen reader — actually reads. A rich message is therefore always sent as both
+   * parts, never as HTML alone.
+   */
+  const [html, setHtml] = useState(seed.html ?? '');
+  const [rich, setRich] = useState(!!seed.html);
   const [attachments, setAttachments] = useState<Attachment[]>(seed.attachments);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   /** Empty means send now. A `datetime-local` value, i.e. the writer's own clock. */
   const [sendAt, setSendAt] = useState('');
+  /**
+   * The schedule row is hidden until asked for. A `datetime-local` is the widest
+   * control in the footer by a distance, and leaving it there made the footer wrap
+   * to three rows on a 390px screen — which on a full-height composer is height
+   * taken directly out of the message body.
+   */
+  const [showSchedule, setShowSchedule] = useState(false);
 
   const split = (v: string) => v.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => s.includes('@'));
   const recipientCount = split(to).length + split(cc).length + split(bcc).length;
@@ -943,6 +1169,7 @@ function Composer({
         mailboxId: mailbox.id,
         to: split(to), cc: split(cc), bcc: split(bcc),
         subject, text,
+        ...(rich && html.trim() ? { html } : {}),
         ...(seed.replyTo ? { replyTo: seed.replyTo } : {}),
       }),
     });
@@ -951,7 +1178,7 @@ function Composer({
     const id = json.data.id as string;
     setDraftId(id);
     return id;
-  }, [mailbox, draftId, to, cc, bcc, subject, text, seed.replyTo]);
+  }, [mailbox, draftId, to, cc, bcc, subject, text, rich, html, seed.replyTo]);
 
   async function attach(file: File) {
     setBusy('attach');
@@ -1037,9 +1264,19 @@ function Composer({
   if (!mailbox) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="sheet flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-surface sm:max-w-2xl sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+    <div className="fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm sm:items-center sm:p-4">
+      {/**
+        * Full screen on a phone, a centred card from `sm` up.
+        *
+        * Deliberately NOT `.sheet`: that class caps a dialog at 92dvh and docks it to
+        * the bottom edge, which is right for a form and wrong for a composer. Writing
+        * is the whole task here, so the composer takes the screen the way a mail app
+        * does — and because `.sheet` is unlayered CSS, a Tailwind height utility would
+        * lose to it. The body below is the only element that grows, so every pixel not
+        * spent on a header or a footer goes to the message.
+        */}
+      <div className="composer-panel flex h-full w-full flex-col overflow-hidden bg-surface sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl sm:rounded-2xl sm:border sm:border-border">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-3">
           <div className="min-w-0">
             <h3 className="text-xs font-black uppercase tracking-widest text-textPrimary">
               {seed.replyTo ? 'Reply' : draftId ? 'Draft' : 'New message'}
@@ -1068,25 +1305,46 @@ function Composer({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
-          <Field label="To" value={to} onChange={setTo} placeholder="someone@example.com, another@example.com" />
+        {/* The addressing block never scrolls away — you can always see who this is to. */}
+        <div className="shrink-0 px-4 pt-2">
+          <Field label="To" value={to} onChange={setTo} placeholder="someone@example.com" />
           {showCc ? (
             <>
               <Field label="Cc" value={cc} onChange={setCc} placeholder="" />
               <Field label="Bcc" value={bcc} onChange={setBcc} placeholder="" />
             </>
           ) : (
-            <button onClick={() => setShowCc(true)} className="text-[11px] font-bold text-module">Add Cc / Bcc</button>
+            <div className="flex justify-end pt-1">
+              <button onClick={() => setShowCc(true)} className="text-[11px] font-bold text-module">Add Cc / Bcc</button>
+            </div>
           )}
-
           <Field label="Subject" value={subject} onChange={setSubject} placeholder="" />
+        </div>
+
+        {/**
+          * The body is the one element that grows. `min-h-0` is what lets a flex child
+          * shrink under its own content; `resize-none` because a manual resize handle is
+          * meaningless when the box is already exactly the free space.
+          *
+          * The editor is mounted with a `key` so switching modes remounts it rather than
+          * reusing a `contentEditable` whose DOM is its own state — see RichText.
+          */}
+        {rich ? (
+          <RichText
+            key={`rich-${draftId ?? 'new'}`}
+            initialHtml={html}
+            onChange={(v) => { setHtml(v.html); setText(v.text); }}
+          />
+        ) : (
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Write your message…"
-            className="min-h-[7rem] w-full resize-y rounded-lg border border-border bg-surfaceAlt px-3 py-2 text-textPrimary outline-none transition-colors focus:border-module/50 md:min-h-[14rem]"
+            className="min-h-0 w-full flex-1 resize-none bg-transparent px-4 py-3 leading-relaxed text-textPrimary outline-none placeholder:text-textSecondary/50 sm:min-h-[12rem]"
           />
+        )}
 
+        <div className="shrink-0 space-y-2 px-4 pb-2">
           <div className="flex flex-wrap items-center gap-2">
             <input
               ref={fileInput}
@@ -1128,44 +1386,77 @@ function Composer({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
-          <label className="flex items-center gap-1.5">
+        {/* Revealed by the clock button, so the footer stays one row at 390px. */}
+        {showSchedule && (
+          <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2">
             <Clock className="h-3.5 w-3.5 shrink-0 text-textSecondary" />
             <input
               type="datetime-local"
               value={sendAt}
               onChange={(e) => setSendAt(e.target.value)}
               min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
-              title="Leave empty to send now"
-              className="min-w-0 rounded border border-border bg-surfaceAlt px-1.5 py-1 text-[11px] text-textPrimary outline-none"
+              className="min-w-0 flex-1 rounded border border-border bg-surfaceAlt px-2 py-1.5 text-textPrimary outline-none"
             />
-            {sendAt && (
-              <button onClick={() => setSendAt('')} title="Send now instead" className="shrink-0 text-textSecondary">
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </label>
-          <span className="text-[10px] text-textSecondary">
-            {recipientCount > 0 && `${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
-          </span>
-          <div className="flex gap-2">
             <button
-              onClick={saveAndClose}
-              disabled={!!busy}
-              className="rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt disabled:opacity-40"
+              onClick={() => { setSendAt(''); setShowSchedule(false); }}
+              title="Send now instead"
+              className="shrink-0 rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt"
             >
-              {busy === 'save' ? 'Saving…' : 'Save draft'}
-            </button>
-            <button
-              onClick={submit}
-              disabled={!!busy || recipientCount === 0 || !subject.trim() || !text.trim() || overBulk}
-              className="flex items-center gap-1.5 rounded-lg bg-module px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim transition-all active:scale-[0.97] disabled:opacity-40"
-            >
-              {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : sendAt ? <Clock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-              {sendAt ? 'Schedule' : 'Send'}
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
+        )}
+
+        <div
+          className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-3"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+        >
+          <button
+            onClick={() => {
+              /**
+               * Leaving rich mode keeps the text and drops the markup, which is the
+               * honest direction to lose information in: the words survive and the
+               * formatting does not, rather than the reverse.
+               */
+              if (rich) setHtml('');
+              setRich((v) => !v);
+            }}
+            title={rich ? 'Switch to plain text' : 'Switch to formatted text'}
+            className={`shrink-0 rounded-lg border p-2 transition-colors ${
+              rich ? 'border-module/40 bg-module/10 text-module' : 'border-border text-textSecondary hover:bg-surfaceAlt'
+            }`}
+          >
+            <Type className="h-3.5 w-3.5" />
+          </button>
+          {!showSchedule && (
+            <button
+              onClick={() => setShowSchedule(true)}
+              title="Send later"
+              className="shrink-0 rounded-lg border border-border p-2 text-textSecondary transition-colors hover:bg-surfaceAlt"
+            >
+              <Clock className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            onClick={saveAndClose}
+            disabled={!!busy}
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt disabled:opacity-40"
+          >
+            {busy === 'save' ? 'Saving…' : 'Draft'}
+          </button>
+          {/* Takes the slack, so Send stays hard against the right edge at every width. */}
+          <span className="min-w-0 flex-1 truncate text-right text-[10px] text-textSecondary">
+            {recipientCount > 0 && `${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
+          </span>
+          <button
+            onClick={submit}
+            disabled={!!busy || recipientCount === 0 || !subject.trim() || !text.trim() || overBulk}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-module px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim transition-all active:scale-[0.97] disabled:opacity-40"
+          >
+            {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : sendAt ? <Clock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+            {sendAt ? 'Schedule' : 'Send'}
+          </button>
         </div>
       </div>
     </div>

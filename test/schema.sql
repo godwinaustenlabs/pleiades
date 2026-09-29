@@ -1140,7 +1140,7 @@ CREATE TABLE email_attachments (
   disposition   TEXT NOT NULL DEFAULT 'attachment',
   content_id    TEXT,
   created_at    INTEGER NOT NULL
-, transport_override text);
+);
 CREATE TABLE email_templates (
   template_id TEXT PRIMARY KEY,
   key         TEXT NOT NULL UNIQUE,

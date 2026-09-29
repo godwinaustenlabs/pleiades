@@ -212,3 +212,59 @@ Three further weaknesses fixed from the same pass:
   counts entries, so a string a provider might split on would let the count and the
   actual recipients disagree. Entries containing a separator, bracket, whitespace or
   a second `@` are now refused.
+
+### Rendering inbound HTML (added with `components/MailHtml.tsx`)
+
+This is the highest-exposure surface in the system, and it is worth stating why in
+one place. The apex catch-all accepts mail to **any** address at the domain, so
+putting content in front of a reader requires no account, no grant and no phishing
+step — only knowing the domain. And `ga_token` is in `localStorage`, so a script
+executing in our origin reads it and becomes that user across every mailbox and
+module they can reach. The reader most likely to open the catch-all is an admin,
+which inverts the usual assumption that the most exposed content reaches the least
+privileged person.
+
+**The control is the sandbox, not the sanitiser.** `MAIL_SANDBOX` omits
+`allow-scripts`, which disables scripting for that browsing context by browser
+enforcement — inline handlers, `javascript:` URLs, `<script>`, all inert — so a
+sanitiser bypass, which is a question of when rather than whether, is not itself a
+vulnerability. It also omits `allow-same-origin`: harmless by itself, since there is
+no script to use it, but catastrophic in combination, and the realistic failure is the
+two flags arriving in unrelated commits months apart. `test/mail-html.test.ts` asserts
+the absence of each independently rather than the absence of the pair.
+
+Accepted costs, recorded so they are not "fixed" later by someone who does not know
+they were chosen:
+
+- **The frame cannot be measured**, because it is opaque-origin. Height is estimated
+  with an expand control. Adding `allow-same-origin` to auto-size it would trade the
+  second sandbox rule for a cosmetic gain.
+- **Inline images cost a parent fetch each**, since the frame cannot authenticate to
+  `/api/assets/download`; they are inlined as `data:` URIs under a 4 MB budget.
+
+Defence in depth behind the sandbox, in `lib/mail-safety.ts`: an allowlist of tags,
+attributes and CSS properties; `<style>`, `<svg>` and `<math>` dropped with their
+subtrees (a stylesheet exfiltrates by attribute selector, and the foreign-content roots
+are where the HTML and XML parsers disagree, which is the engine of mutation XSS);
+`url()` and `expression()` stripped from inline styles; `position`/`z-index`/`top` not
+on the property allowlist, so a message cannot overlay the app's own interface; and an
+inline CSP of `default-src 'none'` with `form-action 'none'`, because a message can
+still *render* a convincing fake sign-in form and that is what stops the credentials
+reaching anyone. URLs are scheme-checked after control characters are stripped, since
+`java<TAB>script:` is one URL to a browser and another to `startsWith`.
+
+**Remote images are blocked by default** and loaded per message on request, never
+remembered. A remote image in mail is ordinarily a beacon: it confirms the address is
+live, reports when and from where it was read, and with a per-recipient URL identifies
+*which* person read it even from a shared mailbox.
+
+Two things this does **not** defend against, by nature rather than by omission:
+
+- **Link phishing.** `<a href="https://evil/reset-your-password">` needs no script.
+  Links get `rel="noopener noreferrer nofollow"` and open in a new tab; the rest is
+  unsolvable inside an email client.
+- **The outbound direction is a different risk class.** A composer's HTML is authored
+  by an authenticated member of staff with `send` on that mailbox, so it is ordinary
+  mail capability, not an escalation. Paste is still sanitised — the draft is stored
+  and we render our own sent mail — but nothing tries to stop a colleague writing
+  whatever HTML they like into a message they were already permitted to send.

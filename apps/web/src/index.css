@@ -728,6 +728,44 @@ summary,
   to   { transform: translateY(0); opacity: 1; }
 }
 
+/* The mail composer (components/MailboxTab.tsx).
+
+   Not a `.sheet`. A sheet is capped at 92dvh and docked to the bottom edge, which
+   suits a form you fill in and dismiss; the composer's whole purpose is the text
+   area, so on a phone it takes the screen and lets the body absorb every pixel the
+   header and footer do not use. The rule is here rather than in Tailwind because
+   `.sheet` is unlayered and a layered height utility cannot outrank it — so the
+   composer opts out by not carrying the class, and picks up the same entrance
+   animation from here instead. */
+@media (max-width: 639px) {
+  .composer-panel {
+    animation: sheetUp 0.24s var(--ease-out-expo) both;
+  }
+}
+
+/* The composer's rich-text body (components/RichText.tsx).
+
+   A `contentEditable` has no placeholder attribute, so the empty state is drawn from
+   `data-placeholder` and shown only while the element holds nothing at all — `:empty`
+   alone is wrong, because typing and deleting leaves a stray `<br>` behind that makes
+   the element non-empty and blank at the same time. Unlayered for the same reason the
+   rest of this file is: these have to beat Tailwind's resets on a nested element. */
+.rich-body:empty::before,
+.rich-body:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, var(--text-sec) 55%, transparent);
+  pointer-events: none;
+}
+.rich-body ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+.rich-body ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+.rich-body blockquote {
+  margin: 0.5rem 0 0.5rem 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-sec);
+}
+.rich-body a { color: var(--module, var(--primary)); text-decoration: underline; }
+
 /* The right-edge fade on a scrolling tab strip (components/ModuleTabs.tsx).
    A mask rather than an overlaid gradient, so it works on any background and
    cannot intercept a tap on the pill underneath it. */

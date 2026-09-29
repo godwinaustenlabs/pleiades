@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (22 files, 511 tests)
+npm test          # vitest — see test/ (23 files, 562 tests)
 npm run test:watch
 ```
 
@@ -128,8 +128,9 @@ migration bookkeeping.
 Verify a copy by row counts per table, a sorted diff of the two `--no-data`
 exports, and a sha256 of the sorted INSERT lines from each `--no-schema` export
 (excluding `sqlite_sequence`); the last is order-independent and proves every
-row survived. Note D1 caps compound `SELECT`s at **fewer than 8** `UNION ALL`
-terms, so a per-table count query has to be chunked.
+row survived. Note D1 caps compound `SELECT`s at **5** `UNION ALL` terms — 6
+fails with `too many terms in compound SELECT` — so a per-table count query has
+to be chunked.
 
 Do **not** rebuild a database by replaying `packages/database/migrations/`. The
 files no longer describe production: `0000_plain_shard.sql` creates a `tasks`
@@ -668,8 +669,47 @@ anyone with `hr/email` the Legal mailbox's attachments.
 The UI is one component, `apps/web/src/components/MailboxTab.tsx`, mounted per
 scope: `{ kind: 'app', app: '<name>' }` in each module page and
 `{ kind: 'personal' }` in the workspace. Mailboxes are created and assigned in
-`components/MailboxAdmin.tsx` on the Access page. **HTML from an inbound message
-is never rendered** — `body_text` with the raw source as a download.
+`components/MailboxAdmin.tsx` on the Access page.
+
+**Inbound HTML is rendered, and `components/MailHtml.tsx` is the only thing allowed
+to do it.** The catch-all means anyone on the internet can put content in front of a
+reader, and `ga_token` lives in localStorage, so a script running in our origin is a
+session takeover from one email. The control is therefore not the sanitiser — it is an
+iframe whose `sandbox` has **no `allow-scripts`**, which turns scripting off for that
+browsing context by browser enforcement rather than by pattern matching.
+
+Three rules, all pinned by `test/mail-html.test.ts`:
+
+1. **Never add `allow-scripts`.** It is the entire protection.
+2. **Never add `allow-same-origin`.** Harmless alone; combined with `allow-scripts` the
+   sandbox is worth nothing, and the two arriving in separate commits is how that
+   happens. The cost is accepted: an opaque-origin frame cannot be measured, so the
+   frame height is estimated with an expand control rather than fitted to content.
+3. **No `dangerouslySetInnerHTML` in the mail UI**, which is the line someone adds to
+   fix a rendering complaint.
+
+`lib/mail-safety.ts` holds the sanitiser and the sandbox/CSP constants, split out from
+the component so the security half has no React import and can be asserted on from the
+Worker test pool. The sanitiser is defence in depth behind the sandbox: an allowlist of
+tags, attributes and CSS properties, with `<style>`, `<svg>` and `<math>` dropped
+outright — a stylesheet exfiltrates by selector, and the foreign-content roots are where
+mutation XSS lives. It cannot be unit-tested in the suite (workerd has no `DOMParser`),
+so what the suite pins is the static contract.
+
+**Plain text is the default view**, with a "Show formatted" toggle: the sandboxed frame
+is then built per message on request rather than automatically on every open. **Remote
+images are blocked** by the frame's own `img-src data:` — a remote image in mail is
+usually a beacon confirming the address is live and who read it — and loading them is a
+per-message choice that is deliberately not remembered. Inline `cid:` images are fetched
+by the **parent** and inlined as `data:` URIs, because the frame, lacking
+`allow-same-origin`, cannot authenticate to `/api/assets/download`.
+
+The composer writes both parts. `components/RichText.tsx` is a `contentEditable` over
+`execCommand` — deprecated and unreplaced; the alternative is reimplementing
+selection-aware DOM surgery — and **paste goes through the same sanitiser**, since
+copying out of a web page brings that page's markup with it. `body_text` is always
+maintained alongside the HTML rather than derived at send time, so a rich message is
+never sent as HTML alone.
 
 ### Bindings and secrets
 

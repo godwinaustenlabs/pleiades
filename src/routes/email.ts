@@ -484,11 +484,22 @@ emailRouter.get('/messages/:id', async (c) => {
 
     return ok(c, {
       ...msg,
-      // `bodyHtml` is returned but the client must not put it in the DOM for an
-      // inbound message — see MailboxTab. Kept in the payload so "view original"
-      // and a future sandboxed iframe have something to render.
+      /**
+       * `bodyHtml` is returned raw and is never put in the DOM directly. It is
+       * rendered inside a sandboxed iframe with no `allow-scripts` and no
+       * `allow-same-origin` — see `components/MailHtml.tsx`, which is the only
+       * place in the app permitted to render it.
+       */
       attachments: attachments.map((a) => ({
         id: a.id, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes,
+        /**
+         * `disposition` and `contentId` are what make an inline image resolvable.
+         * A `cid:` URL in the HTML names a Content-ID, and without these two fields
+         * the client cannot tell which attachment that is — nor which attachments are
+         * part of the message body rather than files to download.
+         */
+        disposition: a.disposition,
+        contentId: a.contentId,
         url: `/api/assets/download/${encodeURIComponent(a.r2Key)}`,
       })),
       delivery: delivery ? {
@@ -582,7 +593,12 @@ emailRouter.put('/drafts/:id?', async (c) => {
       subject: typeof body.subject === 'string' ? body.subject : '',
       // NOT NULL in the DDL, and a draft legitimately has an empty body.
       bodyText: typeof body.text === 'string' ? body.text : '',
-      bodyHtml: null,
+      /**
+       * A rich-text draft is HTML, and this was hardcoded null — so formatting was
+       * silently lost the moment a draft was saved and reopened. Stored as authored;
+       * it is sanitised when rendered, like every other body in the system.
+       */
+      bodyHtml: typeof body.html === 'string' && body.html.trim() ? body.html : null,
       inReplyToHeader: body.inReplyTo ? String(body.inReplyTo) : null,
       referencesHeader: body.references ? String(body.references) : null,
       isRead: true,
