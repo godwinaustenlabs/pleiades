@@ -112,6 +112,8 @@
     200 ok data={events,recentFailures,sender}
 /api/email/drafts
     200 ok data=array<empty>
+/api/email/export
+    200 application/mbox
 /api/email/mailboxes
     200 ok data=array<{address,appName,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,updatedAt}>
 /api/email/mailboxes/:id/grants
@@ -124,6 +126,8 @@
     200 ok data=array<{address,appName,canBulk,canSend,displayName,id,isActive,kind}>
 /api/email/prefs
     200 ok data=array<{changeable,description,enabled,key,kind}>
+/api/email/scheduled
+    200 ok data=array<empty>
 /api/email/search
     400 err="Search for at least two characters."
 /api/email/templates

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, like, lt, ne, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
@@ -63,6 +63,26 @@ function addressIsOurs(address: string): boolean {
  * provider actually splits there is beside the point: the cheap fix is to refuse
  * the shape, so the count and the recipients cannot disagree.
  */
+/** How far ahead a message may be scheduled. Beyond this it is a reminder, not an email. */
+const MAX_SCHEDULE_DAYS = 90;
+
+/**
+ * Parses and bounds a requested send time.
+ *
+ * Returns `{ at }`, `{}` for "send now", or `{ problem }`. A time in the past is
+ * refused rather than silently sent immediately: somebody who typed yesterday meant
+ * something, and quietly sending is the wrong guess.
+ */
+function parseSchedule(value: unknown): { at?: Date; problem?: string } {
+  if (value === undefined || value === null || value === '') return {};
+  const at = new Date(String(value));
+  if (Number.isNaN(at.getTime())) return { problem: 'scheduledFor is not a valid date.' };
+  if (at.getTime() <= Date.now()) return { problem: 'That time has already passed. Leave it empty to send now.' };
+  const limit = Date.now() + MAX_SCHEDULE_DAYS * 24 * 60 * 60 * 1000;
+  if (at.getTime() > limit) return { problem: `Cannot schedule more than ${MAX_SCHEDULE_DAYS} days ahead.` };
+  return { at };
+}
+
 function parseAddrs(value: unknown): Addr[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -642,7 +662,11 @@ emailRouter.post('/drafts/:id/send', async (c) => {
       where: eq(schema.emailAttachments.messageId, id),
     });
 
-    const queued = await promoteDraft(c.env, draft, attachments.length);
+    const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+    const schedule = parseSchedule((body as Record<string, unknown>).scheduledFor);
+    if (schedule.problem) return badRequest(c, schedule.problem);
+
+    const queued = await promoteDraft(c.env, draft, attachments.length, schedule.at);
     if ('error' in queued) return badRequest(c, queued.error);
 
     await logAudit(c.env, user.id, 'CREATE', 'email_messages', id, {
@@ -650,8 +674,14 @@ emailRouter.post('/drafts/:id/send', async (c) => {
       bccCount: bcc.length, subject: draft.subject, attachments: attachments.length,
     });
 
-    if (!queued.deduped) c.executionCtx.waitUntil(drainOne(c.env, id));
-    return ok(c, { id, sent: true, deduped: queued.deduped });
+    if (!queued.deduped && !schedule.at) c.executionCtx.waitUntil(drainOne(c.env, id));
+    return ok(c, {
+      id,
+      sent: !schedule.at,
+      scheduled: !!schedule.at,
+      ...(schedule.at ? { scheduledFor: schedule.at.toISOString() } : {}),
+      deduped: queued.deduped,
+    });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -678,6 +708,81 @@ emailRouter.delete('/drafts/:id', async (c) => {
 
     await logAudit(c.env, user.id, 'DELETE', 'email_messages', id, { draft: true });
     return ok(c, { deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
+// ── Scheduled ───────────────────────────────────────────────────────────────
+
+/**
+ * Messages waiting for their time.
+ *
+ * Not a folder: a scheduled message lives in `sent` with a `scheduled_for` on its
+ * delivery row, because it IS sent as far as the writer is concerned — they are done
+ * with it. Making it a folder would mean a message whose folder disagreed with its
+ * delivery state, which is the class of thing that later reads as a bug.
+ */
+emailRouter.get('/scheduled', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const boxes = await listReadableMailboxes(c);
+    if (boxes.length === 0) return ok(c, []);
+
+    const rows = await db
+      .select({
+        id: schema.emailMessages.id,
+        mailboxId: schema.emailMessages.mailboxId,
+        subject: schema.emailMessages.subject,
+        toAddresses: schema.emailMessages.toAddresses,
+        preview: schema.emailMessages.bodyText,
+        scheduledFor: schema.emailDelivery.scheduledFor,
+        status: schema.emailDelivery.status,
+      })
+      .from(schema.emailDelivery)
+      .innerJoin(schema.emailMessages, eq(schema.emailMessages.id, schema.emailDelivery.messageId))
+      .where(and(
+        inArray(schema.emailMessages.mailboxId, boxes.map((b) => b.id)),
+        isNotNull(schema.emailDelivery.scheduledFor),
+        inArray(schema.emailDelivery.status, ['queued', 'sending']),
+      ))
+      .orderBy(asc(schema.emailDelivery.scheduledFor))
+      .limit(100);
+
+    return ok(c, rows.map((r) => ({ ...r, preview: (r.preview ?? '').slice(0, 160) })));
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * Cancels a scheduled message by returning it to drafts.
+ *
+ * Deleting the delivery row rather than setting `status='cancelled'` is what makes it
+ * editable again — a draft is defined by NOT having one. The alternative leaves a dead
+ * row that can never send and can never be fixed, which is a worse answer to "actually,
+ * change that first".
+ */
+emailRouter.post('/scheduled/:id/cancel', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+
+    const msg = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, id) });
+    if (!msg) return notFound(c, 'Message not found');
+    if (!(await canUseMailbox(c, msg.mailboxId, 'send'))) return forbidden(c, 'You cannot change that mailbox.');
+
+    const delivery = await db.query.emailDelivery.findFirst({
+      where: eq(schema.emailDelivery.messageId, id),
+    });
+    if (!delivery) return badRequest(c, 'That message is not scheduled.');
+    if (!delivery.scheduledFor) return badRequest(c, 'That message was not scheduled; it has already gone out.');
+    if (delivery.status === 'sent') return badRequest(c, 'That message has already been sent.');
+
+    await db.delete(schema.emailDelivery).where(eq(schema.emailDelivery.messageId, id));
+    await db.update(schema.emailMessages)
+      .set({ folder: 'drafts' })
+      .where(eq(schema.emailMessages.id, id));
+
+    await logAudit(c.env, user.id, 'UPDATE', 'email_messages', id, { action: 'schedule_cancelled' });
+    return ok(c, { cancelled: true, returnedToDrafts: true });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -799,9 +904,13 @@ emailRouter.post('/send', async (c) => {
       threadId = parent.threadId ?? threadId;
     }
 
+    const schedule = parseSchedule(body.scheduledFor);
+    if (schedule.problem) return badRequest(c, schedule.problem);
+
     const queued = await enqueue(c.env, {
       mailboxId,
       to, cc, bcc,
+      ...(schedule.at ? { scheduledFor: schedule.at } : {}),
       subject, text,
       ...(html ? { html } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
@@ -823,11 +932,18 @@ emailRouter.post('/send', async (c) => {
       templateKey: body.templateKey ?? null, deduped: queued.deduped,
     });
 
-    // Send now; the cron is only the reaper. waitUntil rather than awaiting it so
-    // a slow provider does not hold the request open.
-    if (!queued.deduped) c.executionCtx.waitUntil(drainOne(c.env, queued.messageId));
+    /**
+     * Send now unless it is scheduled. `drainOne` refuses a future message anyway, so
+     * calling it would be harmless — but not calling it makes the intent obvious and
+     * saves a claim-and-release round trip.
+     */
+    if (!queued.deduped && !schedule.at) c.executionCtx.waitUntil(drainOne(c.env, queued.messageId));
 
-    return created(c, { id: queued.messageId, deduped: queued.deduped });
+    return created(c, {
+      id: queued.messageId,
+      deduped: queued.deduped,
+      ...(schedule.at ? { scheduledFor: schedule.at.toISOString() } : {}),
+    });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -996,6 +1112,152 @@ emailRouter.get('/search', async (c) => {
       isStarred: m.isStarred,
       createdAt: m.createdAt,
     })));
+  } catch (err) { return serverError(c, err); }
+});
+
+// ── Export ──────────────────────────────────────────────────────────────────
+
+/**
+ * Exports mail as an mbox archive.
+ *
+ * mbox rather than JSON because the point of an export is that it outlives this system:
+ * every mail client on earth imports mbox, and a JSON dump is only readable by code
+ * somebody would have to write. For received mail it is byte-perfect — `inbound.ts`
+ * writes the original MIME to R2 before parsing anything, so the export is the message
+ * as it actually arrived, headers, signatures and all. Sent mail has no original (the
+ * provider built it), so a minimal RFC 5322 message is synthesised from the row and the
+ * export says so in a header.
+ *
+ * **It respects `canUseMailbox`, which means an administrator does not get everybody's
+ * personal mail.** That is deliberate and it is the whole reason this is not a
+ * superadmin-only bulk dump: ownership of a personal mailbox has been the one thing no
+ * grant can override, and an export route is exactly where that invariant would quietly
+ * die. A superadmin bypasses it as they bypass everything, which is the honest place for
+ * that power to live.
+ *
+ * Streamed rather than assembled, so a large archive does not have to fit in memory,
+ * and paginated internally so one slow R2 read cannot stall the whole thing. Capped —
+ * the response says when it truncated and gives the cursor to continue from.
+ */
+const EXPORT_MAX = 500;
+
+emailRouter.get('/export', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+
+    const wanted = c.req.query('mailbox');
+    const boxes = (await listReadableMailboxes(c)).filter((b) => !wanted || b.id === wanted);
+    if (boxes.length === 0) return badRequest(c, 'No mailbox you can read matches that request.');
+
+    // `before` continues a truncated export; ids are not ordered, so the cursor is a time.
+    const before = c.req.query('before') ? new Date(String(c.req.query('before'))) : null;
+    if (before && Number.isNaN(before.getTime())) return badRequest(c, 'before is not a valid date.');
+
+    const rows = await db.query.emailMessages.findMany({
+      where: and(
+        inArray(schema.emailMessages.mailboxId, boxes.map((b) => b.id)),
+        // A draft was never a message. Including them would make the archive disagree
+        // with what was actually sent or received.
+        ne(schema.emailMessages.folder, 'drafts'),
+        ...(before ? [lt(schema.emailMessages.createdAt, before)] : []),
+      ),
+      orderBy: [desc(schema.emailMessages.createdAt)],
+      limit: EXPORT_MAX + 1,
+    });
+
+    const truncated = rows.length > EXPORT_MAX;
+    const batch = rows.slice(0, EXPORT_MAX);
+
+    await logAudit(c.env, user.id, 'READ', 'email_messages', 'export', {
+      mailboxes: boxes.map((b) => b.address),
+      count: batch.length,
+      truncated,
+      // An export is bulk access to correspondence. Who took what, and when.
+      before: before?.toISOString() ?? null,
+    });
+
+    const byId = new Map(boxes.map((b) => [b.id, b.address]));
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const push = (text: string) => controller.enqueue(encoder.encode(text));
+        try {
+          for (const m of batch) {
+            const stamp = (m.receivedAt ?? m.createdAt) ?? new Date();
+            /**
+             * The `From ` line separates messages in an mbox and is not a header. A body
+             * line that happens to begin `From ` has to be escaped or the next importer
+             * treats it as the start of a new message — the classic mbox corruption.
+             */
+            push(`From ${m.fromAddress} ${new Date(stamp).toUTCString()}\n`);
+            push(`X-Pleiades-Mailbox: ${byId.get(m.mailboxId) ?? m.mailboxId}\n`);
+            push(`X-Pleiades-Folder: ${m.folder}\n`);
+            push(`X-Pleiades-Message-Id: ${m.id}\n`);
+
+            let raw: string | null = null;
+            if (m.rawKey && c.env.CRM_BUCKET) {
+              const obj = await c.env.CRM_BUCKET.get(m.rawKey);
+              if (obj) raw = await obj.text();
+            }
+
+            if (raw) {
+              push('X-Pleiades-Fidelity: original\n');
+              push(raw.replace(/^From /gm, '>From ').replace(/\r\n/g, '\n'));
+              push('\n\n');
+            } else {
+              // Synthesised. Said out loud, so nobody auditing this mistakes it for the
+              // bytes that crossed the wire.
+              push('X-Pleiades-Fidelity: reconstructed\n');
+              push(`Date: ${new Date(stamp).toUTCString()}\n`);
+              push(`From: ${m.fromName ? `${m.fromName} <${m.fromAddress}>` : m.fromAddress}\n`);
+              const addrs = (json: string | null) => {
+                try { return (JSON.parse(json ?? '[]') as Addr[]).map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(', '); }
+                catch { return ''; }
+              };
+              push(`To: ${addrs(m.toAddresses)}\n`);
+              if (m.ccAddresses) push(`Cc: ${addrs(m.ccAddresses)}\n`);
+              if (m.messageIdHeader) push(`Message-ID: ${m.messageIdHeader}\n`);
+              if (m.inReplyToHeader) push(`In-Reply-To: ${m.inReplyToHeader}\n`);
+              if (m.referencesHeader) push(`References: ${m.referencesHeader}\n`);
+              push(`Subject: ${(m.subject ?? '').replace(/[\r\n]/g, ' ')}\n`);
+              push('MIME-Version: 1.0\n');
+              push('Content-Type: text/plain; charset=utf-8\n');
+              push('\n');
+              push(m.bodyText.replace(/^From /gm, '>From '));
+              push('\n\n');
+            }
+          }
+
+          if (truncated) {
+            const last = batch[batch.length - 1];
+            const cursor = new Date(last.createdAt as unknown as Date).toISOString();
+            push(`From export@pleiades ${new Date().toUTCString()}\n`);
+            push('Subject: This archive was truncated\n\n');
+            push(`${EXPORT_MAX} messages were exported, and there are older ones.\n`);
+            push(`Continue with ?before=${cursor}\n\n`);
+          }
+          controller.close();
+        } catch (err) {
+          // Close rather than error: a partial archive the importer can read beats a
+          // broken download with nothing in it.
+          console.error('[email] export stream failed partway:', err);
+          controller.close();
+        }
+      },
+    });
+
+    const name = wanted ? (byId.get(wanted) ?? 'mailbox') : 'all-mailboxes';
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/mbox',
+        'Content-Disposition': `attachment; filename="pleiades-${name}-${new Date().toISOString().slice(0, 10)}.mbox"`,
+        'Cache-Control': 'private, no-store',
+        'X-Pleiades-Exported': String(batch.length),
+        'X-Pleiades-Truncated': String(truncated),
+      },
+    });
   } catch (err) { return serverError(c, err); }
 });
 

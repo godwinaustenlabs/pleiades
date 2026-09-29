@@ -276,6 +276,22 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
   const delivery = await db.query.emailDelivery.findFirst({ where: eq(schema.emailDelivery.messageId, messageId) });
   if (!row || !delivery) return 'skipped';
 
+  /**
+   * A scheduled message is claimable but not yet sendable.
+   *
+   * `sweep` filters on `scheduled_for`, but `drainOne` is also called directly — by the
+   * send route's waitUntil — and without this guard scheduling a message for next
+   * Tuesday would send it immediately. The claim is released rather than left in
+   * `sending`, so the sweep picks it up at the right time instead of waiting out a
+   * ten-minute lease first.
+   */
+  if (delivery.scheduledFor && delivery.scheduledFor.getTime() > Date.now()) {
+    await db.update(schema.emailDelivery)
+      .set({ status: 'queued', nextAttemptAt: null })
+      .where(eq(schema.emailDelivery.messageId, messageId));
+    return 'skipped';
+  }
+
   const box = await loadMailbox(env, row.mailboxId);
   const from: Addr = { email: row.fromAddress, ...(row.fromName ? { name: row.fromName } : {}) };
 
@@ -433,6 +449,7 @@ export async function promoteDraft(
   env: Env,
   draft: { id: string; mailboxId: string; subject: string | null },
   attachmentCount = 0,
+  scheduledFor?: Date,
 ): Promise<EnqueueResult> {
   const db = getDb(env);
 
@@ -454,7 +471,7 @@ export async function promoteDraft(
     status: 'queued',
     attempts: 0,
     nextAttemptAt: null,
-    scheduledFor: null,
+    scheduledFor: scheduledFor ?? null,
     // Keyed on the draft, so a double-clicked Send finds this row rather than making
     // a second one.
     idempotencyKey: `manual:${box.id}:draft:${draft.id}`,

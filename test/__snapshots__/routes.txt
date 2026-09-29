@@ -152,6 +152,7 @@ PUT    /api/email/drafts/:id?
 POST   /api/email/drafts/:id/attachments
 DELETE /api/email/drafts/:id/attachments/:attachmentId
 POST   /api/email/drafts/:id/send
+GET    /api/email/export
 GET    /api/email/mailboxes
 POST   /api/email/mailboxes
 DELETE /api/email/mailboxes/:id
@@ -164,6 +165,8 @@ PATCH  /api/email/messages/:id
 GET    /api/email/mine
 GET    /api/email/prefs
 PUT    /api/email/prefs
+GET    /api/email/scheduled
+POST   /api/email/scheduled/:id/cancel
 GET    /api/email/search
 POST   /api/email/send
 GET    /api/email/templates

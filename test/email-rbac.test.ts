@@ -629,3 +629,210 @@ describe('drafts', () => {
     expect(del.status).toBe(403);
   });
 });
+
+
+describe('scheduling', () => {
+  const put = async (body: Record<string, unknown>) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch('https://test.local/api/email/drafts', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailboxId: 'mbx_acq', ...body }),
+    });
+  };
+  const sendDraft = async (id: string, body: Record<string, unknown> = {}) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch(`https://test.local/api/email/drafts/${id}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  };
+
+  it('holds a scheduled message instead of sending it', async () => {
+    const { env } = await import('cloudflare:test');
+    const saved = await put({ subject: 'later', text: 'body', to: ['delivered+later@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const res = await sendDraft(id, { scheduledFor: future });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { data: { scheduled: boolean } }).data.scheduled).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+    const row = await env.DB.prepare('SELECT status, scheduled_for FROM email_delivery WHERE message_id = ?')
+      .bind(id).first<{ status: string; scheduled_for: number }>();
+    // Queued, not sent — and the sweep will leave it alone until its time.
+    expect(row!.status).toBe('queued');
+    expect(row!.scheduled_for).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it('refuses to send one early even when drainOne is called directly', async () => {
+    const { env } = await import('cloudflare:test');
+    const { drainOne } = await import('../src/email/outbox');
+    const saved = await put({ subject: 'much later', text: 'body', to: ['delivered+much@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+    await sendDraft(id, { scheduledFor: new Date(Date.now() + 3600_000).toISOString() });
+
+    /**
+     * `sweep` filters on scheduled_for, but drainOne is also called directly by the send
+     * route's waitUntil — without the guard, scheduling for next Tuesday would send now.
+     */
+    expect(await drainOne(env, id)).toBe('skipped');
+    const row = await env.DB.prepare('SELECT status FROM email_delivery WHERE message_id = ?')
+      .bind(id).first<{ status: string }>();
+    // Released back to queued, not stranded in `sending` waiting out a lease.
+    expect(row!.status).toBe('queued');
+  });
+
+  it('sends one whose time has come', async () => {
+    const { env } = await import('cloudflare:test');
+    const { sweep } = await import('../src/email/outbox');
+    const saved = await put({ subject: 'due now', text: 'body', to: ['delivered+due@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+    await sendDraft(id, { scheduledFor: new Date(Date.now() + 3600_000).toISOString() });
+
+    // Move its time into the past, as the clock would.
+    await env.DB.prepare('UPDATE email_delivery SET scheduled_for = ? WHERE message_id = ?')
+      .bind(Math.floor(Date.now() / 1000) - 60, id).run();
+    await sweep(env);
+
+    const row = await env.DB.prepare('SELECT status FROM email_delivery WHERE message_id = ?')
+      .bind(id).first<{ status: string }>();
+    expect(row!.status).toBe('sent');
+  });
+
+  it('refuses a time in the past or beyond the limit', async () => {
+    const saved = await put({ subject: 'x', text: 'body', to: ['delivered+x@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+    // Quietly sending something dated yesterday is the wrong guess — they meant something.
+    const past = await sendDraft(id, { scheduledFor: new Date(Date.now() - 60_000).toISOString() });
+    expect(past.status).toBe(400);
+    const tooFar = await sendDraft(id, { scheduledFor: new Date(Date.now() + 200 * 864e5).toISOString() });
+    expect(tooFar.status).toBe(400);
+    const nonsense = await sendDraft(id, { scheduledFor: 'next thursday-ish' });
+    expect(nonsense.status).toBe(400);
+  });
+
+  it('cancels back to drafts so it can be edited and rescheduled', async () => {
+    const { SELF, env } = await import('cloudflare:test');
+    const saved = await put({ subject: 'reconsider', text: 'body', to: ['delivered+re@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+    await sendDraft(id, { scheduledFor: new Date(Date.now() + 3600_000).toISOString() });
+
+    const res = await SELF.fetch(`https://test.local/api/email/scheduled/${id}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(200);
+
+    const msg = await env.DB.prepare('SELECT folder FROM email_messages WHERE message_id = ?')
+      .bind(id).first<{ folder: string }>();
+    const del = await env.DB.prepare('SELECT count(*) AS n FROM email_delivery WHERE message_id = ?')
+      .bind(id).first<{ n: number }>();
+    /**
+     * Deleting the delivery row rather than marking it cancelled is what makes it
+     * editable again — a draft is defined by not having one.
+     */
+    expect(msg!.folder).toBe('drafts');
+    expect(Number(del!.n)).toBe(0);
+  });
+
+  it('lists what is waiting, and only from mailboxes the caller can read', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const mine = await SELF.fetch('https://test.local/api/email/scheduled', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    const rows = ((await mine.json()) as { data: { mailboxId: string }[] }).data;
+    expect(rows.every((r) => r.mailboxId === 'mbx_acq')).toBe(true);
+
+    const theirs = await SELF.fetch('https://test.local/api/email/scheduled', {
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    const others = ((await theirs.json()) as { data: { mailboxId: string }[] }).data;
+    expect(others.every((r) => r.mailboxId !== 'mbx_acq')).toBe(true);
+  });
+});
+
+describe('export', () => {
+  it('produces an mbox an importer can read', async () => {
+    const { SELF, env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, is_read, is_starred, created_at) " +
+      "VALUES ('eml_export','mbx_acq','inbound','inbox','client@resend.dev','[]','Contract','From the client.' || char(10) || 'From Monday we start.',1,0,100)",
+    ).run();
+
+    const res = await SELF.fetch('https://test.local/api/email/export?mailbox=mbx_acq', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/mbox');
+    expect(res.headers.get('content-disposition')).toContain('.mbox');
+
+    const body = await res.text();
+    // Each message starts with a From_ line, which is the separator, not a header.
+    expect(body).toMatch(/^From client@resend\.dev /m);
+    expect(body).toContain('X-Pleiades-Mailbox: sales@godwinausten.org');
+    expect(body).toContain('Subject: Contract');
+    /**
+     * The classic mbox corruption: a body line beginning "From " is read by the next
+     * importer as the start of a new message unless it is escaped.
+     */
+    expect(body).toContain('>From Monday we start.');
+  });
+
+  it('marks reconstructed messages as such', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/export?mailbox=mbx_acq', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    const body = await res.text();
+    // Sent mail has no original bytes — the provider built it — so nobody auditing this
+    // should mistake the synthesised version for what crossed the wire.
+    expect(body).toContain('X-Pleiades-Fidelity: reconstructed');
+  });
+
+  it('excludes drafts, which were never messages', async () => {
+    const { SELF, env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, is_read, is_starred, created_at) " +
+      "VALUES ('eml_draftonly','mbx_acq','outbound','drafts','sales@godwinausten.org','[]','NEVER-SENT-DRAFT','wip',1,0,100)",
+    ).run();
+    const res = await SELF.fetch('https://test.local/api/email/export?mailbox=mbx_acq', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    expect(await res.text()).not.toContain('NEVER-SENT-DRAFT');
+  });
+
+  it('does not hand an administrator somebody else’s personal mail', async () => {
+    const { SELF, env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, is_read, is_starred, created_at) " +
+      "VALUES ('eml_private','mbx_mkt','inbound','inbox','friend@resend.dev','[]','PRIVATE-SUBJECT','personal',1,0,100)",
+    ).run();
+
+    /**
+     * An export route is exactly where the one invariant no grant can override would
+     * quietly die. u_mail holds admin/mailboxes; mbx_mkt belongs to u_mkt.
+     */
+    const res = await SELF.fetch('https://test.local/api/email/export', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    expect(await res.text()).not.toContain('PRIVATE-SUBJECT');
+
+    // Its owner can export it.
+    const owner = await SELF.fetch('https://test.local/api/email/export?mailbox=mbx_mkt', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    expect(await owner.text()).toContain('PRIVATE-SUBJECT');
+  });
+
+  it('refuses a mailbox the caller cannot read', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/export?mailbox=mbx_payroll', {
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    expect(res.status).toBe(400);
+  });
+});

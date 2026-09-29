@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Inbox, Send, FileEdit, Archive, ShieldAlert, Trash2, Loader2, Plus, Star, X,
   ChevronLeft, AlertCircle, Paperclip, Reply, ReplyAll, Forward, Search, Bell,
-  MailOpen, RefreshCw, CornerUpLeft,
+  MailOpen, RefreshCw, CornerUpLeft, Clock, Download, FileText,
 } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
+import TemplateEditor from './TemplateEditor';
 
 /**
  * The mail client, mounted once per place mail is read.
@@ -174,6 +175,17 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
   const [term, setTerm] = useState('');
   const [results, setResults] = useState<MessageSummary[] | null>(null);
 
+  /**
+   * `scheduled` and `templates` sit in the folder rail but are not folders.
+   *
+   * A scheduled message lives in `sent` with a time on its delivery row — it IS sent as
+   * far as the writer is concerned. Making it a folder would mean a message whose folder
+   * disagreed with its delivery state, which is the class of thing that reads as a bug
+   * later. Templates are not messages at all.
+   */
+  const [view, setView] = useState<'folder' | 'scheduled' | 'templates'>('folder');
+  const [scheduled, setScheduled] = useState<ScheduledMessage[] | null>(null);
+
   /** Ids already announced, so a poll does not notify about the same mail twice. */
   const announced = useRef<Set<string>>(new Set());
   const [notifyOn, setNotifyOn] = useState(
@@ -266,6 +278,33 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
       window.removeEventListener('focus', tick);
     };
   }, [activeBox, folder, loadMessages]);
+
+  const loadScheduled = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/email/scheduled`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load scheduled messages');
+      setScheduled(json.data ?? []);
+    } catch (e) {
+      setError(errorMessage(e));
+      setScheduled([]);
+    }
+  }, []);
+
+  async function cancelScheduled(id: string) {
+    try {
+      const res = await fetch(`${API}/email/scheduled/${id}/cancel`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: '{}',
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Could not cancel');
+      await loadScheduled();
+      // It went back to drafts rather than being marked cancelled, so that it can be
+      // edited and rescheduled.
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   async function manualRefresh() {
     if (!activeBox) return;
@@ -507,19 +546,61 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
           {FOLDERS.map((f) => (
             <button
               key={f.id}
-              onClick={() => { setFolder(f.id); setOpen(null); setThread(null); setResults(null); }}
+              onClick={() => { setView('folder'); setFolder(f.id); setOpen(null); setThread(null); setResults(null); }}
               className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold transition-all md:w-full ${
-                folder === f.id && results === null ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
+                view === 'folder' && folder === f.id && results === null ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
               }`}
             >
               <f.icon className="h-3.5 w-3.5" />
               {f.label}
             </button>
           ))}
+
+          <button
+            onClick={() => { setView('scheduled'); setOpen(null); setThread(null); setResults(null); loadScheduled(); }}
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold transition-all md:w-full ${
+              view === 'scheduled' ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
+            }`}
+          >
+            <Clock className="h-3.5 w-3.5" /> Scheduled
+          </button>
+
+          {scope.kind === 'app' && (
+            <button
+              onClick={() => { setView('templates'); setOpen(null); setThread(null); setResults(null); }}
+              className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold transition-all md:w-full ${
+                view === 'templates' ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" /> Templates
+            </button>
+          )}
+
+          {/* A plain link, not a fetch: the response is a streamed download, and letting
+              the browser handle it means a large archive never passes through JS memory.
+              The token rides in the query string because a download cannot carry a
+              header — the same path /api/assets/download already uses. */}
+          {activeBox && (
+            <a
+              href={`${API}/email/export?mailbox=${activeBox}&token=${encodeURIComponent(localStorage.getItem('ga_token') || '')}`}
+              className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold text-textSecondary transition-all hover:bg-surfaceAlt md:w-full"
+              title="Download everything in this mailbox as an mbox archive"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </a>
+          )}
         </div>
 
         <div className="min-w-0 flex-1">
-          {thread ? (
+          {view === 'templates' && scope.kind === 'app' ? (
+            <TemplateEditor app={scope.app} />
+          ) : view === 'scheduled' ? (
+            <ScheduledList
+              items={scheduled}
+              onCancel={cancelScheduled}
+              onRefresh={loadScheduled}
+            />
+          ) : thread ? (
             <ThreadView
               messages={thread}
               onBack={() => setThread(null)}
@@ -845,6 +926,8 @@ function Composer({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  /** Empty means send now. A `datetime-local` value, i.e. the writer's own clock. */
+  const [sendAt, setSendAt] = useState('');
 
   const split = (v: string) => v.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => s.includes('@'));
   const recipientCount = split(to).length + split(cc).length + split(bcc).length;
@@ -935,7 +1018,12 @@ function Composer({
       const res = await fetch(`${API}/email/drafts/${id}/send`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: '{}',
+        /**
+         * `datetime-local` has no timezone, so it is read in the writer's own zone —
+         * which is what they meant — and sent as an absolute instant. Passing the bare
+         * string would have the server read it as UTC and send at the wrong hour.
+         */
+        body: JSON.stringify(sendAt ? { scheduledFor: new Date(sendAt).toISOString() } : {}),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not send');
@@ -1040,7 +1128,23 @@ function Composer({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+          <label className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 shrink-0 text-textSecondary" />
+            <input
+              type="datetime-local"
+              value={sendAt}
+              onChange={(e) => setSendAt(e.target.value)}
+              min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+              title="Leave empty to send now"
+              className="min-w-0 rounded border border-border bg-surfaceAlt px-1.5 py-1 text-[11px] text-textPrimary outline-none"
+            />
+            {sendAt && (
+              <button onClick={() => setSendAt('')} title="Send now instead" className="shrink-0 text-textSecondary">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </label>
           <span className="text-[10px] text-textSecondary">
             {recipientCount > 0 && `${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
           </span>
@@ -1057,8 +1161,9 @@ function Composer({
               disabled={!!busy || recipientCount === 0 || !subject.trim() || !text.trim() || overBulk}
               className="flex items-center gap-1.5 rounded-lg bg-module px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim transition-all active:scale-[0.97] disabled:opacity-40"
             >
-              {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              Send
+              {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : sendAt ? <Clock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+              {sendAt ? 'Schedule' : 'Send'}
             </button>
           </div>
         </div>
@@ -1085,5 +1190,79 @@ function Field({
         className="min-w-0 flex-1 bg-transparent text-textPrimary outline-none placeholder:text-textSecondary/50"
       />
     </label>
+  );
+}
+
+// ── Scheduled ───────────────────────────────────────────────────────────────
+
+interface ScheduledMessage {
+  id: string;
+  mailboxId: string;
+  subject: string | null;
+  toAddresses: string;
+  preview: string;
+  scheduledFor: number;
+  status: string;
+}
+
+function ScheduledList({
+  items, onCancel, onRefresh,
+}: {
+  items: ScheduledMessage[] | null;
+  onCancel: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  if (items === null) {
+    return (
+      <div className="flex items-center gap-2 py-12 text-xs text-textSecondary">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <p className="text-[11px] leading-relaxed text-textSecondary">
+          Waiting to go out. The five-minute sweep sends each one once its time arrives, so a message may
+          leave up to five minutes late — never early. Cancelling returns it to Drafts so you can change
+          it and schedule again.
+        </p>
+        <button onClick={onRefresh} className="shrink-0 rounded-lg border border-border p-1.5 text-textSecondary hover:bg-surfaceAlt">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-border bg-surface px-4 py-12 text-center">
+          <Clock className="mx-auto mb-3 h-8 w-8 text-textSecondary opacity-40" />
+          <p className="text-xs text-textSecondary">Nothing scheduled.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          {items.map((m) => (
+            <div key={m.id} className="flex items-start gap-3 border-b border-border p-3 last:border-0 md:p-4">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-module" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-textPrimary">
+                  {new Date((m.scheduledFor < 1e12 ? m.scheduledFor * 1000 : m.scheduledFor)).toLocaleString()}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] text-textSecondary">
+                  To: {addressList(m.toAddresses)}
+                </div>
+                <div className="mt-0.5 truncate text-xs text-textPrimary">{m.subject || '(no subject)'}</div>
+                <div className="mt-0.5 truncate text-[11px] text-textSecondary">{m.preview}</div>
+              </div>
+              <button
+                onClick={() => onCancel(m.id)}
+                className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold text-textSecondary hover:bg-surfaceAlt"
+              >
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
