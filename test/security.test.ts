@@ -70,6 +70,66 @@ describe('internal agent actor header', () => {
 	});
 });
 
+describe('the token is a name, not a set of claims', () => {
+	/**
+	 * A staff session lasts eight days and slides forward while somebody is active, so
+	 * a token is a snapshot of who they were up to a week ago. Three things used to run
+	 * on that snapshot. All three are now read from `users_logins` on every request —
+	 * see the long note in src/middleware/auth.ts.
+	 */
+	const mint = (claims: Record<string, unknown>) =>
+		sign(
+			{ isSuperadmin: false, type: 'human', exp: Math.floor(Date.now() / 1000) + 3600, ...claims },
+			env.JWT_SECRET as string,
+			'HS256',
+		);
+
+	it('a revoked superadmin stops bypassing checks immediately, not at token expiry', async () => {
+		// Was: is_superadmin came from the token, and superadmin bypasses every
+		// authorization check in the system — so revoking it did nothing for a week.
+		const token = await mint({ id: 'u_none', isSuperadmin: true });
+		const res = await SELF.fetch(PROTECTED, { headers: { Authorization: `Bearer ${token}` } });
+		expect(res.status).toBe(403);
+	});
+
+	it('a deactivated account cannot use a token it already holds', async () => {
+		// Was: authMiddleware did no database read, so a deactivated account got
+		// through it and was stopped only by rbac.ts returning no grants. Routes that
+		// do not consult grants never noticed — `/api/email/mine` would still list and
+		// open that person's own mailbox, because ownership is checked against the id
+		// in the token rather than against a live account.
+		const token = await tokenFor('mkt');
+		const before = await SELF.fetch('https://test.local/api/email/mailboxes/mbx_mkt/messages', {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		expect(before.status).toBe(200);
+
+		await env.DB.prepare('UPDATE users_logins SET is_active = 0 WHERE id = ?').bind('u_mkt').run();
+		const after = await SELF.fetch('https://test.local/api/email/mailboxes/mbx_mkt/messages', {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		expect(after.status).toBe(401);
+
+		await env.DB.prepare('UPDATE users_logins SET is_active = 1 WHERE id = ?').bind('u_mkt').run();
+	});
+
+	it('an employeeId claim the database disagrees with grants nothing', async () => {
+		// It decides which appointments apply, and therefore which grants and which
+		// mailboxes. See test/appointments-rbac.test.ts for the appointment half.
+		const token = await mint({ id: 'u_none', employeeId: 'emp_dual' });
+		const res = await SELF.fetch('https://test.local/api/tech/projects', {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		expect(res.status).toBe(403);
+	});
+
+	it('names an account that does not exist to nothing', async () => {
+		const token = await mint({ id: 'u_deleted_long_ago' });
+		const res = await SELF.fetch(PROTECTED, { headers: { Authorization: `Bearer ${token}` } });
+		expect(res.status).toBe(401);
+	});
+});
+
 describe('audience-scoped tokens', () => {
 	// Short-lived tickets (e.g. for an agent WebSocket) carry `aud`. Without this
 	// check such a ticket would work as a full API credential.

@@ -3,11 +3,10 @@ import { eq, and, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess, requireFeatureAccess, listGrants, APP_FEATURES } from '../middleware/rbac';
+import { requireAppAccess, requireFeatureAccess, listGrants } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
-import { ok, created, notFound, serverError } from '../utils/response';
-import { chunk } from '../utils/batch';
+import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 import { hashPassword } from '../utils/password';
 
 const hrRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
@@ -15,63 +14,21 @@ hrRouter.use('*', authMiddleware);
 hrRouter.use('*', requireAppAccess('hr'));
 
 /**
- * Writes a provisioned account's permissions.
+ * Appointments live here; what an appointment GRANTS does not.
  *
- * A new account starts with nothing: omit `permissions` and it can reach no
- * module at all until someone grants it something. That is deliberate — the
- * failure mode of the old default was an account quietly carrying whatever the
- * default role happened to hold.
+ * This router used to write `user_app_permissions` directly, from a
+ * `permissions` array on the provisioning body, while gated on
+ * `hr/appointments` edit. That is an escalation: anybody able to edit an
+ * appointment could grant themselves every feature in the system. The same hole
+ * was closed once before by deleting `PUT /api/permissions/user/:id` for exactly
+ * this reason, and reopening it on the appointment table would have been the
+ * same mistake with a new column name.
  *
- * A grant naming an app/feature outside APP_FEATURES is rejected rather than
- * stored, because getPerm() could never satisfy it: the row would look like
- * access while doing nothing.
+ * Access is edited through `PUT /api/admin/appointments/:id/permissions`, gated
+ * on `admin/permissions` edit. Assigning somebody to a post and deciding what
+ * that post may reach are two different authorities, and now two different
+ * grants.
  */
-type GrantInput = {
-  appName: string;
-  feature: string;
-  canView?: boolean;
-  canEdit?: boolean;
-  canDelete?: boolean;
-};
-
-async function applyPermissions(c: any, userId: string, permissions?: GrantInput[]): Promise<number> {
-  if (!Array.isArray(permissions) || permissions.length === 0) return 0;
-
-  const unknown = permissions.filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature));
-  if (unknown.length > 0) {
-    throw new Error(`Unknown app/feature: ${unknown.map((p) => `${p.appName}/${p.feature}`).join(', ')}`);
-  }
-
-  const db = getDb(c.env);
-  await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, userId));
-
-  const now = new Date();
-  const rows = permissions
-    .filter((p) => p.canView || p.canEdit || p.canDelete)
-    .map((p) => ({
-      id: generateId('uap'),
-      userId,
-      appName: p.appName,
-      feature: p.feature,
-      canView: p.canView ?? false,
-      canEdit: p.canEdit ?? false,
-      canDelete: p.canDelete ?? false,
-      createdAt: now,
-      updatedAt: now,
-    }));
-  for (const batch of chunk(rows, 5)) {
-    if (batch.length > 0) await db.insert(schema.userAppPermissions).values(batch as any);
-  }
-  return rows.length;
-}
-
-async function sha256hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 /* ── SECTORS ── */
 hrRouter.get('/sectors', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
@@ -128,6 +85,24 @@ hrRouter.delete('/sectors/:id', requireFeatureAccess('hr', 'employees', 'delete'
 });
 
 /* ── APPOINTMENTS ── */
+/**
+ * An appointment is a POST, and the unit access is defined on.
+ *
+ * The important route here is not the create — it is `PATCH /appointments/:id`
+ * changing `employeeId`. That single edit is a handover: the new holder gains
+ * every grant in `appointment_app_permissions`, every mailbox attached to the
+ * appointment, and the committee seat; the previous holder loses all three. No
+ * permission matrix is opened for either person, and there is no second login to
+ * create or remember to deactivate.
+ *
+ * What these routes deliberately do NOT do:
+ *
+ *   - create or update a login. One login per person, provisioned against the
+ *     employee (`POST /hr/employees/:id/account`), never against a post. The old
+ *     `/appointments/provision` did both at once, which is how a person holding
+ *     two posts ended up with two accounts and could read only one at a time.
+ *   - write permissions. See the note at the top of this file.
+ */
 hrRouter.get('/appointments', requireFeatureAccess('hr', 'appointments', 'view'), async (c) => {
   try {
     const db = getDb(c.env);
@@ -139,194 +114,160 @@ hrRouter.get('/appointments', requireFeatureAccess('hr', 'appointments', 'view')
   } catch (err) { return serverError(c, err); }
 });
 
+/** What a caller may set on an appointment. An allowlist, so a new column is not writable by accident. */
+const APPOINTMENT_FIELDS = [
+  'roleOrTitle', 'appointmentDate', 'termType', 'appointmentEndDate',
+  'isActive', 'employeeId', 'committeeId',
+] as const;
+
+function appointmentPatch(body: Record<string, unknown>): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const key of APPOINTMENT_FIELDS) {
+    if (!(key in body)) continue;
+    const value = body[key];
+    /**
+     * `isActive` is coerced rather than passed through, because it is the switch on
+     * whether this post grants anything. Drizzle's boolean mode would write the
+     * string "false" as a truthy 1, so a client sending JSON-in-a-string would
+     * silently REINSTATE access it meant to withdraw.
+     */
+    if (key === 'isActive') {
+      patch[key] = value === true || value === 1 || value === 'true';
+      continue;
+    }
+    // An empty string in a foreign key column is not null and does not exist,
+    // so it fails the constraint rather than clearing the field. The web form
+    // sends '' for "nobody".
+    patch[key] = value === '' ? null : value;
+  }
+  return patch;
+}
+
+/**
+ * Keeps committee membership in step with who holds the appointment.
+ *
+ * Membership implies the `crm` grants in src/middleware/rbac.ts, so it is access
+ * and has to move on a handover like everything else. The outgoing holder's seat
+ * is removed only when no other active appointment of theirs names that
+ * committee — somebody can sit on a committee for more than one reason, and
+ * dropping a seat they hold independently would revoke access this edit was
+ * never about.
+ */
+async function syncCommitteeSeat(
+  env: Env,
+  committeeId: string | null,
+  incoming: string | null,
+  outgoing: string | null,
+  roleInCommittee?: string | null,
+  /**
+   * The committee this appointment named BEFORE the edit, when that changed.
+   *
+   * Without it, moving a post from one committee to another left its holder seated
+   * on the old one — access the edit was meant to withdraw, silently kept. The
+   * holder being the same person in that case is exactly why it is easy to miss:
+   * nothing looks like a handover.
+   */
+  previousCommitteeId?: string | null,
+): Promise<void> {
+  const db = getDb(env);
+
+  if (previousCommitteeId && previousCommitteeId !== committeeId) {
+    await vacateSeat(env, previousCommitteeId, outgoing ?? null);
+    await vacateSeat(env, previousCommitteeId, incoming ?? null);
+  }
+
+  if (!committeeId) return;
+
+  if (incoming) {
+    const existing = await db.query.committeeMembers.findFirst({
+      where: and(
+        eq(schema.committeeMembers.committeeId, committeeId),
+        eq(schema.committeeMembers.employeeId, incoming),
+      ),
+    });
+    if (!existing) {
+      await db.insert(schema.committeeMembers).values({
+        committeeId,
+        employeeId: incoming,
+        roleInCommittee: roleInCommittee ?? null,
+        joinedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (outgoing && outgoing !== incoming) await vacateSeat(env, committeeId, outgoing);
+}
+
+/**
+ * Removes one person's seat on one committee — but only when no active appointment
+ * of theirs still names it.
+ *
+ * Somebody can sit on a committee for more than one reason, and dropping a seat
+ * they hold independently would revoke access this edit was never about.
+ */
+async function vacateSeat(env: Env, committeeId: string, employeeId: string | null): Promise<void> {
+  if (!employeeId) return;
+  const db = getDb(env);
+  const stillSeated = await db.query.appointments.findMany({
+    where: and(
+      eq(schema.appointments.employeeId, employeeId),
+      eq(schema.appointments.committeeId, committeeId),
+      eq(schema.appointments.isActive, true),
+    ),
+    columns: { id: true },
+  });
+  if (stillSeated.length > 0) return;
+
+  await db.delete(schema.committeeMembers).where(and(
+    eq(schema.committeeMembers.committeeId, committeeId),
+    eq(schema.committeeMembers.employeeId, employeeId),
+  ));
+}
+
+/** The holder must be a real employee; a post assigned to an id that does not exist reaches nobody and looks filled. */
+async function employeeExists(env: Env, employeeId: unknown): Promise<boolean> {
+  if (typeof employeeId !== 'string' || !employeeId) return false;
+  const row = await getDb(env).query.employees.findFirst({
+    where: eq(schema.employees.id, employeeId),
+    columns: { id: true },
+  });
+  return !!row;
+}
+
 hrRouter.post('/appointments', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const body = await c.req.json();
+    const patch = appointmentPatch(body);
+
+    if (!patch.roleOrTitle) return badRequest(c, 'roleOrTitle is required — an appointment is a named post.');
+    if (patch.employeeId && !(await employeeExists(c.env, patch.employeeId))) {
+      return badRequest(c, 'employeeId does not name a known employee.');
+    }
+
     const id = generateId('appt');
-    await db.insert(schema.appointments).values({ ...body, id, createdAt: new Date() });
-    await logAudit(c.env, user.id, 'CREATE', 'appointments', id, body);
+    await db.insert(schema.appointments).values({
+      ...patch,
+      id,
+      // Vacant is a legitimate state: the post exists, grants nobody, and hands
+      // everything to whoever is appointed to it later.
+      employeeId: (patch.employeeId as string | null) ?? null,
+      isActive: patch.isActive === undefined ? true : patch.isActive === true,
+      createdAt: new Date(),
+    } as any);
+
+    await syncCommitteeSeat(
+      c.env,
+      (patch.committeeId as string | null) ?? null,
+      (patch.employeeId as string | null) ?? null,
+      null,
+      (patch.roleOrTitle as string | null) ?? null,
+    );
+
+    await logAudit(c.env, user.id, 'CREATE', 'appointments', id, patch);
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
-});
-
-hrRouter.post('/appointments/provision', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env);
-    const actor = c.get('user');
-    const body = await c.req.json();
-    
-    // 1. Find or Create Account
-    let userRecord;
-    const email = body.email?.toLowerCase()?.trim();
-    const username = body.username?.toLowerCase()?.trim();
-
-    if (body.id) {
-      const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.id, body.id) });
-      if (appt?.accountId) {
-        userRecord = await db.query.usersLogins.findFirst({ where: eq(schema.usersLogins.id, appt.accountId) });
-      }
-    }
-
-    if (!userRecord && (email || username)) {
-      userRecord = await db.query.usersLogins.findFirst({
-        where: or(
-          email ? eq(schema.usersLogins.email, email) : undefined,
-          username ? eq(schema.usersLogins.username, username) : undefined
-        )
-      });
-    }
-
-    let accountId: string;
-    if (userRecord) {
-      accountId = userRecord.id;
-      const updateData: any = {
-        employeeId: (body.employeeId || userRecord.employeeId || null),
-        isActive: true,
-      };
-      // Ensure we never pass empty strings to FK columns
-      if (updateData.employeeId === "") updateData.employeeId = null;
-
-      if (email) updateData.email = email;
-      if (username) updateData.username = username;
-      if (body.name) updateData.name = body.name;
-      if (body.password) {
-        updateData.passwordHash = await hashPassword(body.password);
-        updateData.passwordUpdatedAt = new Date();
-      }
-      // NOTE: superadmin is deliberately NOT settable here. This previously read
-      // `body.roleOrTitle === 'CEO'` — a free-text field on the request — and
-      // granted superadmin from it, contradicting the schema's own rule that
-      // is_superadmin is only ever set by direct database access. Widen a
-      // user's access by granting them features instead.
-
-      try {
-        await db.update(schema.usersLogins).set(updateData).where(eq(schema.usersLogins.id, accountId));
-      } catch (err: any) {
-        throw new Error(`[DB_ERROR] users_logins UPDATE failed: ${err.message}`);
-      }
-      await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', accountId, { email, note: 're-provisioned' });
-    } else {
-      if (!body.password) return c.json({ success: false, error: 'Password is required for new accounts' }, 400);
-      if (!email || !username) return c.json({ success: false, error: 'Email and Username are required for new accounts' }, 400);
-      
-      accountId = generateId('usr');
-      const passwordHash = await hashPassword(body.password);
-      
-      // Verify if actor exists to avoid FK failure on createdByUserId
-      let creatorId = null;
-      if (actor?.id) {
-        const creator = await db.query.usersLogins.findFirst({ where: eq(schema.usersLogins.id, actor.id) });
-        if (creator) creatorId = actor.id;
-      }
-
-      try {
-        await db.insert(schema.usersLogins).values({
-          id: accountId,
-          email,
-          username,
-          name: body.name || username,
-          passwordHash,
-          employeeId: body.employeeId || null,
-          isActive: true,
-          // Never derived from request input — see the note on the update path above.
-          isSuperadmin: false,
-          failedAttempts: 0,
-          createdAt: new Date(),
-          createdByUserId: creatorId,
-        });
-      } catch (err: any) {
-        throw new Error(`[DB_ERROR] users_logins INSERT failed: ${err.message}`);
-      }
-      
-      if (creatorId) {
-        await logAudit(c.env, creatorId, 'CREATE', 'users_logins', accountId, { email });
-        try {
-          await db.insert(schema.userOwnership).values({
-            userId: accountId,
-            ownerUserId: creatorId,
-            assignedAt: new Date(),
-            assignedByUserId: creatorId,
-          });
-        } catch (err: any) {
-          console.error('[WARNING] user_ownership INSERT failed (non-blocking):', err.message);
-        }
-      }
-    }
-
-    // 2. Create or Update Appointment
-    const appointmentId = body.id || generateId('appt');
-    const appointmentValues = {
-      employeeId: body.employeeId || null,
-      accountId: accountId,
-      committeeId: body.committeeId || null,
-      roleOrTitle: body.roleOrTitle,
-      appointmentDate: body.appointmentDate,
-      termType: body.termType || 'permanent',
-      isActive: true,
-    };
-
-    if (body.id) {
-      try {
-        await db.update(schema.appointments).set(appointmentValues).where(eq(schema.appointments.id, body.id));
-      } catch (err: any) {
-        throw new Error(`[DB_ERROR] appointments UPDATE failed: ${err.message}`);
-      }
-      if (actor?.id) await logAudit(c.env, actor.id, 'UPDATE', 'appointments', body.id, appointmentValues);
-    } else {
-      try {
-        await db.insert(schema.appointments).values({ ...appointmentValues, id: appointmentId, createdAt: new Date() });
-      } catch (err: any) {
-        throw new Error(`[DB_ERROR] appointments INSERT failed: ${err.message}`);
-      }
-      if (actor?.id) await logAudit(c.env, actor.id, 'CREATE', 'appointments', appointmentId, { employeeId: body.employeeId, accountId });
-    }
-
-    // 3. Access: exactly the grants the caller asked for, and nothing implied.
-    // This once auto-granted every permission in the system whenever
-    // body.roleOrTitle happened to be the string 'CEO' — a free-text field on
-    // the request deciding superadmin-equivalent access.
-    if (accountId) await applyPermissions(c, accountId, body.permissions);
-
-    // 4. Auto-grant CRM member access if committee is assigned
-    if (body.committeeId && body.employeeId) {
-      const existingMember = await db.query.committeeMembers.findFirst({
-        where: and(eq(schema.committeeMembers.committeeId, body.committeeId), eq(schema.committeeMembers.employeeId, body.employeeId)),
-      });
-      if (!existingMember) {
-        await db.insert(schema.committeeMembers).values({
-          committeeId: body.committeeId,
-          employeeId: body.employeeId,
-          roleInCommittee: body.roleOrTitle,
-          joinedAt: body.appointmentDate || new Date().toISOString(),
-        });
-      }
-      
-      // CRM access follows from committee membership — see the committee rule in
-      // src/middleware/rbac.ts — so no per-user grants are written here.
-    }
-
-    // 5. Dashboard access comes from the assigned role.
-
-    return ok(c, { success: true, accountId, appointmentId });
-  } catch (err: any) {
-    const errorBody = await (async () => {
-      try { return await c.req.json(); } catch { return {}; }
-    })();
-    console.error('[ERROR] Provisioning failed, body:', JSON.stringify(errorBody, null, 2));
-    console.error('[ERROR] Error details:', err);
-    
-    const msg = err.message || 'Internal server error';
-    if (msg.includes('FOREIGN KEY constraint failed')) {
-      return c.json({ success: false, error: 'Database constraint violation: invalid employee, committee, or account ID.' }, 400);
-    }
-    if (msg.includes('UNIQUE constraint failed')) {
-      return c.json({ success: false, error: 'Database constraint violation: email, username, or appointment already exists.' }, 400);
-    }
-    
-    return c.json({ success: false, error: msg }, 500);
-  }
 });
 
 hrRouter.get('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'view'), async (c) => {
@@ -337,46 +278,254 @@ hrRouter.get('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'vi
   } catch (err) { return serverError(c, err); }
 });
 
+/**
+ * PATCH /appointments/:id — including the handover.
+ *
+ * Changing `employeeId` moves the post's access, its mail and its committee seat
+ * from one person to another in one edit. That is the whole reason grants hang off
+ * appointments rather than people, so it is audited as a handover explicitly
+ * rather than as a field change among others.
+ */
 hrRouter.patch('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'edit'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
-    const body = await c.req.json(); const id = c.req.param('id');
-    delete body.id; delete body.createdAt; delete body.updatedAt;
-    await db.update(schema.appointments).set(body).where(eq(schema.appointments.id, id!));
-    await logAudit(c.env, user.id, 'UPDATE', 'appointments', id!, body);
-    return ok(c, { id });
+    const id = c.req.param('id')!;
+    const before = await db.query.appointments.findFirst({ where: eq(schema.appointments.id, id) });
+    if (!before) return notFound(c);
+
+    const body = await c.req.json();
+    const patch = appointmentPatch(body);
+    if (Object.keys(patch).length === 0) {
+      return badRequest(c, `Nothing to change. This route accepts: ${APPOINTMENT_FIELDS.join(', ')}.`);
+    }
+    if (patch.employeeId && !(await employeeExists(c.env, patch.employeeId))) {
+      return badRequest(c, 'employeeId does not name a known employee.');
+    }
+
+    await db.update(schema.appointments).set(patch).where(eq(schema.appointments.id, id));
+
+    const committeeId = ('committeeId' in patch ? patch.committeeId : before.committeeId) as string | null;
+    const incoming = ('employeeId' in patch ? patch.employeeId : before.employeeId) as string | null;
+    await syncCommitteeSeat(
+      c.env,
+      committeeId,
+      incoming,
+      before.employeeId ?? null,
+      ('roleOrTitle' in patch ? patch.roleOrTitle : before.roleOrTitle) as string | null,
+      before.committeeId ?? null,
+    );
+
+    /**
+     * Ending a post vacates its committee seat as well.
+     *
+     * `isActive` is what decides whether the post grants anything, and membership is
+     * itself access (it implies the crm grants in rbac.ts) — so leaving the seat
+     * behind would mean unticking Active withdrew some of the access and not the
+     * rest, which is the worst of the three possible behaviours.
+     */
+    if ('isActive' in patch && patch.isActive === false && committeeId) {
+      await vacateSeat(c.env, committeeId, incoming);
+    }
+
+    const handover = 'employeeId' in patch && (patch.employeeId ?? null) !== (before.employeeId ?? null);
+    await logAudit(c.env, user.id, 'UPDATE', 'appointments', id, {
+      ...patch,
+      ...(handover ? { handover: { from: before.employeeId ?? null, to: patch.employeeId ?? null } } : {}),
+    });
+    return ok(c, { id, ...(handover ? { handover: true } : {}) });
   } catch (err) { return serverError(c, err); }
 });
 
+/**
+ * DELETE /appointments/:id
+ *
+ * Deletes the post and the grants that belonged to it. It does NOT touch the
+ * holder's login: this used to deactivate the account named by
+ * `appointments.account_id`, which meant ending one of somebody's posts locked
+ * them out of the system entirely. With one login per person that would now be
+ * unambiguously wrong, and the column it read is gone.
+ *
+ * Deactivating (`isActive: false`) is usually the better move, and is what keeps
+ * the history while withdrawing the access.
+ */
 hrRouter.delete('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const id = c.req.param('id')!;
 
-    // 1. Find appointment to get accountId
-    const appointment = await db.query.appointments.findFirst({
-      where: eq(schema.appointments.id, id)
+    // A mailbox attached to this post holds stored mail that references it.
+    // Refused with the address rather than surfaced as a constraint error,
+    // because the fix — reassign or deactivate the mailbox — is not guessable
+    // from `FOREIGN KEY constraint failed`.
+    const box = await db.query.mailboxes.findFirst({
+      where: eq(schema.mailboxes.appointmentId, id),
+      columns: { address: true },
+    });
+    if (box) {
+      return badRequest(c, `${box.address} belongs to this appointment. Reassign or deactivate that mailbox first — deleting the post would orphan the mail it holds.`);
+    }
+
+    const before = await db.query.appointments.findFirst({
+      where: eq(schema.appointments.id, id),
+      columns: { employeeId: true, committeeId: true },
     });
 
-    // 2. Deactivate linked account if it exists
-    if (appointment?.accountId) {
-      await db.update(schema.usersLogins)
-        .set({ isActive: false })
-        .where(eq(schema.usersLogins.id, appointment.accountId));
-      await logAudit(c.env, user.id, 'UPDATE', 'users_logins', appointment.accountId, { action: 'deactivate_via_appointment_delete', appointmentId: id });
-    }
-
-    // 3. Delete appointment
+    await db.delete(schema.appointmentAppPermissions)
+      .where(eq(schema.appointmentAppPermissions.appointmentId, id));
     await db.delete(schema.appointments).where(eq(schema.appointments.id, id));
+    // After the delete, so `vacateSeat` cannot see this appointment as a reason to
+    // keep the seat.
+    if (before?.committeeId) await vacateSeat(c.env, before.committeeId, before.employeeId ?? null);
     await logAudit(c.env, user.id, 'DELETE', 'appointments', id);
     return ok(c, { id, deleted: true });
-  } catch (err: any) { 
+  } catch (err: any) {
     if (err.message?.includes('FOREIGN KEY constraint failed')) {
-      return serverError(c, new Error('Cannot delete appointment: it is referenced by other records.'));
+      return serverError(c, new Error('Cannot delete appointment: tasks or other records still reference it. Deactivate it instead.'));
     }
-    return serverError(c, err); 
+    return serverError(c, err);
+  }
+});
+
+/**
+ * POST /hr/employees/:id/account
+ *
+ * The person's ONE login. Creates it, or updates the existing one — matched
+ * through `users_logins.employee_id`, which is unique since migration 0047, so
+ * "the account for this employee" is a question with one answer.
+ *
+ * This replaces the account half of `/appointments/provision`. That route found
+ * an account by the email on the request and created one per posting, which is
+ * what produced two logins for one person.
+ *
+ * Two guards, both because `hr/employees` edit is a much weaker permission than
+ * the one that should be needed to take over an account:
+ *
+ *   - a superadmin's login is never written here. It is the same rule as
+ *     src/email/password-reset.ts and PATCH /admin/users/:id: a superadmin's
+ *     credentials are a direct database operation, or the escalation path to
+ *     superadmin is one HR grant long.
+ *   - a login already belonging to a DIFFERENT employee is never rewritten. An
+ *     email collision is reported, not resolved by reassignment — otherwise
+ *     provisioning a new starter with a colleague's address would hand over the
+ *     colleague's account.
+ */
+hrRouter.post('/employees/:id/account', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const actor = c.get('user');
+    const employeeId = c.req.param('id')!;
+    const body = await c.req.json();
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(schema.employees.id, employeeId),
+      columns: { id: true, name: true },
+    });
+    if (!employee) return notFound(c, 'That employee does not exist.');
+
+    const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
+    const username = typeof body.username === 'string' ? body.username.toLowerCase().trim() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+
+    const existing = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.employeeId, employeeId),
+    });
+
+    if (email || username) {
+      const clash = await db.query.usersLogins.findFirst({
+        where: or(
+          email ? eq(schema.usersLogins.email, email) : undefined,
+          username ? eq(schema.usersLogins.username, username) : undefined,
+        ),
+      });
+      if (clash && clash.id !== existing?.id) {
+        return badRequest(c, clash.email === email
+          ? `${email} is already the sign-in address of another account.`
+          : `The username "${username}" is already taken.`);
+      }
+    }
+
+    if (existing) {
+      if (existing.isSuperadmin) {
+        return c.json({
+          success: false,
+          error: "This employee's account is a superadmin. Its credentials are changed by direct database access only.",
+        }, 403);
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (email) patch.email = email;
+      if (username) patch.username = username;
+      if (typeof body.name === 'string' && body.name) patch.name = body.name;
+      if (body.isActive !== undefined) patch.isActive = body.isActive === true;
+      if (password) {
+        if (password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
+        patch.passwordHash = await hashPassword(password);
+        patch.passwordUpdatedAt = new Date();
+        patch.failedAttempts = 0;
+        patch.lockedUntil = null;
+      }
+      if (Object.keys(patch).length === 0) {
+        return badRequest(c, 'Nothing to change. Send email, username, name, password or isActive.');
+      }
+
+      await db.update(schema.usersLogins).set(patch).where(eq(schema.usersLogins.id, existing.id));
+      await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', existing.id, {
+        employeeId,
+        ...(email ? { email } : {}),
+        ...(username ? { username } : {}),
+        ...(password ? { passwordChanged: true } : {}),
+      });
+      return ok(c, { id: existing.id, employeeId, created: false });
+    }
+
+    if (!email || !username) return badRequest(c, 'email and username are required for a new account.');
+    if (!password) return badRequest(c, 'A password is required for a new account.');
+    if (password.length < 8) return badRequest(c, 'Password must be at least 8 characters');
+
+    const id = generateId('usr');
+    const now = new Date();
+    // The actor is verified to exist before being written as the creator: this is
+    // a foreign key, and an agent acting as a deleted user would fail the insert
+    // for a reason that has nothing to do with the account being created.
+    const creator = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, actor.id),
+      columns: { id: true },
+    });
+
+    await db.insert(schema.usersLogins).values({
+      id,
+      employeeId,
+      email,
+      username,
+      name: (typeof body.name === 'string' && body.name) || employee.name,
+      passwordHash: await hashPassword(password),
+      isActive: true,
+      // Never derived from a request field. The old provisioning route read
+      // `roleOrTitle === 'CEO'` off the body and granted superadmin from it.
+      isSuperadmin: false,
+      failedAttempts: 0,
+      createdAt: now,
+      createdByUserId: creator?.id ?? null,
+    });
+
+    if (creator?.id) {
+      await db.insert(schema.userOwnership).values({
+        userId: id,
+        ownerUserId: creator.id,
+        assignedAt: now,
+        assignedByUserId: creator.id,
+      }).onConflictDoNothing();
+    }
+
+    await logAudit(c.env, actor.id, 'CREATE', 'users_logins', id, { employeeId, email });
+    return created(c, { id, employeeId, created: true });
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE constraint failed: users_logins.employee_id')) {
+      return badRequest(c, 'This employee already has an account. There is one login per person.');
+    }
+    return serverError(c, err);
   }
 });
 

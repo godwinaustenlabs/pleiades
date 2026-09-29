@@ -34,6 +34,15 @@ import RichText from './RichText';
  */
 
 export type MailboxScope =
+  /**
+   * Everything that is the reader's OWN mail: their personal address plus every
+   * appointment address they hold. This is what the workspace mounts, and it is the
+   * point of attaching a mailbox to a post — somebody who is PM of one thing and
+   * director of another reads ahmad@ and cto@ in one place instead of signing out of
+   * one account to reach the other.
+   */
+  | { kind: 'mine' }
+  /** Strictly the personal box. Kept separate so an administrative screen can still ask. */
   | { kind: 'personal' }
   | { kind: 'app'; app: string }
   /**
@@ -55,6 +64,8 @@ interface Mailbox {
   displayName: string | null;
   kind: string;
   appName: string | null;
+  /** The post an `appointment` mailbox belongs to, so the picker can name it. */
+  appointmentTitle?: string | null;
   isActive: boolean;
   canSend: boolean;
   canBulk: boolean;
@@ -208,9 +219,10 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     typeof Notification !== 'undefined' && Notification.permission === 'granted',
   );
 
-  const query = scope.kind === 'personal' ? '?app=personal'
-    : scope.kind === 'catchall' ? '?app=catchall'
-      : `?app=${encodeURIComponent(scope.app)}`;
+  const query = scope.kind === 'mine' ? '?app=mine'
+    : scope.kind === 'personal' ? '?app=personal'
+      : scope.kind === 'catchall' ? '?app=catchall'
+        : `?app=${encodeURIComponent(scope.app)}`;
 
   const current = useMemo(() => boxes?.find((b) => b.id === activeBox) ?? null, [boxes, activeBox]);
 
@@ -492,8 +504,8 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
         <Inbox className="mx-auto mb-4 h-8 w-8 text-textSecondary" />
         <h3 className="mb-2 text-sm font-black uppercase tracking-widest text-textPrimary">No mailbox yet</h3>
         <p className="text-xs leading-relaxed text-textSecondary">
-          {scope.kind === 'personal'
-            ? 'You have not been assigned a personal mailbox. An administrator can create one for you on the Access page.'
+          {scope.kind === 'mine' || scope.kind === 'personal'
+            ? 'You have no mailbox yet — neither your own address nor one attached to a post you hold. An administrator can create either on the Access page.'
             : scope.kind === 'catchall'
               ? 'No catch-all mailbox exists, so mail to an address nobody created is refused at the door rather than collected.'
               : `No mailbox has been created for ${scope.app}. An administrator can add one on the Access page.`}
@@ -526,6 +538,12 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
               }`}
             >
               {b.address}
+              {/* Which post an appointment address comes with. Without it a second
+                  inbox appears in somebody's workspace with no explanation, and the
+                  first guess is that they are seeing another person's mail. */}
+              {b.appointmentTitle && (
+                <span className="ml-1.5 font-medium opacity-60">{b.appointmentTitle}</span>
+              )}
               {!b.isActive && <span className="ml-1.5 text-warning">off</span>}
             </button>
           ))}

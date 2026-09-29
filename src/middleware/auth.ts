@@ -40,7 +40,14 @@ export type UserPayload = {
    * own, it borrows a person's, so that there is one place access is defined.
    */
   id: string;
+  /**
+   * The employee this login belongs to, as the DATABASE says on this request —
+   * never the token's copy of it. It decides which appointments apply, and so
+   * which grants and which mailboxes; read `src/middleware/rbac.ts`'s
+   * `actorEmployeeId`, which is the accessor everything should use.
+   */
   employeeId?: string | null;
+  /** Likewise from the row, so revoking it takes effect on the next request. */
   isSuperadmin: boolean;
   type: 'human' | 'agent';
   /** Present only for agents: the api_keys row, for audit and diagnostics. */
@@ -175,11 +182,45 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
       return c.json({ error: 'Invalid or expired token' }, 401);
     }
 
+    /**
+     * ONLY the id is taken from the token. Everything else about the caller is read
+     * from `users_logins` on this request.
+     *
+     * The token also carries `employeeId` and `isSuperadmin`, and for a long while
+     * those were the values the request ran on. Both were wrong for the same reason:
+     * a session lasts over a week and slides forward while somebody is active, so a
+     * token is a snapshot of who they were up to eight days ago. Concretely —
+     *
+     *   isSuperadmin  survived being revoked, for the life of the token. Superadmin
+     *                 bypasses every check in the system.
+     *   employeeId    decides which appointments apply, and therefore which grants
+     *                 and which mailboxes. Relinking somebody, or linking them for
+     *                 the first time, did not take effect until they signed in again.
+     *   isActive      was not checked here at all. A deactivated account got past
+     *                 this middleware and was only stopped by rbac.ts returning no
+     *                 grants — which the routes that do not consult grants never
+     *                 noticed, so a deactivated person could still open their mail.
+     *
+     * The cost is one indexed primary-key read on a path that, for any gated route,
+     * was already doing the same read in rbac.ts a moment later.
+     */
+    const db = getDb(c.env);
+    const login = await db.query.usersLogins.findFirst({
+      where: eq(schema.usersLogins.id, payload.id as string),
+      columns: { id: true, employeeId: true, isSuperadmin: true, isActive: true },
+    });
+    if (!login || login.isActive === false) {
+      return c.json({ error: 'Invalid or expired token' }, 401);
+    }
+
     // Sliding renewal. Set before `next()` so it rides out on the response the
     // handler builds through `utils/response.ts` (which goes via `c.json`, and
     // therefore picks up prepared headers). A handler that returns a raw
     // `Response` — a download, a PDF — simply drops it, which is harmless: the
     // same session will refresh on its next JSON call.
+    //
+    // Signed from the row rather than from the old payload, so a refresh cannot
+    // carry a stale claim forward into a fresh eight days.
     const nowSeconds = Math.floor(Date.now() / 1000);
     const exp = typeof payload.exp === 'number' ? payload.exp : 0;
     if (exp > 0 && exp - nowSeconds < SESSION_REFRESH_BELOW_SECONDS) {
@@ -187,9 +228,9 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
         SESSION_REFRESH_HEADER,
         await sign(
           {
-            id: payload.id as string,
-            employeeId: (payload.employeeId as string | null) ?? null,
-            isSuperadmin: !!payload.isSuperadmin,
+            id: login.id,
+            employeeId: login.employeeId ?? null,
+            isSuperadmin: !!login.isSuperadmin,
             type: 'human',
             iat: nowSeconds,
             exp: nowSeconds + SESSION_TTL_SECONDS,
@@ -200,13 +241,10 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
       );
     }
 
-    // Only the id is taken from the token. Grants are read from the database on
-    // every request (see rbac.ts), so a token minted before someone's access
-    // was narrowed cannot carry the old access with it.
     c.set('user', {
-      id: payload.id as string,
-      employeeId: payload.employeeId as string | undefined,
-      isSuperadmin: !!payload.isSuperadmin,
+      id: login.id,
+      employeeId: login.employeeId,
+      isSuperadmin: !!login.isSuperadmin,
       type: 'human',
     });
     return await next();

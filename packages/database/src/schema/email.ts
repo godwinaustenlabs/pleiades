@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real, primaryKey, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { usersLogins } from './auth';
+import { appointments } from './hr';
 
 /**
  * The mail system.
@@ -17,15 +18,17 @@ import { usersLogins } from './auth';
 /**
  * A mailbox: a sending identity, and the thing mail is stored against.
  *
- * `kind` discriminates five shapes whose invariants are enforced in
+ * `kind` discriminates six shapes whose invariants are enforced in
  * src/routes/email.ts, since SQLite CHECK constraints cannot be added to a table
  * later without rebuilding it:
  *
- *   personal — one staff member's own mail. `ownerUserId` set.
- *   app      — a department's mail. `appName` set, gated by `<app>/email`.
- *   alias    — delivers into another mailbox. `forwardsToMailboxId` set.
- *   catchall — anything unmatched. Apex-only in Cloudflare.
- *   system   — no-reply@. Never listed in a UI; inbound to it is discarded.
+ *   personal    — one staff member's own mail. `ownerUserId` set.
+ *   appointment — a post's mail (cto@). `appointmentId` set; read by whoever
+ *                 holds that appointment today.
+ *   app         — a department's mail. `appName` set, gated by `<app>/email`.
+ *   alias       — delivers into another mailbox. `forwardsToMailboxId` set.
+ *   catchall    — anything unmatched. Apex-only in Cloudflare.
+ *   system      — no-reply@. Never listed in a UI; inbound to it is discarded.
  *
  * There is no separate senders table: a mailbox IS a sending identity, and two
  * tables holding addresses would drift. The From line on an outbound message is
@@ -35,9 +38,22 @@ export const mailboxes = sqliteTable('mailboxes', {
   id: text('mailbox_id').primaryKey(),
   address: text('address').notNull().unique(),
   displayName: text('display_name'),
-  /** personal | app | alias | catchall | system */
+  /** personal | appointment | app | alias | catchall | system */
   kind: text('kind').notNull(),
   ownerUserId: text('owner_user_id').references(() => usersLogins.id),
+  /**
+   * The post this address belongs to, for `kind = 'appointment'`.
+   *
+   * cto@ is neither one person's private mail nor a department's: granting
+   * `tech/email` to reach it would hand it to everybody who works in Tech.
+   * Attaching it to the appointment means the holder reads it in their own
+   * workspace next to their personal mail, and a handover moves the mailbox with
+   * the post — no grant edited, no second login, nothing to remember to revoke.
+   *
+   * A vacant appointment's mailbox reaches nobody but `admin/mailboxes`, and
+   * keeps everything it received for whoever is appointed next.
+   */
+  appointmentId: text('appointment_id').references(() => appointments.id),
   appName: text('app_name'),
   forwardsToMailboxId: text('forwards_to_mailbox_id').references((): AnySQLiteColumn => mailboxes.id),
   /**

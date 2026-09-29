@@ -319,3 +319,65 @@ One accepted limitation, stated so it is not mistaken for a bug: a verified even
 a message with no delivery row answers **200**, not an error. The message may have been
 pruned by retention or sent by another system on the same domain, and a retry loop would
 never make it exist.
+
+### Moving authorization onto appointments (migration 0047)
+
+Access is now defined per *appointment* and unioned onto one login per person. The
+change removed the second login somebody with two posts used to need, and in doing so
+touched every authorization path in the system. Four things were found and fixed on
+the way; the first three predate this work and were exploitable in different degrees,
+the fourth is specific to the new model.
+
+- **The JWT's `is_superadmin` was believed.** `authMiddleware` read the claim rather
+  than the row, and superadmin bypasses every check in the system — so revoking it
+  had no effect for the life of the token, which is eight days and slides forward
+  while the account is in use. `users_logins` is now read on every request and the
+  flag comes from there. Pinned in `test/security.test.ts` under *the token is a
+  name, not a set of claims*.
+
+- **A deactivated account could still open its own mail.** `authMiddleware` did no
+  database read at all, so `is_active = 0` was enforced only by `rbac.ts` returning
+  no grants. Every route that does not consult grants was therefore unaffected by
+  deactivation, and mailbox ownership is exactly such a route: `canUseMailbox`
+  compares `owner_user_id` against the id in the token. The middleware now refuses a
+  token whose account is missing or deactivated.
+
+- **`employeeId` came from the token**, which made it a stale copy of a link that
+  decides which appointments apply — and therefore which grants and which mailboxes.
+  Under the old model it selected little; under this one it selects most of somebody's
+  access, so believing a week-old copy of it would have been the largest hole here.
+  It is read from the row, via `actorEmployeeId`, and nothing else should read
+  `UserPayload.employeeId` directly.
+
+- **Writing a post's grants must not be an HR permission.** `PUT
+  /api/permissions/user/:id` was deleted in an earlier pass for being gated on
+  `hr/appointments` edit, which let anybody able to edit an appointment grant
+  themselves anything. The appointment table is the same hole with a new column name,
+  so `PUT /api/admin/appointments/:id/permissions` is gated on `admin/permissions`
+  edit and `POST /hr/appointments` **ignores** a `permissions` key on its body rather
+  than honouring it. `test/appointments-rbac.test.ts` asserts both.
+
+Two decisions that look like inconsistencies and are deliberate:
+
+- **An appointment mailbox takes no `mailbox_grants` rows.** For an `app` mailbox a
+  grant list *replaces* the app grant rather than adding to it, which is what lets
+  `payroll@` be narrower than `hr/email`. Applied to a post's mailbox, a list that
+  omitted the current holder would lock them out of their own official address — and
+  a per-post access step somebody has to remember is the thing this model exists to
+  remove. The route refuses the rows outright.
+
+- **A vacant or ended post's mailbox is readable by `admin/mailboxes`.** Nobody holds
+  the post, mail keeps arriving, and a mailbox no living person can open is a mailbox
+  whose contents are lost. Same reasoning and same grant as the catch-all. It is not
+  readable by the *previous* holder: a post that conferred its access on whoever held
+  it last would be the worst available behaviour, and
+  `test/appointments-rbac.test.ts` and `test/appointment-mail.test.ts` both pin
+  against it.
+
+One accepted limitation. `hr/employees` edit can provision and amend the login of any
+non-superadmin employee, including setting a password — it is how HR onboards, and it
+was already true of the route this replaces. The guards are that a superadmin's
+credentials are refused (as in `password-reset.ts` and `PATCH /admin/users/:id`), that
+an address already signing another account in is refused rather than reassigned, and
+that every write is audited. Anyone holding that grant should be treated as able to
+act as any ordinary member of staff.

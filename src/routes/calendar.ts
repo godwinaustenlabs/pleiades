@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
@@ -49,16 +49,23 @@ calendarRouter.get('/feed/:token', async (c) => {
     }
   }
 
-  // Fetch appointments
-  const appointments = await db.query.appointments.findMany({
-    where: and(
-      or(
-        employeeId ? eq(schema.appointments.employeeId, employeeId) : undefined,
-        eq(schema.appointments.accountId, userId)
-      ),
-      eq(schema.appointments.isActive, true)
-    )
-  });
+  /**
+   * Fetch appointments.
+   *
+   * By employee only. This used to also match `appointments.account_id = userId`,
+   * from when each appointment had a login of its own; migration 0047 removed
+   * that column, and a person's posts are found through their employee id — all
+   * of them, which is the point: one feed now carries every appointment somebody
+   * holds instead of one per login.
+   */
+  const appointments = employeeId
+    ? await db.query.appointments.findMany({
+        where: and(
+          eq(schema.appointments.employeeId, employeeId),
+          eq(schema.appointments.isActive, true),
+        ),
+      })
+    : [];
 
   // Generate ICS
   const lines = [

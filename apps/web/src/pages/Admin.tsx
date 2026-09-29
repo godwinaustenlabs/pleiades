@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users, Inbox } from 'lucide-react';
+import { ArrowLeft, Briefcase, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users, Inbox } from 'lucide-react';
 import PermissionMatrix from '../components/PermissionMatrix';
+import AppointmentAccess, { type AppointmentRow } from '../components/AppointmentAccess';
+import EffectiveAccess from '../components/EffectiveAccess';
 import MailboxAdmin from '../components/MailboxAdmin';
 import AutomationsPanel from '../components/AutomationsPanel';
 import MailboxTab from '../components/MailboxTab';
@@ -29,9 +31,19 @@ const displayName = (u: AdminUser) => u.employee?.name || u.name || u.username |
 /**
  * Access administration.
  *
- * Permissions are per user: what someone can do is exactly the set of features
- * ticked here for them. There is no role to inherit from, so widening one
- * person's access cannot widen anyone else's.
+ * Two editors, because access has two sources and they are unioned:
+ *
+ *   Access — what belongs to a PERSON. Edit it here for access that should not
+ *     follow a job: a contractor, somebody standing in, a login with no employee
+ *     record at all.
+ *   Posts  — what belongs to an APPOINTMENT. Normally where access should go:
+ *     replacing the holder is then one edit in HR and both people's access changes
+ *     with it, mailbox included.
+ *
+ * Neither overrides the other, so there is no precedence to reason about. The
+ * effective-access panel on the Access tab is what makes the union legible — the
+ * matrix there shows only the person's own grants, and without that panel a feature
+ * they reach through a post looks like access they lack.
  */
 export default function Admin() {
 	const { can, loaded: permsLoaded } = usePermissions();
@@ -39,6 +51,7 @@ export default function Admin() {
 	const { catalog, loaded: catalogLoaded } = useFeatureCatalog();
 
 	const [users, setUsers] = useState<AdminUser[]>([]);
+	const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [grants, setGrants] = useState<Grant[]>([]);
 	const [baseline, setBaseline] = useState<string>('[]');
@@ -49,8 +62,8 @@ export default function Admin() {
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [showProfile, setShowProfile] = useState(false);
-	/** Access | Mailboxes | Automations. Three jobs on one page, too much to stack. */
-	const [section, setSection] = useState<'access' | 'mailboxes' | 'unrouted' | 'automations'>('access');
+	/** Four jobs on one page, too much to stack. */
+	const [section, setSection] = useState<'access' | 'posts' | 'mailboxes' | 'unrouted' | 'automations'>('access');
 	const [recovery, setRecovery] = useState('');
 	const [savingRecovery, setSavingRecovery] = useState(false);
 
@@ -62,6 +75,29 @@ export default function Admin() {
 		() => Object.keys(catalog).filter((a) => catalog[a]?.includes('email')).sort(),
 		[catalog],
 	);
+
+	/**
+	 * Every appointment, for the Posts editor and for attaching a mailbox to one.
+	 *
+	 * From `/admin/appointments` rather than `/hr/appointments`: administering access
+	 * must not require HR access, and asking for both would mean nobody could edit a
+	 * post's permissions without also being able to read the payroll.
+	 */
+	useEffect(() => {
+		let cancelled = false;
+		fetch(`${API}/admin/appointments`, { headers: authHeaders() })
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Could not load appointments (${r.status})`))))
+			.then((b) => {
+				if (!cancelled) setAppointments((b?.data as AppointmentRow[]) || []);
+			})
+			.catch(() => {
+				// Not fatal: the person editor and the mailbox list still work without it.
+				if (!cancelled) setAppointments([]);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -234,13 +270,15 @@ export default function Admin() {
 			<div className="scroll-x no-scrollbar mb-4 flex gap-2">
 				{([
 					{ id: 'access', label: 'Access', icon: Users },
+					{ id: 'posts', label: 'Posts', icon: Briefcase },
 					{ id: 'mailboxes', label: 'Mailboxes', icon: Mail },
 					{ id: 'unrouted', label: 'Unrouted', icon: Inbox },
 					{ id: 'automations', label: 'Automations', icon: Bot },
 				] as const)
-					// Access always shows — reaching this page at all required
-					// admin/permissions. The other two carry their own grants.
-					.filter((t) => t.id === 'access'
+					// Access and Posts always show — reaching this page at all required
+					// admin/permissions, which is the grant both editors are gated on.
+					// The rest carry their own.
+					.filter((t) => t.id === 'access' || t.id === 'posts'
 						|| (t.id === 'mailboxes' && can('admin', 'mailboxes', 'view'))
 						|| (t.id === 'unrouted' && can('admin', 'mailboxes', 'view'))
 						|| (t.id === 'automations' && can('admin', 'email_config', 'view')))
@@ -262,6 +300,14 @@ export default function Admin() {
 
 			{section === 'automations' && <AutomationsPanel />}
 
+			{section === 'posts' && (
+				<AppointmentAccess
+					appointments={appointments}
+					catalog={catalogLoaded ? catalog : undefined}
+					disabled={!canEditPerms}
+				/>
+			)}
+
 			{/* The catch-all. It belongs to no app and no person, so both of MailboxTab's
 			    other scopes filtered it out and it collected everything addressed to
 			    nobody with no screen able to open it. Gated on admin/mailboxes, which is
@@ -279,6 +325,7 @@ export default function Admin() {
 				<MailboxAdmin
 					apps={mailApps}
 					people={users.map((u) => ({ id: u.id, name: displayName(u), email: u.email }))}
+					appointments={appointments}
 					disabled={!canEditMailboxes}
 				/>
 			)}
@@ -367,6 +414,8 @@ export default function Admin() {
 								</div>
 							)}
 
+							<EffectiveAccess userId={selected.id} />
+
 							<div className="border border-border rounded p-3 bg-surfaceAlt">
 								<div className="flex items-center gap-1.5 mb-1">
 									<LifeBuoy className="w-3.5 h-3.5 text-textSecondary" />
@@ -407,12 +456,19 @@ export default function Admin() {
 									<Loader2 className="w-4 h-4 animate-spin" /> Loading permissions…
 								</div>
 							) : (
-								<PermissionMatrix
-									value={grants}
-									onChange={setGrants}
-									disabled={!canEditPerms}
-									catalog={catalogLoaded ? catalog : undefined}
-								/>
+								<div className="space-y-2">
+									<p className="text-[11px] leading-relaxed text-textSecondary">
+										Grants that belong to <span className="font-bold">this person</span>, whatever
+										post they hold. Access that should follow the job belongs on the Posts tab —
+										ticked there, it moves to the next holder on its own.
+									</p>
+									<PermissionMatrix
+										value={grants}
+										onChange={setGrants}
+										disabled={!canEditPerms}
+										catalog={catalogLoaded ? catalog : undefined}
+									/>
+								</div>
 							)}
 						</div>
 					)}

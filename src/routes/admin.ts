@@ -1,9 +1,9 @@
 import { Context, Hono, type MiddlewareHandler } from 'hono';
-import { eq, desc, and, or } from 'drizzle-orm';
+import { eq, desc, and, ne, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { APP_FEATURES, checkFeaturePermission, requireAppAccess, requireFeatureAccess, requireSelfOrOwner } from '../middleware/rbac';
+import { APP_FEATURES, checkFeaturePermission, describeGrants, requireAppAccess, requireFeatureAccess, requireSelfOrOwner } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -55,9 +55,32 @@ adminRouter.delete('/permissions/:id', requireFeatureAccess('admin', 'permission
   } catch (err) { return serverError(c, err); }
 });
 
-// ── USER GRANTS ───────────────────────────────────────────────────────────────
-// Permissions are per user. There is no role indirection and no group to widen
-// by accident: editing one person's access affects exactly that person.
+// ── GRANTS ────────────────────────────────────────────────────────────────────
+//
+// Two tables, unioned, and the choice between them is the whole model:
+//
+//   appointment_app_permissions  access that belongs to a POST. Handing the post
+//     to somebody else moves it, in one edit, for both people. Normally the right
+//     place for anything that goes with a job title.
+//   user_app_permissions         access that belongs to a PERSON regardless of
+//     post, and the only option for a login with no employee record.
+//
+// Neither overrides the other — `satisfies` sees the OR of both — so there is no
+// precedence rule to get wrong, and no group that widening could widen by
+// accident: an appointment is held by one person at a time.
+//
+// Both editors are gated on `admin/permissions` edit and NOT on anything in HR.
+// Assigning somebody to a post is an HR authority; deciding what the post may
+// reach is not. `PUT /api/permissions/user/:id` was deleted once for being gated
+// on `hr/appointments` edit, and putting the appointment editor behind that same
+// grant would have reinstated the escalation under a new name.
+
+/** Shared by both editors: a grant naming something outside APP_FEATURES can never be satisfied. */
+function unknownFeatures(grants: { appName: string; feature: string }[]): string[] {
+  return grants
+    .filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature))
+    .map((p) => `${p.appName}/${p.feature}`);
+}
 
 adminRouter.get('/users/:id/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
   try {
@@ -92,10 +115,8 @@ adminRouter.put('/users/:id/permissions', requireFeatureAccess('admin', 'permiss
     // APP_FEATURES is the source of truth for what exists. A grant naming
     // something outside it can never be satisfied by getPerm(), so it would sit
     // in the table looking like access that silently does nothing.
-    const unknown = permissions.filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature));
-    if (unknown.length > 0) {
-      return badRequest(c, `Unknown app/feature: ${unknown.map((p) => `${p.appName}/${p.feature}`).join(', ')}`);
-    }
+    const unknown = unknownFeatures(permissions);
+    if (unknown.length > 0) return badRequest(c, `Unknown app/feature: ${unknown.join(', ')}`);
 
     await db.delete(schema.userAppPermissions).where(eq(schema.userAppPermissions.userId, userId));
 
@@ -120,6 +141,133 @@ adminRouter.put('/users/:id/permissions', requireFeatureAccess('admin', 'permiss
 
     await logAudit(c.env, actor.id, 'UPDATE', 'user_app_permissions', userId, { count: toInsert.length });
     return ok(c, { userId, count: toInsert.length, isSuperadmin: !!target.isSuperadmin });
+  } catch (err) { return serverError(c, err); }
+});
+
+// ── APPOINTMENT GRANTS ────────────────────────────────────────────────────────
+
+/**
+ * Either grant opens the appointment list.
+ *
+ * The Posts editor needs it (admin/permissions) and so does the mailbox editor, to
+ * attach an address to a post (admin/mailboxes). Gated on permissions alone, a
+ * mailbox administrator got a 403 and the appointment picker rendered empty — which
+ * looks like "there are no appointments" rather than "you cannot see them".
+ */
+const canListAppointments: MiddlewareHandler = async (rawCtx, next) => {
+  const c = rawCtx as Parameters<typeof checkFeaturePermission>[0];
+  if (await checkFeaturePermission(c, 'admin', 'permissions', 'view')) return await next();
+  if (await checkFeaturePermission(c, 'admin', 'mailboxes', 'view')) return await next();
+  return c.json({ error: 'Forbidden: needs admin/permissions or admin/mailboxes' }, 403);
+};
+
+adminRouter.get('/appointments', canListAppointments, async (c) => {
+  try {
+    /**
+     * Every appointment, with its holder, for the access editor's picker.
+     *
+     * Here rather than reusing `GET /hr/appointments` because the two answer to
+     * different grants: administering access must not require HR access, and
+     * requiring both would mean nobody could edit an appointment's permissions
+     * without also being able to read the payroll.
+     */
+    const rows = await getDb(c.env).query.appointments.findMany({
+      with: { employee: { columns: { id: true, name: true, department: true } } },
+    });
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+adminRouter.get('/appointments/:id/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
+  try {
+    const rows = await getDb(c.env).query.appointmentAppPermissions.findMany({
+      where: eq(schema.appointmentAppPermissions.appointmentId, c.req.param('id')!),
+    });
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * PUT /admin/appointments/:id/permissions
+ *
+ * Replaces one appointment's entire grant set. Body: { permissions: [{ appName,
+ * feature, canView, canEdit, canDelete }] }. Delete-then-insert, so unticking a
+ * box actually removes the grant.
+ *
+ * Saving this changes what the CURRENT HOLDER can reach, on their next request —
+ * grants are read per request, so there is no token to expire first. It also
+ * changes what every future holder can reach, which is the point of editing the
+ * post rather than the person.
+ */
+adminRouter.put('/appointments/:id/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const actor = c.get('user');
+    const appointmentId = c.req.param('id')!;
+    const { permissions } = await c.req.json<{ permissions: any[] }>();
+    if (!Array.isArray(permissions)) return badRequest(c, 'permissions array required');
+
+    const appointment = await db.query.appointments.findFirst({
+      where: eq(schema.appointments.id, appointmentId),
+      columns: { id: true, roleOrTitle: true, employeeId: true, isActive: true },
+    });
+    if (!appointment) return notFound(c, 'Appointment not found');
+
+    const unknown = unknownFeatures(permissions);
+    if (unknown.length > 0) return badRequest(c, `Unknown app/feature: ${unknown.join(', ')}`);
+
+    await db.delete(schema.appointmentAppPermissions)
+      .where(eq(schema.appointmentAppPermissions.appointmentId, appointmentId));
+
+    const now = new Date();
+    const toInsert = permissions
+      .filter((p) => p.canView || p.canEdit || p.canDelete)
+      .map((p) => ({
+        id: generateId('aap'),
+        appointmentId,
+        appName: p.appName,
+        feature: p.feature,
+        canView: p.canView ?? false,
+        canEdit: p.canEdit ?? false,
+        canDelete: p.canDelete ?? false,
+        createdAt: now,
+        updatedAt: now,
+      }));
+    for (const batch of chunk(toInsert, 5)) {
+      if (batch.length > 0) await db.insert(schema.appointmentAppPermissions).values(batch as any);
+    }
+
+    await logAudit(c.env, actor.id, 'UPDATE', 'appointment_app_permissions', appointmentId, {
+      count: toInsert.length,
+      roleOrTitle: appointment.roleOrTitle ?? null,
+      // Who this took effect for immediately. An access change that is invisible
+      // in the audit log because it was addressed to a post rather than a person
+      // is the one thing appointment-level grants could have made worse.
+      holder: appointment.employeeId ?? null,
+      appliesNow: appointment.isActive === true,
+    });
+    return ok(c, { appointmentId, count: toInsert.length, holder: appointment.employeeId ?? null });
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * GET /admin/users/:id/effective-permissions
+ *
+ * What this person can actually reach, and where each grant came from: their own
+ * rows, one entry per active appointment they hold, and whether the committee rule
+ * contributed. Read-only.
+ *
+ * It exists because the union is not guessable from either editor on its own. The
+ * permission matrix for a person shows their direct grants; without this, a
+ * ticked box missing from it looks like access they do not have, and somebody
+ * grants it again — directly, to the person, which is precisely the per-person
+ * sprawl the appointment table is meant to prevent.
+ */
+adminRouter.get('/users/:id/effective-permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
+  try {
+    const sources = await describeGrants(c.env, c.req.param('id')!);
+    if (!sources) return notFound(c, 'User not found');
+    return ok(c, sources);
   } catch (err) { return serverError(c, err); }
 });
 
@@ -191,7 +339,7 @@ adminRouter.patch('/users/:id', requireFeatureAccess('admin', 'users', 'edit'), 
      */
     const target = await db.query.usersLogins.findFirst({
       where: eq(schema.usersLogins.id, id),
-      columns: { isSuperadmin: true, recoveryEmail: true },
+      columns: { isSuperadmin: true, recoveryEmail: true, employeeId: true },
     });
     if (!target) return notFound(c);
     if ('recoveryEmail' in patch && target.isSuperadmin && id !== actor.id) {
@@ -205,6 +353,30 @@ adminRouter.patch('/users/:id', requireFeatureAccess('admin', 'users', 'edit'), 
       return badRequest(c, `Nothing to change. This route accepts: ${ALLOWED.join(', ')}.`);
     }
 
+    /**
+     * Relinking a login to an employee is an ACCESS change, not a label change: it
+     * decides which appointments apply, and therefore what this account can reach.
+     *
+     * Two guards. There is one login per person — the database enforces it — so a
+     * collision is reported rather than surfaced as a constraint error nobody can
+     * act on. And the previous value goes in the audit entry, because without it a
+     * relink that was later reverted leaves no record of which posts this account
+     * was collecting in between.
+     */
+    if ('employeeId' in patch) {
+      const next = (patch.employeeId as string | null) || null;
+      patch.employeeId = next;
+      if (next) {
+        const clash = await db.query.usersLogins.findFirst({
+          where: and(eq(schema.usersLogins.employeeId, next), ne(schema.usersLogins.id, id)),
+          columns: { email: true },
+        });
+        if (clash) {
+          return badRequest(c, `${clash.email} is already the account for that employee. There is one login per person.`);
+        }
+      }
+    }
+
     await db.update(schema.usersLogins).set(patch).where(eq(schema.usersLogins.id, id));
     // Rejected keys are recorded rather than ignored: an attempt to set
     // is_superadmin through here is worth being able to find later. So is the
@@ -213,6 +385,7 @@ adminRouter.patch('/users/:id', requireFeatureAccess('admin', 'users', 'edit'), 
     await logAudit(c.env, actor.id, 'UPDATE', 'users_logins', id, {
       ...patch,
       ...('recoveryEmail' in patch ? { previousRecoveryEmail: target.recoveryEmail ?? null } : {}),
+      ...('employeeId' in patch ? { previousEmployeeId: target.employeeId ?? null } : {}),
       ...(rejected.length ? { rejectedFields: rejected } : {}),
     });
     return ok(c, { id, ...(rejected.length ? { ignored: rejected } : {}) });
@@ -269,6 +442,20 @@ adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edi
     if (existing) {
       if (existing.email === email) return badRequest(c, 'An account with this email already exists');
       if (username && existing.username === username) return badRequest(c, 'An account with this username already exists');
+    }
+
+    // One login per person. Checked here rather than left to the unique index, so the
+    // answer names the account that already exists instead of being a 500. For a
+    // staff member, POST /api/hr/employees/:id/account is the route that knows how
+    // to update the one they have.
+    if (body.employeeId) {
+      const taken = await db.query.usersLogins.findFirst({
+        where: eq(schema.usersLogins.employeeId, body.employeeId),
+        columns: { email: true },
+      });
+      if (taken) {
+        return badRequest(c, `${taken.email} is already the account for that employee. There is one login per person — amend that one instead.`);
+      }
     }
 
     const passwordHash = await hashPassword(body.password);

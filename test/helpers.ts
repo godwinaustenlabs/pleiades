@@ -70,6 +70,19 @@ export async function resetDatabase(): Promise<void> {
 	for (const stmt of statements(schemaSql)) {
 		await env.DB.prepare(stmt).run();
 	}
+	await reseed();
+}
+
+/**
+ * Reloads the fixture WITHOUT replaying the DDL, for a suite that needs a clean
+ * slate between cases rather than once.
+ *
+ * Separate from `resetDatabase` because the production dump uses bare
+ * `CREATE TABLE`, so replaying it a second time fails on the first table. The seed
+ * is re-runnable on its own: it truncates everything it writes, and everything the
+ * routes write as a side effect (see the note at the top of seed.sql).
+ */
+export async function reseed(): Promise<void> {
 	for (const stmt of statements(seedSql)) {
 		await env.DB.prepare(stmt).run();
 	}
@@ -115,11 +128,31 @@ export const USERS = {
 	 * rbac.test.ts that /api/admin is gated on the admin module.
 	 */
 	mailAdmin: { id: 'u_mail', roleId: 'role_mail_admin', isSuperadmin: false },
+	/**
+	 * The two logins that carry an employee id, and therefore the only two that can
+	 * hold appointments. Every other fixture user has none, which is what keeps the
+	 * pre-existing expectations in rbac.test.ts describing exactly the same access
+	 * they described before appointments became a grant source.
+	 *
+	 * `dual` holds three appointments (two active, one ended) plus one direct grant
+	 * of its own; `hold` holds nothing at all, so a handover test can prove it gains
+	 * a post's whole access without anybody editing its permissions.
+	 */
+	dual: { id: 'u_dual', roleId: 'role_none', isSuperadmin: false, employeeId: 'emp_dual' },
+	hold: { id: 'u_hold', roleId: 'role_none', isSuperadmin: false, employeeId: 'emp_hold' },
 } as const;
 
 export type FixtureUser = keyof typeof USERS;
 
-/** Mints a JWT in the exact shape authMiddleware expects. */
+/**
+ * Mints a JWT in the exact shape authMiddleware expects.
+ *
+ * `employeeId` is carried because a real login token carries it — but nothing in
+ * the authorization path reads it. Appointment grants and appointment mailboxes
+ * both resolve the employee from `users_logins` on every request, because a token
+ * lives over a week and its copy of that link can be a week stale. See the
+ * deliberately-wrong token in appointments-rbac.test.ts, which pins that.
+ */
 export async function tokenFor(user: FixtureUser): Promise<string> {
 	const u = USERS[user];
 	return sign(
@@ -127,13 +160,28 @@ export async function tokenFor(user: FixtureUser): Promise<string> {
 			id: u.id,
 			roleId: u.roleId,
 			roleName: u.roleId,
-			employeeId: null,
+			employeeId: 'employeeId' in u ? u.employeeId : null,
 			isSuperadmin: u.isSuperadmin,
 			exp: Math.floor(Date.now() / 1000) + 3600,
 		},
 		env.JWT_SECRET as string,
 		'HS256',
 	);
+}
+
+/** A token whose claims are deliberately not what the database says, for the tests that must ignore them. */
+export async function forgedToken(claims: Record<string, unknown>): Promise<string> {
+	return sign(
+		{ isSuperadmin: false, type: 'human', exp: Math.floor(Date.now() / 1000) + 3600, ...claims },
+		env.JWT_SECRET as string,
+		'HS256',
+	);
+}
+
+/** GET as an arbitrary token, for the same reason. */
+export async function getWithToken(token: string, path: string): Promise<Response> {
+	const { SELF } = await import('cloudflare:test');
+	return SELF.fetch(`https://test.local${path}`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 export async function authedGet(user: FixtureUser, path: string): Promise<Response> {

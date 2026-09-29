@@ -1,14 +1,31 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /**
- * Authorization model: users_logins.id → user_app_permissions.
+ * Authorization model. Two sources, unioned, resolved in src/middleware/rbac.ts:
  *
- * Grants are per user. There is no role table, no role_id and no role fallback:
- * what a person can do is exactly the set of rows carrying their user id, plus
- * the committee implication defined in src/middleware/rbac.ts. Roles were tried
- * (migration 0020) and removed again in 0025 — a role could only ever be
- * widened for everyone holding it, which is the opposite of what granting
- * access to one person requires.
+ *   users_logins.id          → user_app_permissions            (this table)
+ *   users_logins.employee_id → appointments (active)
+ *                            → appointment_app_permissions     (schema/hr.ts)
+ *
+ * A login is per PERSON — `employee_id` is unique across non-null values since
+ * migration 0047 — and what that person can reach is their own rows here plus
+ * the rows of every active appointment they hold, plus the committee implication
+ * in rbac.ts. The flags are OR-ed per (app, feature); there is no ordering on
+ * appointments and therefore no "highest" one to take instead.
+ *
+ * Which of the two a grant belongs in is a real decision, not a toss-up:
+ *
+ *   appointment_app_permissions — access that belongs to the JOB. Replacing a
+ *     project manager is then one edit to `appointments.employee_id`, and both
+ *     people's access changes with it. This is where access should normally go.
+ *   user_app_permissions — access that belongs to the PERSON regardless of post,
+ *     and the only option for a login with no employee record at all (an agent's
+ *     actor, a contractor). Editing it affects exactly one person.
+ *
+ * Roles were tried (migration 0020) and removed again in 0025 — a role could
+ * only ever be widened for everyone holding it. An appointment is not a role
+ * revived: a role is held by many people at once, an appointment by one, so
+ * widening one cannot widen anybody else's access.
  *
  * Also gone, and not to be reintroduced:
  *   roles / role_app_permissions       — the roles experiment, dropped in 0025.
@@ -26,7 +43,21 @@ export const permissions = sqliteTable('permissions', {
 
 export const usersLogins = sqliteTable('users_logins', {
   id: text('id').primaryKey(),
-  employeeId: text('employee_id'),              // optional FK → employees.employee_id
+  /**
+   * The person this login belongs to — a soft FK → employees.employee_id, and
+   * UNIQUE across non-null values since migration 0047.
+   *
+   * It is now load-bearing rather than decorative: every appointment-derived
+   * grant, and every appointment mailbox, is reached through it. Null is still
+   * legitimate (a login with no employee record), and such a login simply holds
+   * no appointment grants.
+   *
+   * Always read it from the database, never from the JWT. The token carries a
+   * copy made when it was signed, which a token minted before somebody was
+   * linked to an employee — or relinked to a different one — would still be
+   * presenting a week later.
+   */
+  employeeId: text('employee_id'),
   email: text('email').notNull().unique(),
   phone: text('phone'),
   username: text('username').unique(),          // for global profile management
@@ -117,9 +148,15 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
 
 /**
  * user_app_permissions
- * The single source of authorization truth. Each row grants one feature of one
- * app to one user. Resolution is: user id → user_app_permissions. There is no
- * inheritance and no fallback chain — see src/middleware/rbac.ts.
+ *
+ * Access that belongs to a PERSON rather than to a post — one row per (user,
+ * app, feature). Half of the resolution in src/middleware/rbac.ts; the other
+ * half is `appointment_app_permissions`, and the two are unioned rather than
+ * ordered, so nothing here can be overridden or shadowed by an appointment.
+ *
+ * Prefer the appointment table for anything that goes with a job title. What
+ * belongs here is access tied to the individual, and it is the only option for a
+ * login with no employee record, which holds no appointments by construction.
  *
  * (user_id, app_name, feature) is unique, so saving a user's permissions is a
  * delete-then-insert of their whole set rather than a per-row merge.

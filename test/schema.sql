@@ -121,9 +121,20 @@ CREATE TABLE `appointments` (
 	`is_active` integer,
 	`employee_id` text,
 	`committee_id` text,
-	`created_at` integer NOT NULL, account_id text REFERENCES users_logins(id),
+	`created_at` integer NOT NULL,
 	FOREIGN KEY (`employee_id`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`committee_id`) REFERENCES `committees`(`committee_id`) ON UPDATE no action ON DELETE no action
+);
+CREATE TABLE appointment_app_permissions (
+	id TEXT PRIMARY KEY,
+	appointment_id TEXT NOT NULL REFERENCES appointments(appointment_id),
+	app_name TEXT NOT NULL,
+	feature TEXT NOT NULL,
+	can_view INTEGER DEFAULT 0,
+	can_edit INTEGER DEFAULT 0,
+	can_delete INTEGER DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
 );
 CREATE TABLE `assets` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -1065,7 +1076,7 @@ CREATE TABLE mailboxes (
   created_by             TEXT REFERENCES users_logins (id),
   created_at             INTEGER NOT NULL,
   updated_at             INTEGER NOT NULL
-);
+, appointment_id TEXT REFERENCES appointments(appointment_id));
 CREATE TABLE mailbox_grants (
   mailbox_id TEXT NOT NULL REFERENCES mailboxes (mailbox_id),
   user_id    TEXT NOT NULL REFERENCES users_logins (id),
@@ -1184,3 +1195,14 @@ CREATE INDEX idx_email_attachments_key   ON email_attachments (r2_key);
 CREATE INDEX idx_email_templates_scope ON email_templates (scope, app_name);
 CREATE INDEX idx_email_delivery_transport ON email_delivery (transport, queued_at);
 CREATE INDEX idx_email_messages_event ON email_messages (event_key, created_at);
+-- Pre-existing omission from migration 0037, not part of 0047: this dump is meant
+-- to be verbatim, and an index missing from it is exactly the drift the file exists
+-- to make visible.
+CREATE INDEX idx_currencies_active ON currencies (is_active);
+CREATE UNIQUE INDEX appointment_app_permissions_unique
+	ON appointment_app_permissions (appointment_id, app_name, feature);
+CREATE INDEX idx_appointment_app_permissions_appt
+	ON appointment_app_permissions (appointment_id);
+CREATE UNIQUE INDEX users_logins_employee_unique
+	ON users_logins (employee_id) WHERE employee_id IS NOT NULL;
+CREATE INDEX idx_mailboxes_appointment ON mailboxes (appointment_id);

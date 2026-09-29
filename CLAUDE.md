@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (24 files, 587 tests)
+npm test          # vitest — see test/ (27 files, 641 tests)
 npm run test:watch
 ```
 
@@ -44,6 +44,31 @@ The suite is in four layers, and the two snapshot files are the load-bearing par
 - `test/modules.test.ts` — one create→read→update→delete per module. This is what the
   response manifest cannot do: it proves the Drizzle column mapping matches the
   production DDL, since a wrong column in an INSERT is invisible to a read-only sweep.
+- `test/appointments-rbac.test.ts` + `test/appointment-mail.test.ts` — the
+  appointment model. Read the first before touching `collectGrantSources` in
+  `rbac.ts` and the second before touching `canUseMailbox`. The load-bearing case in
+  both is the **handover**: if reassigning `appointments.employee_id` ever stops
+  moving access, grants and mail with it, appointment-level grants are pure overhead
+  over per-user ones. `test/seed.sql` carries two logins with an `employee_id`
+  (`u_dual`, `u_hold`) for these; every other fixture login has none, which is what
+  keeps the pre-existing expectations in `rbac.test.ts` describing exactly the access
+  they described before appointments became a grant source.
+- `test/appointments-bruteforce.test.ts` — the same model over a randomly generated
+  org (people holding zero to four posts, vacant and ended posts, grants drawn from
+  the live catalogue), checking the server's answer against a union computed
+  independently in the test, for every person, after every handover, toggle and
+  vacating. The resolver's inputs multiply — two tables, an active flag, a nullable
+  holder, the implication chain, the committee rule — and hand-written cases only
+  cover the combinations somebody thought of. The seed is fixed and printed in every
+  failure message: a flaky authorization test is worse than none, because the
+  reasonable response to one is to stop believing it.
+`resetDatabase()` replays the production DDL and then the fixture; `reseed()` loads
+only the fixture, for a suite that needs a clean slate between cases rather than
+once. The dump uses bare `CREATE TABLE`, so `resetDatabase` cannot run twice — and
+`seed.sql` truncates everything the *routes* write as a side effect (`user_ownership`,
+`audit_logs`, `universal_tasks`) as well as what it inserts, or a `DELETE FROM
+users_logins` fails a foreign key the second time round.
+
 - `test/config.test.ts`, `test/bindings.test.ts`, `test/schema-drift.test.ts` — contracts
   on `wrangler.jsonc` and `Env`. Miniflare gives tests an ephemeral local D1, so a wrong
   `database_name` or `bucket_name` cannot fail an ordinary test; it fails in production,
@@ -140,7 +165,25 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0037_currencies.sql`, which lifts the account currency list out
+The newest is `0047_appointment_rbac.sql`, which moves authorization from
+per-appointment logins to one login per person with grants on the appointments —
+see Authorization below for the model. Three things in it are worth knowing before
+the next one like it:
+
+- It **moves** grants rather than copying them (`INSERT … SELECT` from
+  `user_app_permissions` joined through `appointments.account_id`, then `DELETE`
+  those rows). Copying would leave two sources for the same access, and the one
+  nobody edits is the one that keeps working — so unticking a box on the
+  appointment would appear to do nothing.
+- `users_logins_employee_unique` is a **partial** index
+  (`WHERE employee_id IS NOT NULL`): a login legitimately belongs to no employee,
+  and NULLs are not distinct enough for a plain UNIQUE to allow more than one.
+- `ALTER TABLE appointments DROP COLUMN account_id` — D1's SQLite supports it and
+  nothing referenced the column, so no rebuild was needed. It was still verified
+  the way this file requires: applied to a scratch database built from
+  `test/schema.sql` with `PRAGMA foreign_keys = ON` inside a transaction.
+
+`0037_currencies.sql` lifts the account currency list out
 of the Finance page (where it was five options hardcoded in two separate forms,
 and did not include PKR) into a `currencies` table. It is gated on
 `finance/accounts` rather than a feature of its own — a currency exists only as
@@ -207,26 +250,90 @@ page, so asking each call site to look for the header was never going to hold.
 It also clears the token on a 401 and fires `pleiades:session-expired`, which
 `App.tsx` turns into a redirect to the right sign-in screen.
 
-A longer session does **not** delay a revocation: the token still carries no
-permission claim, and grants are read from the database on every request. The
-only thing it lengthens is how long a stolen token is useful, which is the
-trade that was made deliberately — see `test/session.test.ts`, which pins all
-three halves of the behaviour.
+A longer session does **not** delay a revocation. The token carries a name and
+nothing else that is believed: `authMiddleware` reads `users_logins` on every
+request for `employee_id`, `is_superadmin` and `is_active`, and refuses a token
+whose account is gone or deactivated. Grants are read per request on top of that.
+The only thing a longer session lengthens is how long a stolen token is useful,
+which is the trade that was made deliberately — see `test/session.test.ts`, and
+`test/security.test.ts` under "the token is a name, not a set of claims", which
+pins the three things that used to run on the token's copy instead:
+
+- **`is_superadmin`** survived being revoked for the life of the token, and
+  superadmin bypasses every check in the system.
+- **`employeeId`** decides which appointments apply, so linking somebody to an
+  employee — or relinking them — did not take effect until they signed in again.
+- **`is_active`** was not checked here at all. A deactivated account got past this
+  middleware and was stopped only by `rbac.ts` returning no grants, which the
+  routes that do not consult grants never noticed: a deactivated person could
+  still open their own mail, because ownership was checked against the id in the
+  token rather than against a live account.
+
+Read the employee link through `actorEmployeeId(c)` (`rbac.ts`) rather than
+touching `UserPayload.employeeId` directly. It is the one place the rule "this
+comes from the row, not the claim" is written down, and appointment mailboxes ask
+the same question.
 
 `/api/portal` is a **separate auth world**: it has its own `clientAuth` using JWTs with `type: 'client'` and does not use `authMiddleware`.
 
 ### Authorization (`src/middleware/rbac.ts`)
 
-**Per user.** There is exactly one resolution path and no fallback chain:
+**Two sources, unioned.** One login per PERSON; access defined per APPOINTMENT:
 
 ```
-users_logins.id → user_app_permissions → (appName, feature, canView/canEdit/canDelete)
+users_logins.id          → user_app_permissions         (access tied to the person)
+users_logins.employee_id → appointments (is_active = 1)
+                         → appointment_app_permissions  (access tied to the post)
 ```
 
-Roles were tried (migration 0020) and removed again (0025). A role could only
-ever be widened for everyone holding it, which is the opposite of what granting
-one person access requires. Do not reintroduce `roles`, `role_app_permissions`
-or `users_logins.role_id`.
+The effective set is the OR of both, per `(appName, feature)`, plus the committee
+implication below. `collectGrantSources` in `rbac.ts` is the only place either is
+read, and `describeGrants(env, userId)` returns the same thing broken down by
+source (what backs `GET /api/admin/users/:id/effective-permissions`).
+
+**Union, not "the highest appointment".** Somebody who is both CMO and PM of a
+committee holds what both grant, at once, in one login. There is no ordering on
+appointments to take a maximum over, and any ordering invented for the purpose
+would mean holding a second post could silently *narrow* access.
+
+Which table a grant belongs in is a real decision:
+
+- `appointment_app_permissions` — access that goes with the JOB. **Normally the
+  right place.** Replacing a project manager is then one edit to
+  `appointments.employee_id`: the new holder gains the grants, the post's mailbox
+  and its committee seat; the old holder loses all three. No permission matrix is
+  opened for either person, and neither login is touched.
+- `user_app_permissions` — access that belongs to the PERSON regardless of post,
+  and the only option for a login with no employee record (a contractor, an
+  agent's actor). Such a login holds no appointment grants by construction.
+
+`appointments.is_active` is the switch on whether a post grants anything —
+deliberately not `appointment_end_date`, which is a record rather than a rule.
+Access that lapsed on a date nobody re-reads would lapse at a moment no test can
+pin. A post with `employee_id IS NULL` is **vacant**: a useful state, not a broken
+one. Its grants and its mailbox keep existing, reach nobody, and are conferred
+whole on whoever is appointed next.
+
+Logins used to be per *appointment* — `appointments.account_id` named a
+users_logins row created for one posting — so one person holding two posts had two
+accounts, two workspaces and two inboxes, and had to sign out of one to read the
+other. Migration **0047** moved the grants onto the appointments, made
+`users_logins.employee_id` UNIQUE across non-null values, and dropped that column.
+
+Roles were tried (migration 0020) and removed again (0025): a role could only ever
+be widened for everyone holding it. An appointment is **not** a role revived — a
+role is held by many people at once, an appointment by one, so widening one cannot
+widen anyone else's access. Do not reintroduce `roles`, `role_app_permissions` or
+`users_logins.role_id`, and do not reintroduce `appointments.account_id`.
+
+**Editing a post's grants is gated on `admin/permissions` edit, never on
+anything in HR.** `PUT /api/admin/appointments/:id/permissions`. Assigning
+somebody to a post (`hr/appointments` edit) and deciding what the post may open
+are different authorities: `PUT /api/permissions/user/:id` was deleted once for
+being gated on `hr/appointments` edit, and putting the appointment editor behind
+that grant would reinstate the same escalation under a new name.
+`test/appointments-rbac.test.ts` fails if `POST /hr/appointments` ever honours a
+`permissions` key.
 
 - `requireAppAccess(module)` — gate a whole router (needs view on any feature of it).
 - `requireFeatureAccess(app, feature, 'view'|'edit'|'delete')` / `checkFeaturePermission(...)` — per-feature. `delete` implies `edit` implies `view`.
@@ -235,8 +342,15 @@ or `users_logins.role_id`.
 
 Two things worth knowing:
 
-- The JWT carries only an id — no permission claim of any kind. Grants are read from the database on every request, so narrowing someone's access takes effect immediately rather than at token expiry (tokens live 8 hours). Grants are cached per request in a `WeakMap` keyed on the Hono context, so this costs one query per request, not per check.
-- **Committee membership implies the `crm` grants in `COMMITTEE_IMPLIED_GRANTS`.** A real rule, defined once in `rbac.ts`, not an incidental fallback.
+- **The JWT carries only a name.** Not just no permission claim: `employee_id`,
+  `is_superadmin` and the account's very existence are all read from
+  `users_logins` on every request by `authMiddleware`. Everything is resolved per
+  request, so narrowing access, revoking superadmin, ending an appointment,
+  handing one over or deactivating an account takes effect on the next request
+  rather than at token expiry. Grants and the employee link are cached per request
+  in `WeakMap`s keyed on the Hono context, so this costs a few queries per request
+  rather than per check.
+- **Committee membership implies the `crm` grants in `COMMITTEE_IMPLIED_GRANTS`.** A real rule, defined once in `rbac.ts`, not an incidental fallback. Membership is therefore *access*, which is why `src/routes/hr.ts` moves the committee seat on a handover and vacates it when a post is ended, moved to another committee, or deleted — a seat left behind is access left behind.
 - An agent's `api_keys` row names the user it acts as and inherits that person's grants. Agents have no permissions of their own.
 
 `APP_FEATURES` in `rbac.ts` is the **single source of truth** for which features exist per app, consumed by both the backend and the permissions UI. Adding a feature means editing that map.
@@ -252,15 +366,40 @@ changes).
 Every module router is gated per feature except `dashboard`, which is app-gated
 on purpose: all of its handlers already filter on the calling user's own id.
 
-Manage access with `PUT /api/admin/users/:id/permissions` (gated on
-admin/permissions edit), or through the Access page at `/admin`
-(`apps/web/src/pages/Admin.tsx` + `components/PermissionMatrix.tsx`). Editing
-one person's grants affects that person only.
+Manage access on the Access page at `/admin` (`apps/web/src/pages/Admin.tsx`),
+which has two editors matching the two tables:
+
+- **Access** — `PUT /api/admin/users/:id/permissions`, one person's own grants.
+  Above the matrix sits `components/EffectiveAccess.tsx`, a read-only panel
+  showing the union and where each grant came from. It is not decoration: the
+  matrix shows only the person's own grants, so a feature they reach through a
+  post is *absent* from it, and without the panel that absence reads as "they do
+  not have it" and invites granting it again, directly, to the person — which is
+  exactly the per-person sprawl appointment grants exist to prevent.
+- **Posts** — `PUT /api/admin/appointments/:id/permissions`, via
+  `components/AppointmentAccess.tsx`. Saving changes what the current holder can
+  reach on their next request and what every future holder can reach.
+
+Both use `components/PermissionMatrix.tsx` and both are gated on
+`admin/permissions` edit. `GET /api/admin/appointments` lists posts for either
+editor and accepts `admin/permissions` **or** `admin/mailboxes` view, since
+attaching a mailbox to a post needs the same list.
+
+Sign-in details are provisioned once per person at
+`POST /api/hr/employees/:id/account` (`components/AccountForm.tsx`, reachable
+from the employee record in HR), gated on `hr/employees` edit. It finds the
+account through the EMPLOYEE, so "the account for this person" has one answer;
+the old route matched on the email it was given and created a new login whenever
+it did not recognise one, which is how two accounts for one person came about. It
+refuses to write a superadmin's credentials and refuses an address that already
+signs another account in — `hr/employees` edit is a far weaker permission than
+taking over an account should need.
 
 Removed — do not reintroduce: `roles` / `role_app_permissions` (the roles
-experiment, dropped in 0025), `user_app_access` (deprecated, empty), and
+experiment, dropped in 0025), `user_app_access` (deprecated, empty),
 `role_permissions` / `role_hierarchy` (declared in the schema but never
-deployed, so every query against them failed in production).
+deployed, so every query against them failed in production), and
+`appointments.account_id` (the login-per-appointment column, dropped in 0047).
 
 **Migrations that rebuild a table referenced by a foreign key** must
 `PRAGMA defer_foreign_keys = true` at the start and `= false` before the end.
@@ -296,7 +435,10 @@ router.post('/things', async (c) => {
 
 ### Database (`packages/database`)
 
-`user_app_permissions` is the authorization table (see Authorization above).
+`user_app_permissions` and `appointment_app_permissions` are the authorization
+tables (see Authorization above). The second lives in `schema/hr.ts` beside
+`appointments`, not in `schema/auth.ts`, because `auth.ts` is imported by `hr.ts`
+and the reverse would be a cycle.
 
 Drizzle schema split by domain under `src/schema/` (`auth`, `core`, `hr`, `finance`, `legal`, `tech`, `acquisition`, `crm`, `unified_tasks`, `notifications`, `pleiades`, `relations`), all re-exported from `schema/index.ts`. Consumers import `{ getDb, schema }` from `@pleiades/database` (path-mapped in the root `tsconfig.json`). `schema/pleiades.ts` holds the agent's own tables — approvals, conversations, journal, compliance config, knowledge and generated documents.
 
@@ -438,6 +580,12 @@ six pages carried byte-identical copies of each:
   that built its classes by interpolation (`text-${accentColor}`) and therefore
   rendered with no accent at all: Tailwind cannot emit a class that only exists
   at runtime.
+- `components/AppointmentAccess.tsx`, `components/EffectiveAccess.tsx`,
+  `components/AppointmentForm.tsx`, `components/AccountForm.tsx` — the appointment
+  model's four screens. See Authorization for what each is for and why the
+  effective-access panel is load-bearing rather than informational.
+  `AppointmentProvisionForm.tsx` is gone: it created a login per posting and carried
+  a permission matrix, which were the two things that had to stop.
 - `components/UserAvatar.tsx` + `lib/avatar.ts` — the person's photo, with
   initials as the fallback. The photo never appeared anywhere before: `ga_user`
   is written from the login payload, and that payload carried no
@@ -497,10 +645,19 @@ A mailbox is one row in `mailboxes`, discriminated by `kind`:
 | `kind` | means | requires |
 |---|---|---|
 | `personal` | one staff member's own mail | `owner_user_id` |
+| `appointment` | a POST's mail (`cto@`) — read by whoever holds it today | `appointment_id` |
 | `app` | a department's mail | `app_name` |
 | `alias` | delivers into another mailbox, **one hop only** | `forwards_to_mailbox_id` |
 | `catchall` | anything unmatched (apex-only in Cloudflare) | — |
 | `system` | `no-reply@`, machine identity, never listed in a UI | — |
+
+`appointment` is what makes one workspace possible. `cto@` is neither one person's
+private mail nor a department's — granting `tech/email` to reach it would hand it
+to everybody who works in Tech — so it hangs off the appointment, and somebody who
+is PM of one thing and director of another reads `ahmad@` and `cto@` side by side.
+A handover is an edit to the APPOINTMENT's holder; the mailbox is not touched and
+follows, with its stored correspondence. One address per post, enforced on create
+and on `PATCH`.
 
 There is no separate senders table: **a mailbox is a sending identity.** The
 `From` line on an outbound message is a `mailboxes` row the caller was authorised
@@ -513,11 +670,20 @@ the order of its branches is the security property:**
 1. A `personal` mailbox is reached by the person it belongs to. Ownership *is*
    the permission — there is no `dashboard/email` feature, deliberately, because
    access to somebody else's private mail must not be grantable.
-2. **If any `mailbox_grants` row exists for a mailbox, those rows are the whole
-   answer and the app grant stops applying.** That is what lets `payroll@` be
+2. An `appointment` mailbox is reached by whoever holds that appointment right
+   now, resolved through `actorEmployeeId` (the database, never the token). Also
+   ownership rather than a grant, and it takes **no `mailbox_grants` rows at all**:
+   because a grant list *replaces* the ordinary rule rather than adding to it, one
+   that omitted the current holder would lock them out of their own official
+   address — precisely the manual per-post access step this model deletes. A
+   **vacant or ended** post's mailbox reaches `admin/mailboxes` and nobody else:
+   mail keeps arriving and somebody must be able to see it, the same reasoning and
+   the same grant as the catch-all.
+3. **If any `mailbox_grants` row exists for an `app` mailbox, those rows are the
+   whole answer and the app grant stops applying.** That is what lets `payroll@` be
    narrower than `hr/email`, and it widens as well as narrows. Not an OR with the
    app grant — `test/email-rbac.test.ts` fails if the two are ever combined.
-3. Otherwise an `app` mailbox is reached through `<app>/email`, an ordinary
+4. Otherwise an `app` mailbox is reached through `<app>/email`, an ordinary
    feature on the Access page.
 
 `<app>/email` is declared for `hr`, `finance`, `legal`, `tech`, `acquisition`,
@@ -698,9 +864,13 @@ to `canUseMailbox`. A static rule listing every app's `email` feature would hand
 anyone with `hr/email` the Legal mailbox's attachments.
 
 The UI is one component, `apps/web/src/components/MailboxTab.tsx`, mounted per
-scope: `{ kind: 'app', app: '<name>' }` in each module page and
-`{ kind: 'personal' }` in the workspace. Mailboxes are created and assigned in
-`components/MailboxAdmin.tsx` on the Access page.
+scope: `{ kind: 'app', app: '<name>' }` in each module page and **`{ kind: 'mine' }`**
+in the workspace. `mine` (`?app=mine`) is the personal box *plus* every appointment
+box the caller holds, which is the single workspace this whole model exists to
+produce; `personal` stays strict so an administrative screen can still ask the
+narrower question. Mailboxes are created and assigned in
+`components/MailboxAdmin.tsx` on the Access page, which takes the appointment list
+so an address can be attached to a post.
 
 **Inbound HTML is rendered, and `components/MailHtml.tsx` is the only thing allowed
 to do it.** The catch-all means anyone on the internet can put content in front of a

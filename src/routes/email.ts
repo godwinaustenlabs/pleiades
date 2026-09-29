@@ -44,7 +44,7 @@ emailRouter.use('*', authMiddleware);
  */
 const SENDABLE_DOMAINS = ['godwinausten.org'];
 
-const KINDS = ['personal', 'app', 'alias', 'catchall', 'system'] as const;
+const KINDS = ['personal', 'appointment', 'app', 'alias', 'catchall', 'system'] as const;
 const FOLDERS = ['inbox', 'sent', 'drafts', 'archive', 'spam', 'trash'] as const;
 
 function addressIsOurs(address: string): boolean {
@@ -131,6 +131,7 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
     // nobody, and an app box with no app is reachable by everybody holding any
     // `email` grant.
     if (kind === 'personal' && !body.ownerUserId) return badRequest(c, 'A personal mailbox needs the person it belongs to.');
+    if (kind === 'appointment' && !body.appointmentId) return badRequest(c, 'An appointment mailbox needs the appointment it belongs to.');
     if (kind === 'app' && !body.appName) return badRequest(c, 'An app mailbox needs the app it belongs to.');
     if (kind === 'app' && !APP_FEATURES[String(body.appName)]?.includes('email')) {
       return badRequest(c, `"${body.appName}" is not an app with mail. Apps with mail: ${Object.keys(APP_FEATURES).filter((a) => APP_FEATURES[a].includes('email')).join(', ')}.`);
@@ -140,6 +141,20 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
     if (kind === 'personal') {
       const owner = await db.query.usersLogins.findFirst({ where: eq(schema.usersLogins.id, String(body.ownerUserId)) });
       if (!owner) return notFound(c, 'That user does not exist.');
+    }
+    if (kind === 'appointment') {
+      const appointment = await db.query.appointments.findFirst({
+        where: eq(schema.appointments.id, String(body.appointmentId)),
+        columns: { id: true },
+      });
+      if (!appointment) return notFound(c, 'That appointment does not exist.');
+      // One address per post. A second mailbox on the same appointment is two
+      // inboxes with identical access and no way to tell which one somebody meant.
+      const taken = await db.query.mailboxes.findFirst({
+        where: eq(schema.mailboxes.appointmentId, String(body.appointmentId)),
+        columns: { address: true },
+      });
+      if (taken) return badRequest(c, `That appointment already has a mailbox (${taken.address}).`);
     }
     if (kind === 'alias') {
       const target = await loadMailbox(c.env, String(body.forwardsToMailboxId));
@@ -164,6 +179,7 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
       displayName: body.displayName ?? null,
       kind,
       ownerUserId: kind === 'personal' ? String(body.ownerUserId) : null,
+      appointmentId: kind === 'appointment' ? String(body.appointmentId) : null,
       appName: kind === 'app' ? String(body.appName) : null,
       forwardsToMailboxId: kind === 'alias' ? String(body.forwardsToMailboxId) : null,
       dailySendCap: Number.isFinite(Number(body.dailySendCap)) ? Number(body.dailySendCap) : 200,
@@ -173,7 +189,12 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
       updatedAt: now,
     });
 
-    await logAudit(c.env, user.id, 'CREATE', 'mailboxes', id, { address, kind, appName: body.appName ?? null, ownerUserId: body.ownerUserId ?? null });
+    await logAudit(c.env, user.id, 'CREATE', 'mailboxes', id, {
+      address, kind,
+      appName: body.appName ?? null,
+      ownerUserId: body.ownerUserId ?? null,
+      appointmentId: body.appointmentId ?? null,
+    });
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
@@ -210,8 +231,13 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
      * workaround — delete and recreate — loses the stored correspondence, which is
      * worse than the thing being guarded against. It is validated, restricted to app
      * mailboxes, and the previous value goes into the audit entry.
+     *
+     * `appointmentId` is here for the same reason and with the same guards. Note it
+     * is NOT how a handover works: handing cto@ to a new Director of Tech is an edit
+     * to the APPOINTMENT's holder, and this mailbox follows without being touched.
+     * This is only for correcting which post an address belongs to.
      */
-    const ALLOWED = ['displayName', 'dailySendCap', 'isActive', 'appName'] as const;
+    const ALLOWED = ['displayName', 'dailySendCap', 'isActive', 'appName', 'appointmentId'] as const;
     const patch: Record<string, unknown> = {};
     const rejected: string[] = [];
     for (const [key, value] of Object.entries(body)) {
@@ -241,6 +267,25 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
       }
       patch.appName = nextApp;
     }
+
+    if (patch.appointmentId !== undefined) {
+      if (box.kind !== 'appointment') {
+        return badRequest(c, `Only an appointment mailbox belongs to a post; this one is "${box.kind}".`);
+      }
+      const nextId = String(patch.appointmentId);
+      const appointment = await db.query.appointments.findFirst({
+        where: eq(schema.appointments.id, nextId),
+        columns: { id: true },
+      });
+      if (!appointment) return notFound(c, 'That appointment does not exist.');
+      const taken = await db.query.mailboxes.findFirst({
+        where: and(eq(schema.mailboxes.appointmentId, nextId), ne(schema.mailboxes.id, id)),
+        columns: { address: true },
+      });
+      if (taken) return badRequest(c, `That appointment already has a mailbox (${taken.address}).`);
+      patch.appointmentId = nextId;
+    }
+
     if (Object.keys(patch).length === 0) {
       return badRequest(c, `Nothing to change. This route accepts: ${ALLOWED.join(', ')}.`);
     }
@@ -254,6 +299,7 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
       address: box.address,
       // Who could read this mailbox before, so a reassignment is reconstructable.
       ...(patch.appName !== undefined ? { previousAppName: box.appName } : {}),
+      ...(patch.appointmentId !== undefined ? { previousAppointmentId: box.appointmentId } : {}),
       ...(rejected.length ? { rejectedFields: rejected } : {}),
     });
     return ok(c, { updated: true, ...(rejected.length ? { ignored: rejected } : {}) });
@@ -308,7 +354,19 @@ emailRouter.put('/mailboxes/:id/grants', requireFeatureAccess('admin', 'mailboxe
     const id = c.req.param('id');
     const box = await loadMailbox(c.env, id);
     if (!box) return notFound(c, 'Mailbox not found');
-    if (box.kind !== 'app') return badRequest(c, 'Only an app mailbox takes per-user grants; a personal one belongs to its owner.');
+    /**
+     * Only an app mailbox takes per-user grants.
+     *
+     * A personal mailbox belongs to its owner, and an APPOINTMENT mailbox to
+     * whoever holds the post — in both cases ownership is the permission. Allowing
+     * rows here for an appointment would be worse than redundant: because a grant
+     * list REPLACES the ordinary rule rather than adding to it, one that omitted
+     * the current holder would lock them out of their own official address, which
+     * is exactly the manual per-post access step this model exists to delete.
+     */
+    if (box.kind !== 'app') {
+      return badRequest(c, `Only an app mailbox takes per-user grants; this one is "${box.kind}", and it belongs to ${box.kind === 'appointment' ? 'whoever holds that appointment' : 'its owner'}.`);
+    }
 
     const body = await c.req.json<{ grants?: { userId: string; canRead?: boolean; canSend?: boolean }[] }>();
     const wanted = Array.isArray(body.grants) ? body.grants : [];
@@ -355,18 +413,44 @@ emailRouter.put('/mailboxes/:id/grants', requireFeatureAccess('admin', 'mailboxe
 emailRouter.get('/mine', async (c) => {
   try {
     /**
-     * `personal` and `catchall` are reserved values of `?app=`, not app names. Neither
-     * exists in APP_FEATURES, so there is nothing for them to shadow.
+     * `mine`, `personal`, `appointment` and `catchall` are reserved values of
+     * `?app=`, not app names. None exists in APP_FEATURES, so there is nothing for
+     * them to shadow.
+     *
+     * `mine` is what the workspace asks for: the caller's personal box AND every
+     * appointment box they hold, in one list. `personal` stays strict so an
+     * administrative screen can still ask the narrower question.
      */
     const app = c.req.query('app');
-    const scope = app === 'personal'
-      ? { kind: 'personal' as const }
-      : app === 'catchall'
-        ? { kind: 'catchall' as const }
-        : app
-          ? { kind: 'app' as const, app }
-          : undefined;
+    const scope = app === 'mine'
+      ? { kind: 'mine' as const }
+      : app === 'personal'
+        ? { kind: 'personal' as const }
+        : app === 'appointment'
+          ? { kind: 'appointment' as const }
+          : app === 'catchall'
+            ? { kind: 'catchall' as const }
+            : app
+              ? { kind: 'app' as const, app }
+              : undefined;
     const boxes = await listReadableMailboxes(c, scope);
+
+    /**
+     * The post each appointment mailbox belongs to, by name.
+     *
+     * One query for the whole list rather than one per box: the workspace needs to
+     * label cto@ as "Director Tech", and a reader who sees an unexplained second
+     * inbox will assume it is somebody else's mail.
+     */
+    const appointmentIds = [...new Set(boxes.map((b) => b.appointmentId).filter((v): v is string => !!v))];
+    const titles = new Map<string, string | null>();
+    if (appointmentIds.length > 0) {
+      const rows = await getDb(c.env).query.appointments.findMany({
+        where: inArray(schema.appointments.id, appointmentIds),
+        columns: { id: true, roleOrTitle: true },
+      });
+      for (const row of rows) titles.set(row.id, row.roleOrTitle ?? null);
+    }
 
     // Say what they may do with each, so the UI does not have to guess whether to
     // render a Compose button and then discover it was wrong on submit.
@@ -378,6 +462,10 @@ emailRouter.get('/mine', async (c) => {
         displayName: box.displayName,
         kind: box.kind,
         appName: box.appName,
+        // So the workspace can label cto@ with the post it belongs to rather than
+        // leaving the reader to work out why a second inbox appeared.
+        appointmentId: box.appointmentId,
+        appointmentTitle: box.appointmentId ? titles.get(box.appointmentId) ?? null : null,
         isActive: box.isActive,
         canSend: await canUseMailbox(c, box.id, 'send'),
         canBulk: await canUseMailbox(c, box.id, 'bulk'),

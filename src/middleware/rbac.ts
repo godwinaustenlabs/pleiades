@@ -1,5 +1,5 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb } from '@pleiades/database';
 import { schema } from '@pleiades/database';
 import { UserPayload } from './auth';
@@ -108,12 +108,45 @@ type Grant = {
 
 type RbacContext = Context<{ Bindings: Env; Variables: { user: UserPayload } }>;
 
+type Db = ReturnType<typeof getDb>;
+
+/** One appointment a person holds, and what holding it grants. */
+export type AppointmentGrants = {
+  appointmentId: string;
+  roleOrTitle: string | null;
+  committeeId: string | null;
+  grants: Grant[];
+};
+
+/** Every source of a person's access, kept apart so a UI can say where each came from. */
+export type GrantSources = {
+  employeeId: string | null;
+  /**
+   * When true, every grant below is recorded but irrelevant: a superadmin
+   * bypasses each check outright. Reported rather than expanded into the full
+   * grant list, so a UI can say WHY the account reaches everything instead of
+   * showing a matrix that looks like somebody ticked all of it.
+   */
+  isSuperadmin: boolean;
+  /** Rows that name the person directly — access that is theirs regardless of post. */
+  direct: Grant[];
+  /** One entry per ACTIVE appointment they hold. */
+  appointments: AppointmentGrants[];
+  /** True when committee membership contributed COMMITTEE_IMPLIED_GRANTS. */
+  viaCommittee: boolean;
+  /** The union, with the delete⊃edit⊃view implication flattened into the flags. */
+  effective: Grant[];
+};
+
 /**
- * Per-request grant cache. A Hono Context is created per request, so entries
- * become unreachable (and collectable) as soon as the request completes. This
- * avoids re-querying D1 for every feature check within a single request.
+ * Per-request caches. A Hono Context is created per request, so entries become
+ * unreachable (and collectable) as soon as the request completes. This avoids
+ * re-querying D1 for every feature check within a single request — which matters
+ * more now than it did, because resolving grants costs three or four queries
+ * rather than one.
  */
 const grantCache = new WeakMap<object, Grant[]>();
+const employeeCache = new WeakMap<object, { value: string | null }>();
 
 function toGrant(row: {
   appName: string;
@@ -132,50 +165,182 @@ function toGrant(row: {
 }
 
 /**
+ * Unions grant lists per (appName, feature), OR-ing the three flags.
+ *
+ * This is what "a person gets everything all their appointments grant" means
+ * mechanically. Union rather than precedence, deliberately: with two appointments
+ * there is no ordering to break a tie with, and any ordering invented for the
+ * purpose would mean holding a second post could silently NARROW access — which
+ * is the opposite of what appointing somebody to something is meant to do.
+ */
+function unionGrants(...lists: Grant[][]): Grant[] {
+  const merged = new Map<string, Grant>();
+  for (const list of lists) {
+    for (const g of list) {
+      const key = `${g.appName}\u0000${g.feature}`;
+      const seen = merged.get(key);
+      if (!seen) {
+        merged.set(key, { ...g });
+        continue;
+      }
+      seen.canView = seen.canView || g.canView;
+      seen.canEdit = seen.canEdit || g.canEdit;
+      seen.canDelete = seen.canDelete || g.canDelete;
+    }
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Every source of one login's access, read fresh from the database.
+ *
+ * Used by BOTH the per-request resolver below and `listGrants`, which used to
+ * carry its own copy of the query — and, because it was a copy, had already
+ * drifted: it omitted the committee rule, so `/api/permissions/user/:id`
+ * reported less access than the user actually had. One implementation, two
+ * callers.
+ */
+async function collectGrantSources(db: Db, userId: string): Promise<GrantSources | null> {
+  const account = await db.query.usersLogins.findFirst({
+    where: eq(schema.usersLogins.id, userId),
+    columns: { id: true, isActive: true, employeeId: true, isSuperadmin: true },
+  });
+  if (!account) return null;
+
+  const empty: GrantSources = {
+    employeeId: account.employeeId ?? null,
+    isSuperadmin: account.isSuperadmin === true,
+    direct: [],
+    appointments: [],
+    viaCommittee: false,
+    effective: [],
+  };
+  if (account.isActive === false) return empty;
+
+  const direct = (await db.query.userAppPermissions.findMany({
+    where: eq(schema.userAppPermissions.userId, account.id),
+  })).map(toGrant);
+
+  /**
+   * Appointment-derived access.
+   *
+   * The employee id comes from the row just read, NOT from the JWT. The token
+   * carries a copy made when it was signed and sessions last over a week, so a
+   * token minted before somebody was linked to an employee — or relinked to a
+   * different one — would otherwise still be presenting the old link and
+   * collecting the old appointments' grants.
+   *
+   * `isActive` on the appointment is the switch. An appointment that has been
+   * ended grants nothing the moment the box is unticked, with no token to expire
+   * first, because this runs per request.
+   */
+  const appointments: AppointmentGrants[] = [];
+  if (account.employeeId) {
+    const held = await db.query.appointments.findMany({
+      where: and(
+        eq(schema.appointments.employeeId, account.employeeId),
+        eq(schema.appointments.isActive, true),
+      ),
+      columns: { id: true, roleOrTitle: true, committeeId: true },
+    });
+
+    if (held.length > 0) {
+      const rows = await db.query.appointmentAppPermissions.findMany({
+        where: inArray(schema.appointmentAppPermissions.appointmentId, held.map((a) => a.id)),
+      });
+      for (const appt of held) {
+        appointments.push({
+          appointmentId: appt.id,
+          roleOrTitle: appt.roleOrTitle ?? null,
+          committeeId: appt.committeeId ?? null,
+          grants: rows.filter((r) => r.appointmentId === appt.id).map(toGrant),
+        });
+      }
+    }
+  }
+
+  let viaCommittee = false;
+  const fromPosts = unionGrants(direct, ...appointments.map((a) => a.grants));
+
+  // Committee membership implies the CRM grants above. Checked after the union
+  // because it is a fallback for having no CRM access at all, not an addition to
+  // whatever CRM access an appointment already confers.
+  if (account.employeeId && !fromPosts.some((g) => g.appName === 'crm')) {
+    const membership = await db.query.committeeMembers.findFirst({
+      where: eq(schema.committeeMembers.employeeId, account.employeeId),
+    });
+    if (membership) viaCommittee = true;
+  }
+
+  return {
+    employeeId: account.employeeId ?? null,
+    isSuperadmin: account.isSuperadmin === true,
+    direct,
+    appointments,
+    viaCommittee,
+    effective: withInheritance(
+      viaCommittee ? unionGrants(fromPosts, COMMITTEE_IMPLIED_GRANTS) : fromPosts,
+    ),
+  };
+}
+
+/**
+ * Every source of `userId`'s access, for a UI that needs to show provenance.
+ * Authorization decisions go through the functions below, never through this.
+ */
+export async function describeGrants(env: Env, userId: string): Promise<GrantSources | null> {
+  return collectGrantSources(getDb(env), userId);
+}
+
+/**
+ * The employee the caller is.
+ *
+ * `authMiddleware` resolves this from `users_logins` on every request and refuses a
+ * token whose account is gone or deactivated, so `UserPayload.employeeId` is the
+ * database's answer rather than the token's — see the long note there for the three
+ * things that were wrong while it was the token's.
+ *
+ * Still a function rather than a property read at each call site, for two reasons:
+ * it is the one place the rule "this comes from the row, not the claim" is stated,
+ * and it keeps the option of resolving it lazily if the shape ever changes. Async
+ * for the same reason.
+ */
+export async function actorEmployeeId(c: RbacContext): Promise<string | null> {
+  const cached = employeeCache.get(c);
+  if (cached) return cached.value;
+
+  const user = c.get('user');
+  const value = user?.employeeId ?? null;
+  if (user) employeeCache.set(c, { value });
+  return value;
+}
+
+/**
  * Resolves the caller's grants. This is the ONLY place authorization data is
  * read. Resolution is:
  *
  *   1. Superadmin  → short-circuited by the callers below, never reaches here.
- *   2. user id     → user_app_permissions (the single source of truth).
- *   3. Committee membership → inherits the CRM Member role's `crm` grants.
+ *   2. user id     → user_app_permissions            (access tied to the person)
+ *   3. employee id → active appointments
+ *                  → appointment_app_permissions     (access tied to the post)
+ *   4. Committee membership → COMMITTEE_IMPLIED_GRANTS, when 2 and 3 gave no CRM.
  *
- * Rule 3 preserves the long-standing behaviour that being on a committee is
- * itself sufficient for CRM access. It used to be an unnamed fallback buried in
- * the middleware; it is now an explicit, testable rule.
+ * 2 and 3 are UNIONED, not ordered: somebody who is both CMO and a project
+ * manager holds what both appointments grant, at once, in one login. That is the
+ * whole point of the model — see schema/auth.ts.
+ *
+ * Nothing here is read from the JWT but the user id. Grants and the employee link
+ * are both database reads on every request, so narrowing access — or ending an
+ * appointment, or handing it to somebody else — takes effect on the next request
+ * rather than at token expiry.
  */
 async function resolveGrants(c: RbacContext): Promise<Grant[]> {
   const cached = grantCache.get(c);
   if (cached) return cached;
 
   const user = c.get('user');
-  const db = getDb(c.env);
-
-  // Read grants from the database rather than trusting anything in the JWT.
-  // A token lives for days and slides forward while the user is active, so a
-  // claim baked into it would let revoked access keep working for a week. An agent key names the user it acts as, and authMiddleware
-  // already resolves that fresh on every request, so both paths end up here
-  // with a user id and nothing else.
-  const account = await db.query.usersLogins.findFirst({
-    where: eq(schema.usersLogins.id, user.id),
-    columns: { id: true, isActive: true },
-  });
-  if (!account || account.isActive === false) {
-    grantCache.set(c, []);
-    return [];
-  }
-
-  const rows = await db.query.userAppPermissions.findMany({
-    where: eq(schema.userAppPermissions.userId, account.id),
-  });
-  const grants = rows.map(toGrant);
-
-  // Committee membership implies the CRM grants above.
-  if (user.employeeId && !grants.some((g) => g.appName === 'crm')) {
-    const membership = await db.query.committeeMembers.findFirst({
-      where: eq(schema.committeeMembers.employeeId, user.employeeId),
-    });
-    if (membership) grants.push(...COMMITTEE_IMPLIED_GRANTS);
-  }
+  const sources = await collectGrantSources(getDb(c.env), user.id);
+  const grants = sources?.effective ?? [];
 
   grantCache.set(c, grants);
   return grants;
@@ -285,6 +450,13 @@ function withInheritance(grants: Grant[]): Grant[] {
 /**
  * Effective grants for `userId`, defaulting to the caller. Callers are
  * responsible for authorizing reads of anyone other than themselves.
+ *
+ * Both branches now resolve through `collectGrantSources`, so what this reports
+ * is what the gates will actually allow. They did not before: the other-user
+ * branch had its own copy of the query, which read only `user_app_permissions` —
+ * so it omitted the committee rule, and would have omitted every appointment
+ * grant too. A permissions screen that under-reports access is worse than no
+ * screen, because it invites somebody to grant again what is already held.
  */
 export async function listGrants(c: RbacContext, userId?: string): Promise<Grant[]> {
   const actor = c.get('user');
@@ -296,14 +468,13 @@ export async function listGrants(c: RbacContext, userId?: string): Promise<Grant
   const db = getDb(c.env);
   const target = await db.query.usersLogins.findFirst({
     where: eq(schema.usersLogins.id, userId),
+    columns: { id: true, isSuperadmin: true },
   });
   if (!target) return [];
   if (target.isSuperadmin) return allGrants();
 
-  const rows = await db.query.userAppPermissions.findMany({
-    where: eq(schema.userAppPermissions.userId, target.id),
-  });
-  return withInheritance(rows.map(toGrant));
+  const sources = await collectGrantSources(db, target.id);
+  return sources?.effective ?? [];
 }
 
 /**

@@ -40,6 +40,10 @@
     200 ok data=array<{email,id,name}>
 /api/admin/api-keys
     200 ok data=array<empty>
+/api/admin/appointments
+    200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employee,employeeId,id,isActive,roleOrTitle,termType}>
+/api/admin/appointments/:id/permissions
+    200 ok data=array<empty>
 /api/admin/audit-logs
     200 ok data=array<empty>
 /api/admin/permissions
@@ -48,6 +52,8 @@
     200 ok data=array<{createdAt,createdByUserId,email,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,ownership,passwordUpdatedAt,permissions,phone,recoveryEmail,username}>
 /api/admin/users/:id
     404 err="Record not found"
+/api/admin/users/:id/effective-permissions
+    404 err="User not found"
 /api/admin/users/:id/permissions
     200 ok data=array<empty>
 /api/admin/users/my-team
@@ -63,7 +69,7 @@
 /api/core/clients/:id/portal-status
     200 ok data={hasLogin}
 /api/core/committees
-    200 ok data=array<empty>
+    200 ok data=array<{activeStatus,clientId,committeeName,createdAt,dateFormed,id,labId,opsStatus,purpose,type,updatedAt}>
 /api/core/committees/:id
     404 err="Record not found"
 /api/core/committees/:id/members
@@ -115,7 +121,7 @@
 /api/email/export
     200 application/mbox
 /api/email/mailboxes
-    200 ok data=array<{address,appName,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,updatedAt}>
+    200 ok data=array<{address,appName,appointmentId,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,updatedAt}>
 /api/email/mailboxes/:id/grants
     200 ok data=array<empty>
 /api/email/mailboxes/:id/messages
@@ -123,7 +129,7 @@
 /api/email/messages/:id
     404 err="Message not found"
 /api/email/mine
-    200 ok data=array<{address,appName,canBulk,canSend,displayName,id,isActive,kind}>
+    200 ok data=array<{address,appName,appointmentId,appointmentTitle,canBulk,canSend,displayName,id,isActive,kind}>
 /api/email/prefs
     200 ok data=array<{changeable,description,enabled,key,kind}>
 /api/email/scheduled
@@ -201,7 +207,7 @@
 /api/health
     200 raw={endpoints,service,status,timestamp,version}
 /api/hr/appointments
-    200 ok data=array<empty>
+    200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employeeId,id,isActive,roleOrTitle,termType}>
 /api/hr/appointments/:id
     404 err="Record not found"
 /api/hr/assets
@@ -275,7 +281,7 @@
 /api/notifications
     200 ok data=array<empty>
 /api/ops/committees
-    200 ok data=array<empty>
+    200 ok data=array<{activeStatus,clientId,committeeName,createdAt,dateFormed,id,labId,opsStatus,purpose,type,updatedAt}>
 /api/ops/docs
     200 ok data=array<empty>
 /api/ops/labs

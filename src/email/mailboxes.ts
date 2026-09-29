@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { UserPayload } from '../middleware/auth';
-import { checkFeaturePermission } from '../middleware/rbac';
+import { actorEmployeeId, checkFeaturePermission } from '../middleware/rbac';
 
 /**
  * Who may use which mailbox.
@@ -13,15 +13,21 @@ import { checkFeaturePermission } from '../middleware/rbac';
  * answers, and the one that is wrong is the one nobody tested. Every route,
  * every R2 read rule and the inbound handler go through `canUseMailbox`.
  *
- * Access has two sources and they are not a fallback chain — the order below is
+ * Access has three sources and they are not a fallback chain — the order below is
  * load-bearing:
  *
  *   1. A personal mailbox is reachable by the person it belongs to. No grant is
  *      involved; ownership *is* the permission. This is the same reasoning that
  *      makes `dashboard` app-gated rather than feature-gated — every handler
  *      already filters on the caller's own id.
- *   2. If any `mailbox_grants` row exists for a mailbox, those rows are the only
- *      thing that decides and the app grant stops applying. That is what lets
+ *   1b. An APPOINTMENT mailbox (cto@) is reachable by whoever holds that
+ *      appointment right now. Also ownership rather than a grant, and it takes no
+ *      `mailbox_grants` rows at all — the entire point is that appointing
+ *      somebody confers the mailbox, so a grant list able to deny the holder
+ *      would reinstate the manual step this model removes. Somebody holding two
+ *      posts reads both addresses in one workspace, which is what it is for.
+ *   2. If any `mailbox_grants` row exists for an APP mailbox, those rows are the
+ *      only thing that decides and the app grant stops applying. That is what lets
  *      `payroll@` be narrower than `hr/email` without requiring a row for the
  *      ninety per cent of mailboxes that need no exception.
  *   3. Otherwise an app mailbox is reachable through `<app>/email`, which is an
@@ -121,6 +127,37 @@ export async function canUseMailbox(
     return box.ownerUserId === user.id;
   }
 
+  /**
+   * A post's mail. The holder reads and sends; nobody else does.
+   *
+   * The employee id comes from `actorEmployeeId`, which reads the database — NOT
+   * from the JWT, whose copy was made when the token was signed and can be over
+   * a week old. Somebody unlinked from an employee, or relinked to a different
+   * one, would otherwise keep reading the old post's mail for the rest of their
+   * session.
+   *
+   * A vacant or deactivated appointment reaches `admin/mailboxes` and nobody
+   * else. Mail keeps arriving at cto@ while the post is empty and somebody has to
+   * be able to see it; when it is filled again the whole history is there. This is
+   * the same reasoning as the catch-all, and the same grant.
+   */
+  if (box.kind === 'appointment') {
+    if (!box.appointmentId) return false;
+    const db = getDb(c.env);
+    const appointment = await db.query.appointments.findFirst({
+      where: eq(schema.appointments.id, box.appointmentId),
+      columns: { employeeId: true, isActive: true },
+    });
+    if (!appointment) return false;
+
+    if (appointment.isActive !== true || !appointment.employeeId) {
+      return checkFeaturePermission(c, 'admin', 'mailboxes', levelFor(access));
+    }
+
+    const mine = await actorEmployeeId(c);
+    return !!mine && mine === appointment.employeeId;
+  }
+
   // An alias has no storage of its own, so reading one is meaningless; sending
   // as one is allowed to whoever may send as its target.
   if (box.kind === 'alias') {
@@ -167,9 +204,26 @@ export async function canUseMailbox(
  * two drift apart, and grants are already cached per request in a WeakMap, so
  * this costs one query rather than one per mailbox.
  */
+export type MailboxScope =
+  | { kind: 'personal' }
+  /**
+   * Everything that is the caller's OWN mail: their personal box plus every
+   * appointment box they hold. This is what the workspace shows, and it is the
+   * scope this whole change exists for — somebody who is PM of one thing and
+   * director of another reads ahmad@ and cto@ side by side instead of signing out
+   * of one account to reach the other.
+   *
+   * `personal` stays strict, so an administrative screen can still ask the
+   * narrower question.
+   */
+  | { kind: 'mine' }
+  | { kind: 'appointment' }
+  | { kind: 'app'; app: string }
+  | { kind: 'catchall' };
+
 export async function listReadableMailboxes(
   c: MailCtx,
-  scope?: { kind: 'personal' } | { kind: 'app'; app: string } | { kind: 'catchall' },
+  scope?: MailboxScope,
 ): Promise<MailboxRow[]> {
   const db = getDb(c.env);
   const all = await db.query.mailboxes.findMany();
@@ -178,6 +232,8 @@ export async function listReadableMailboxes(
     if (box.kind === 'system') return false;
     if (!scope) return true;
     if (scope.kind === 'personal') return box.kind === 'personal';
+    if (scope.kind === 'appointment') return box.kind === 'appointment';
+    if (scope.kind === 'mine') return box.kind === 'personal' || box.kind === 'appointment';
     /**
      * The catch-all needed a scope of its own, because it belongs to no app and no
      * person and was therefore excluded by both of the other two — so it collected

@@ -2,14 +2,15 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Shield, Activity,
    Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
-, Mail
+, Mail, KeyRound
 } from 'lucide-react';
 import Login from './Login';
 import { profilePhotoUrl } from '../lib/avatar';
 import GAGrid, { type Column } from '../components/GAGrid';
 
 import TaskBoard from '../components/TaskBoard';
-import AppointmentProvisionForm from '../components/AppointmentProvisionForm';
+import AppointmentForm from '../components/AppointmentForm';
+import AccountForm from '../components/AccountForm';
 import ProfileModal from '../components/ProfileModal';
 import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
@@ -53,6 +54,8 @@ function HR() {
   const [payrollRecords, setPayrollRecords] = useState<any[]>([]);
 
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
+  /** The employee whose single login is being created or amended, if any. */
+  const [accountFor, setAccountFor] = useState<{ id: string; name: string } | null>(null);
   const [showPayrollForm, setShowPayrollForm] = useState(false);
   const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -444,14 +447,19 @@ function HR() {
 
         {tab === 'appointments' && (
           <GAGrid
-            title="Account Provisioning & Appointments"
+            title="Appointments"
             entityName="appointment"
             columns={[
               { key: 'roleOrTitle', label: 'Title', type: 'avatar' },
-              { key: 'employeeId', label: 'Employee', render: (v) => employees.find(e => e.id === v)?.name || v },
+              {
+                key: 'employeeId', label: 'Held by',
+                render: (v) => v
+                  ? (employees.find(e => e.id === v)?.name || v)
+                  : <span className="text-textSecondary italic text-[10px]">Vacant</span>,
+              },
               { key: 'committeeId', label: 'Committee', render: (v) => committees.find(c => c.id === v)?.committeeName || 'None' },
               { key: 'appointmentDate', label: 'Date', type: 'date' },
-              { key: 'isActive', label: 'Status', render: (v) => v ? '✅ Active' : '❌ Expired' },
+              { key: 'isActive', label: 'Status', render: (v) => v ? '✅ Active' : '❌ Ended' },
             ]}
             data={appointments}
             onAdd={() => { setEditingRecord(null); setShowAppointmentForm(true); }}
@@ -506,6 +514,12 @@ function HR() {
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
           onSubmit={handleEmployeeSubmit}
           canEditPermissions={getPerm('appointments').canEdit}
+          canManageAccount={getPerm('employees').canEdit}
+          onManageAccount={() => {
+            if (!editingRecord?.id) return;
+            setAccountFor({ id: editingRecord.id, name: editingRecord.name || 'this employee' });
+            setShowEntityForm(false);
+          }}
           onAddAppointment={() => {
             const empId = editingRecord?.id;
             setEditingRecord({ employeeId: empId });
@@ -520,22 +534,43 @@ function HR() {
       )}
 
       {showAppointmentForm && (
-        <AppointmentProvisionForm
+        <AppointmentForm
           employees={employees} committees={committees}
           initialData={editingRecord}
           onClose={() => { setShowAppointmentForm(false); setEditingRecord(null); }}
           onSubmit={async (data) => {
-            const res = await fetch(`${API}/hr/appointments/provision`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-              body: JSON.stringify(data),
-            });
+            /**
+             * PATCH when it exists, POST when it does not. The old single
+             * `/appointments/provision` endpoint is gone: it created a login per
+             * posting, which is how one person came to have two accounts.
+             *
+             * A PATCH that changes `employeeId` is a handover — the server moves the
+             * post's grants, mailbox and committee seat with it.
+             */
+            const editing = !!editingRecord?.id;
+            const res = await fetch(
+              editing ? `${API}/hr/appointments/${editingRecord.id}` : `${API}/hr/appointments`,
+              {
+                method: editing ? 'PATCH' : 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+                body: JSON.stringify(data),
+              },
+            );
             if (res.status === 401) { handleLogout(); return; }
-            if (!res.ok) throw new Error((await res.json()).error || 'Failed to provision');
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save the appointment');
             setShowAppointmentForm(false);
             setEditingRecord(null);
             fetchAppointments();
           }}
+        />
+      )}
+
+      {accountFor && (
+        <AccountForm
+          employeeId={accountFor.id}
+          employeeName={accountFor.name}
+          onClose={() => setAccountFor(null)}
+          onSaved={fetchEmployees}
         />
       )}
 
@@ -580,6 +615,8 @@ export default HR;
 interface EmployeeFormProps {
   initialData: any;
   appointments: any[];
+  canManageAccount: boolean;
+  onManageAccount: () => void;
   employees: any[];
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
@@ -588,7 +625,7 @@ interface EmployeeFormProps {
   canEditPermissions?: boolean;
 }
 
-function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, onAddAppointment, onEditAppointment, canEditPermissions }: EmployeeFormProps) {
+function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, onAddAppointment, onEditAppointment, canEditPermissions, canManageAccount, onManageAccount }: EmployeeFormProps) {
   const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, efficiencyScore: 0, sectorId: '', cnic: '', dob: '', gender: 'Male', address: '', emergencyContact: '', contactInfo: '', designation: '', reportingManagerId: '', employmentType: 'Full-time', confirmationDate: '', contractStartDate: '', contractEndDate: '', assignedOffice: '', bankDetails: '', taxInformation: '' });
   const [assets, setAssets] = useState<any[]>([]);
   const [unassignedAssets, setUnassignedAssets] = useState<any[]>([]);
@@ -791,19 +828,35 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
           <div className="grid grid-cols-1 gap-6">
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-black text-primary uppercase tracking-widest">Appointments & Access</h3>
-                {canEditPermissions && (
-                  <button type="button" onClick={onAddAppointment} className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
-                    <Plus className="w-3 h-3" /> Grant Access
-                  </button>
-                )}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-black text-primary uppercase tracking-widest">Appointments</h3>
+                <div className="flex items-center gap-2">
+                  {/* Sign-in details are per PERSON and live behind this one button.
+                      They used to be part of the appointment form, which is how holding
+                      two posts produced two accounts. */}
+                  {canManageAccount && initialData?.id && (
+                    <button type="button" onClick={onManageAccount} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 text-textSecondary text-[10px] font-black hover:bg-white/10 hover:text-white transition-all uppercase tracking-widest border border-white/10">
+                      <KeyRound className="w-3 h-3" /> Account
+                    </button>
+                  )}
+                  {canEditPermissions && (
+                    <button type="button" onClick={onAddAppointment} className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
+                      <Plus className="w-3 h-3" /> Appoint
+                    </button>
+                  )}
+                </div>
               </div>
+
+              <p className="text-[10px] leading-relaxed text-textSecondary">
+                One login per person, however many posts they hold. What each post can reach is set
+                on the Access page under Posts, and reassigning a post moves its access, its mailbox
+                and its committee seat to the new holder.
+              </p>
 
               {appointments.length === 0 ? (
                 <div className="p-8 rounded-2xl border border-dashed border-white/10 bg-white/5 text-center">
                   <Shield className="w-8 h-8 mx-auto mb-3 opacity-10 text-primary" />
-                  <p className="text-xs text-textSecondary italic">No active appointments or digital access granted.</p>
+                  <p className="text-xs text-textSecondary italic">No appointments. This person can sign in if they have an account, and will reach only what is granted to them individually.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -818,7 +871,7 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
-                          {appt.isActive ? 'ACTIVE' : 'EXPIRED'}
+                          {appt.isActive ? 'ACTIVE' : 'ENDED'}
                         </div>
                         {canEditPermissions && (
                           <button type="button" onClick={() => onEditAppointment(appt)} className="p-1.5 hover:bg-white/10 rounded-lg text-textSecondary hover:text-primary transition-all">

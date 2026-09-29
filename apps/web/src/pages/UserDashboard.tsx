@@ -609,9 +609,9 @@ export default function UserDashboard() {
         {/* Notes Tab */}
         {activeTab === 'email' && (
           <MailboxTab
-            scope={{ kind: 'personal' }}
+            scope={{ kind: 'mine' }}
             heading="Your mail"
-            description="Only you can read this mailbox. It is reached by owning it, not by a permission anyone can be granted."
+            description="Your own address, plus the address of every post you hold. Each is reached by owning it — personally, or by holding the appointment — not by a permission anyone can be granted."
           />
         )}
         {activeTab === 'notes' && (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Mail, Plus, Power, AlertCircle, Users, Building2, CornerDownRight, Inbox, KeyRound, X, Check } from 'lucide-react';
+import { Loader2, Mail, Plus, Power, AlertCircle, Users, Building2, Briefcase, CornerDownRight, Inbox, KeyRound, X, Check } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
@@ -20,8 +20,9 @@ interface Mailbox {
   id: string;
   address: string;
   displayName: string | null;
-  kind: 'personal' | 'app' | 'alias' | 'catchall' | 'system';
+  kind: 'personal' | 'appointment' | 'app' | 'alias' | 'catchall' | 'system';
   ownerUserId: string | null;
+  appointmentId: string | null;
   appName: string | null;
   forwardsToMailboxId: string | null;
   dailySendCap: number;
@@ -30,17 +31,29 @@ interface Mailbox {
 
 interface Person { id: string; name?: string | null; email: string }
 
+/** A post an address can belong to, with whoever holds it right now. */
+export interface AppointmentOption {
+  id: string;
+  roleOrTitle: string | null;
+  isActive: boolean | null;
+  employeeId: string | null;
+  employee?: { name?: string | null } | null;
+}
+
 interface MailboxGrant { mailboxId: string; userId: string; canRead: boolean; canSend: boolean }
 
 interface MailboxAdminProps {
   /** Apps that have an `email` feature, from the permission catalogue. */
   apps: string[];
   people: Person[];
+  /** Every appointment, so an address can be attached to a post rather than a person. */
+  appointments?: AppointmentOption[];
   disabled?: boolean;
 }
 
 const KIND_LABEL: Record<Mailbox['kind'], string> = {
   personal: 'Personal',
+  appointment: 'Post',
   app: 'Department',
   alias: 'Alias',
   catchall: 'Catch-all',
@@ -49,6 +62,7 @@ const KIND_LABEL: Record<Mailbox['kind'], string> = {
 
 const KIND_ICON: Record<Mailbox['kind'], typeof Mail> = {
   personal: Users,
+  appointment: Briefcase,
   app: Building2,
   alias: CornerDownRight,
   catchall: Inbox,
@@ -67,14 +81,18 @@ function groupsOf(boxes: Mailbox[], apps: string[]): [string, Mailbox[]][] {
   for (const app of apps) {
     out.push([app, boxes.filter((b) => b.kind === 'app' && b.appName === app)]);
   }
+  const posts = boxes.filter((b) => b.kind === 'appointment');
+  // Its own heading rather than folded into "personal": these move between people
+  // without being edited, which is the one thing about them worth seeing at a glance.
+  if (posts.length) out.push(['Posts — follows whoever holds the appointment', posts]);
   const personal = boxes.filter((b) => b.kind === 'personal');
   if (personal.length) out.push(['Personal — one person each', personal]);
-  const other = boxes.filter((b) => !['app', 'personal'].includes(b.kind));
+  const other = boxes.filter((b) => !['app', 'personal', 'appointment'].includes(b.kind));
   if (other.length) out.push(['Aliases, catch-all and system', other]);
   return out;
 }
 
-export default function MailboxAdmin({ apps, people, disabled = false }: MailboxAdminProps) {
+export default function MailboxAdmin({ apps, people, appointments = [], disabled = false }: MailboxAdminProps) {
   /** `null` until loaded — see MailboxTab for why this is a null rather than a flag. */
   const [boxes, setBoxes] = useState<Mailbox[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +106,7 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
     displayName: '',
     kind: 'app' as Mailbox['kind'],
     ownerUserId: '',
+    appointmentId: '',
     appName: apps[0] ?? '',
     forwardsToMailboxId: '',
     dailySendCap: '40',
@@ -122,6 +141,7 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
         dailySendCap: Number(form.dailySendCap) || 200,
       };
       if (form.kind === 'personal') body.ownerUserId = form.ownerUserId;
+      if (form.kind === 'appointment') body.appointmentId = form.appointmentId;
       if (form.kind === 'app') body.appName = form.appName;
       if (form.kind === 'alias') body.forwardsToMailboxId = form.forwardsToMailboxId;
 
@@ -185,8 +205,17 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
     return p ? (p.name || p.email) : id;
   };
 
+  const postLabel = (id: string | null) => {
+    if (!id) return '—';
+    const appt = appointments.find((a) => a.id === id);
+    if (!appt) return id;
+    const holder = appt.employee?.name;
+    return `${appt.roleOrTitle || 'Untitled post'} — ${holder || 'vacant'}`;
+  };
+
   const canSubmit = form.localPart.trim() !== ''
     && (form.kind !== 'personal' || form.ownerUserId !== '')
+    && (form.kind !== 'appointment' || form.appointmentId !== '')
     && (form.kind !== 'app' || form.appName !== '')
     && (form.kind !== 'alias' || form.forwardsToMailboxId !== '');
 
@@ -196,7 +225,9 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
         <div>
           <h3 className="text-sm font-black uppercase tracking-widest text-textPrimary">Mailboxes</h3>
           <p className="text-[11px] text-textSecondary mt-0.5">
-            A personal mailbox is read only by the person it belongs to. A department mailbox is
+            A personal mailbox is read only by the person it belongs to, and a
+            <span className="font-bold"> post </span> mailbox only by whoever holds that
+            appointment — both by ownership, neither by a grant. A department mailbox is
             reached through that department&rsquo;s <span className="font-bold">email</span> feature
             in the matrix above.
           </p>
@@ -242,6 +273,7 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
                 className="w-full rounded border border-border bg-surface px-2 py-1.5 outline-none"
               >
                 <option value="app">Department mailbox</option>
+                <option value="appointment">Post — follows whoever holds it</option>
                 <option value="personal">Personal — one staff member</option>
                 <option value="alias">Alias — delivers into another mailbox</option>
                 <option value="catchall">Catch-all — anything unmatched</option>
@@ -261,6 +293,29 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
                     <option key={p.id} value={p.id}>{p.name || p.email}</option>
                   ))}
                 </select>
+              </label>
+            )}
+
+            {form.kind === 'appointment' && (
+              <label className="block">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-textSecondary mb-1">Belongs to the post</span>
+                <select
+                  value={form.appointmentId}
+                  onChange={(e) => setForm({ ...form, appointmentId: e.target.value })}
+                  className="w-full rounded border border-border bg-surface px-2 py-1.5 outline-none"
+                >
+                  <option value="">Choose a post…</option>
+                  {appointments.filter((a) => a.isActive !== false).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.roleOrTitle || 'Untitled post'} — {a.employee?.name || 'vacant'}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[10px] leading-relaxed text-textSecondary">
+                  Whoever holds this post reads and sends from the address, in their own
+                  workspace. Reassigning the post hands the mailbox over with it — there is
+                  nothing to edit here when somebody changes job.
+                </span>
               </label>
             )}
 
@@ -382,6 +437,7 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
                         </div>
                         <div className="mt-0.5 text-[10px] text-textSecondary">
                           {b.kind === 'personal' && `Only ${ownerName(b.ownerUserId)} can read it`}
+                          {b.kind === 'appointment' && `Whoever holds ${postLabel(b.appointmentId)}`}
                           {b.kind === 'app' && `Anyone with ${b.appName}/email`}
                           {b.kind === 'alias' && `Delivers into ${boxes.find((x) => x.id === b.forwardsToMailboxId)?.address ?? '—'}`}
                           {b.kind === 'catchall' && 'Anything addressed to nobody in particular'}

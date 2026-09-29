@@ -1,6 +1,5 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 import { employees, committees } from './core';
-import { usersLogins } from './auth';
 import { accounts } from './finance';
 
 export const sectors = sqliteTable('sectors', {
@@ -13,17 +12,64 @@ export const sectors = sqliteTable('sectors', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+/**
+ * A post, and the unit access is defined on.
+ *
+ * `employee_id` is whoever holds it right now, and it is the only link to a
+ * person here. There used to be an `account_id` naming a login created for this
+ * one posting, which is what made logins per-appointment: somebody holding two
+ * posts held two logins and could read only one of them at a time. Migration
+ * 0047 removed that column. The person's login is found through
+ * `users_logins.employee_id` instead, of which there is exactly one per employee.
+ *
+ * An appointment with a NULL `employee_id` is vacant. That is a useful state
+ * rather than a broken one: its grants and its mailbox keep existing, reach
+ * nobody, and are conferred whole on whoever is appointed next.
+ */
 export const appointments = sqliteTable('appointments', {
   id: text('appointment_id').primaryKey(),
   roleOrTitle: text('role_or_title'),
   appointmentDate: text('appointment_date'),
   termType: text('term_type'),
   appointmentEndDate: text('appointment_end_date'),
+  /**
+   * The one switch on whether this appointment's grants apply. Deliberately not
+   * `appointment_end_date`: access that lapses on a date nobody re-reads is
+   * access that lapses at a moment no test can pin, and an ended appointment
+   * that still grants is a data-hygiene problem with a visible fix.
+   */
   isActive: integer('is_active', { mode: 'boolean' }),
   employeeId: text('employee_id').references(() => employees.id),
-  accountId: text('account_id').references(() => usersLogins.id),
   committeeId: text('committee_id').references(() => committees.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+/**
+ * appointment_app_permissions
+ *
+ * What an appointment can reach. Same shape as `user_app_permissions` on purpose
+ * — the two are unioned per (appName, feature) by OR-ing the flags in
+ * src/middleware/rbac.ts, and a resolver that had to translate between two
+ * shapes would eventually translate one of them wrongly.
+ *
+ * This is the half of authorization that survives a handover. Replacing a
+ * project manager is one edit to `appointments.employee_id`; the new holder
+ * gains every grant here and the old one loses them, with no permission matrix
+ * touched for either person.
+ *
+ * (appointment_id, app_name, feature) is unique, so saving an appointment's
+ * access is a delete-then-insert of its whole set rather than a per-row merge.
+ */
+export const appointmentAppPermissions = sqliteTable('appointment_app_permissions', {
+  id: text('id').primaryKey(),
+  appointmentId: text('appointment_id').notNull().references(() => appointments.id),
+  appName: text('app_name').notNull(),
+  feature: text('feature').notNull(),
+  canView: integer('can_view', { mode: 'boolean' }).default(false),
+  canEdit: integer('can_edit', { mode: 'boolean' }).default(false),
+  canDelete: integer('can_delete', { mode: 'boolean' }).default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
 
 // -- NEW HRMS TABLES --

@@ -54,6 +54,9 @@ GET    /api/acquisition/users
 GET    /api/admin/api-keys
 POST   /api/admin/api-keys
 DELETE /api/admin/api-keys/:id
+GET    /api/admin/appointments
+GET    /api/admin/appointments/:id/permissions
+PUT    /api/admin/appointments/:id/permissions
 GET    /api/admin/audit-logs
 GET    /api/admin/permissions
 POST   /api/admin/permissions
@@ -62,6 +65,7 @@ GET    /api/admin/users
 DELETE /api/admin/users/:id
 GET    /api/admin/users/:id
 PATCH  /api/admin/users/:id
+GET    /api/admin/users/:id/effective-permissions
 GET    /api/admin/users/:id/permissions
 PUT    /api/admin/users/:id/permissions
 POST   /api/admin/users/:id/reassign-owner
@@ -253,7 +257,6 @@ POST   /api/hr/appointments
 DELETE /api/hr/appointments/:id
 GET    /api/hr/appointments/:id
 PATCH  /api/hr/appointments/:id
-POST   /api/hr/appointments/provision
 GET    /api/hr/assets
 POST   /api/hr/assets
 PATCH  /api/hr/assets/:id
@@ -265,6 +268,7 @@ DELETE /api/hr/company-documents/:id
 GET    /api/hr/documents
 POST   /api/hr/documents
 DELETE /api/hr/documents/:id
+POST   /api/hr/employees/:id/account
 GET    /api/hr/employees/:id/permissions
 GET    /api/hr/leave-balances
 GET    /api/hr/leave-requests

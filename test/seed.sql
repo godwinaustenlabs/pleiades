@@ -5,9 +5,14 @@
 -- users_logins, so the accounts are inserted before their grants.
 
 
--- Truncate in dependency order: grants reference users_logins, and the mail
--- tables reference both. email_delivery and email_attachments point at
--- email_messages, which points at mailboxes, so they go first.
+-- Truncate in dependency order, innermost first.
+--
+-- This file is re-runnable on its own — `reseed()` in test/helpers.ts calls it
+-- without replaying the DDL, which is how a test that mutates data gets a clean
+-- slate between cases. That only works if every table it writes is emptied here,
+-- INCLUDING the ones a route writes as a side effect: provisioning an account
+-- inserts user_ownership and audit_logs, and a DELETE FROM users_logins with an
+-- ownership row still pointing at it fails the foreign key.
 DELETE FROM email_delivery;
 DELETE FROM email_attachments;
 DELETE FROM email_messages;
@@ -18,6 +23,22 @@ DELETE FROM mailbox_grants;
 DELETE FROM mailboxes;
 DELETE FROM compliance_config;
 DELETE FROM user_app_permissions;
+-- Appointments are referenced by their grants, by any mailbox attached to them
+-- (gone above) and by universal_tasks, and they reference committees and
+-- employees — so the whole chain comes out from the leaves inwards.
+DELETE FROM appointment_app_permissions;
+DELETE FROM task_assignments;
+DELETE FROM universal_tasks;
+DELETE FROM committee_members;
+DELETE FROM appointments;
+DELETE FROM committees;
+DELETE FROM company_documents;
+DELETE FROM employees;
+-- Written by routes rather than by this file, and all three reference users_logins.
+DELETE FROM user_ownership;
+DELETE FROM password_reset_tokens;
+DELETE FROM calendar_feeds;
+DELETE FROM audit_logs;
 DELETE FROM users_logins;
 
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_ceo','u_ceo@test.local','u_ceo','u_ceo','x',1,1,0,0);
@@ -27,6 +48,71 @@ INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_supe
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts,recovery_email) VALUES ('u_mail','u_mail@test.local','u_mail','u_mail','x',1,0,0,0,'delivered+u_mail@resend.dev');
+
+-- ── Appointment fixture ─────────────────────────────────────────────────────
+--
+-- The seven logins above carry NO employee_id, so they hold no appointments and
+-- their access is exactly their own rows — which is what keeps every pre-existing
+-- expectation in rbac.test.ts unchanged. Everything appointment-shaped is tested
+-- through two logins that do have one.
+--
+--   emp_dual / u_dual   holds THREE appointments:
+--       ap_cmo     active, grants acquisition/campaigns      }  these two are the
+--       ap_pm      active, grants tech/projects              }  union
+--       ap_ended   INACTIVE, grants finance/transactions     -> must grant nothing
+--     plus ap_chair (active, committee cmt_test, no grants of its own) and one
+--     DIRECT grant of its own (dashboard/overview), so "direct U appointments" is
+--     distinguishable from either alone.
+--
+--   emp_hold / u_hold   holds nothing and has no grants at all, so a handover test
+--     can prove it gains a post's whole access without any per-person edit.
+--
+--   ap_vacant           has grants (legal/agreements) and NO holder. Nobody gets
+--     them. A post that grants its own permissions to whoever last held it would
+--     be the worst bug available here.
+INSERT INTO employees (employee_id,name,department,employment_status,created_at,updated_at)
+	VALUES ('emp_dual','Dual Holder','Tech','active',0,0);
+INSERT INTO employees (employee_id,name,department,employment_status,created_at,updated_at)
+	VALUES ('emp_hold','Successor','Tech','active',0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,employee_id,is_active,is_superadmin,created_at,failed_attempts)
+	VALUES ('u_dual','u_dual@test.local','u_dual','u_dual','x','emp_dual',1,0,0,0);
+INSERT INTO users_logins (id,email,username,name,password_hash,employee_id,is_active,is_superadmin,created_at,failed_attempts)
+	VALUES ('u_hold','u_hold@test.local','u_hold','u_hold','x','emp_hold',1,0,0,0);
+
+INSERT INTO committees (committee_id,committee_name,active_status,created_at,updated_at)
+	VALUES ('cmt_test','Aureline Steering',1,0,0);
+
+INSERT INTO appointments (appointment_id,role_or_title,is_active,employee_id,committee_id,created_at)
+	VALUES ('ap_cmo','CMO',1,'emp_dual',NULL,0);
+INSERT INTO appointments (appointment_id,role_or_title,is_active,employee_id,committee_id,created_at)
+	VALUES ('ap_pm','PM Aureline',1,'emp_dual',NULL,0);
+INSERT INTO appointments (appointment_id,role_or_title,is_active,employee_id,committee_id,created_at)
+	VALUES ('ap_ended','Former Treasurer',0,'emp_dual',NULL,0);
+INSERT INTO appointments (appointment_id,role_or_title,is_active,employee_id,committee_id,created_at)
+	VALUES ('ap_chair','Committee Chair',1,'emp_dual','cmt_test',0);
+INSERT INTO appointments (appointment_id,role_or_title,is_active,employee_id,committee_id,created_at)
+	VALUES ('ap_vacant','Director Tech',1,NULL,NULL,0);
+
+INSERT INTO committee_members (committee_id,employee_id,role_in_committee,joined_at)
+	VALUES ('cmt_test','emp_dual','Committee Chair','2026-01-01');
+
+INSERT INTO appointment_app_permissions (id,appointment_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('aap_cmo_campaigns','ap_cmo','acquisition','campaigns',1,1,0,0,0);
+INSERT INTO appointment_app_permissions (id,appointment_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('aap_pm_projects','ap_pm','tech','projects',1,1,0,0,0);
+-- Deliberately DELETE-only on one feature, so the implication chain
+-- (delete -> edit -> view) is exercised through an appointment rather than only
+-- through a direct grant.
+INSERT INTO appointment_app_permissions (id,appointment_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('aap_pm_issues','ap_pm','tech','issues',0,0,1,0,0);
+INSERT INTO appointment_app_permissions (id,appointment_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('aap_ended_transactions','ap_ended','finance','transactions',1,1,1,0,0);
+INSERT INTO appointment_app_permissions (id,appointment_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('aap_vacant_agreements','ap_vacant','legal','agreements',1,1,1,0,0);
+
+-- Access that belongs to the PERSON, not to any post they hold.
+INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at)
+	VALUES ('uap_u_dual_dashboard','u_dual','dashboard','overview',1,1,0,0,0);
 
 -- u_tasks holds nothing but the `tasks` feature of four modules. Before those
 -- routers were gated per feature, app-level access let that grant alone read and
@@ -334,6 +420,19 @@ INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_na
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_payroll','payroll@godwinausten.org','Payroll','app',NULL,'hr',50,1,0,0);
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_mkt','mkt@godwinausten.org','Marketing Lead','personal','u_mkt',NULL,100,1,0,0);
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,forwards_to_mailbox_id,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_alias','info@godwinausten.org','Info','alias',NULL,NULL,'mbx_hr',200,1,0,0);
+
+-- Mail that belongs to a post.
+--
+--   mbx_cto     on ap_pm, held by emp_dual -> u_dual reads and sends; nobody else
+--               does, and a handover moves it with no mailbox edit.
+--   mbx_vacant  on ap_vacant, held by nobody -> only admin/mailboxes, because mail
+--               keeps arriving at an empty post and somebody must be able to see it.
+--   mbx_dual    u_dual's personal box, so `?app=mine` can be shown to return the
+--               personal one AND the appointment one together — the single workspace
+--               that this whole model exists to produce.
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,appointment_id,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_cto','cto@godwinausten.org','Director Tech','appointment',NULL,NULL,'ap_pm',200,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,appointment_id,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_vacant','director@godwinausten.org','Vacant post','appointment',NULL,NULL,'ap_vacant',200,1,0,0);
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_dual','dual@godwinausten.org','Dual Holder','personal','u_dual',NULL,100,1,0,0);
 
 -- The override. Only u_crm is listed, which must deny u_tech despite hr/email.
 INSERT INTO mailbox_grants (mailbox_id,user_id,can_read,can_send,created_at) VALUES ('mbx_payroll','u_crm',1,1,0);

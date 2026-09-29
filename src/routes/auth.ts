@@ -17,6 +17,37 @@ const authRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
+ * The person's title, as the posts they hold.
+ *
+ * Every active appointment, joined — somebody who is both CMO and a project manager
+ * is both, and the header should say so. This is display only and grants nothing;
+ * what they can reach comes from `appointment_app_permissions`, resolved per request
+ * in src/middleware/rbac.ts.
+ *
+ * `employees.role` is the fallback rather than the source. It is free text that
+ * nothing keeps in step with the appointments, which is exactly why it must not be
+ * the first answer once posts exist.
+ */
+async function titleFor(
+  env: Env,
+  employeeId: string | null | undefined,
+  employee?: { role?: string | null; department?: string | null } | null,
+): Promise<string> {
+  const fallback = employee?.role || employee?.department || 'Staff';
+  if (!employeeId) return fallback;
+
+  const held = await getDb(env).query.appointments.findMany({
+    where: and(
+      eq(schema.appointments.employeeId, employeeId),
+      eq(schema.appointments.isActive, true),
+    ),
+    columns: { roleOrTitle: true },
+  });
+  const titles = held.map((a) => a.roleOrTitle).filter((t): t is string => !!t);
+  return titles.length > 0 ? titles.join(' · ') : fallback;
+}
+
+/**
  * The one response `POST /auth/request-reset` ever gives.
  *
  * A single constant rather than two matching literals, because two literals drift:
@@ -127,9 +158,10 @@ authRouter.post('/login', async (c) => {
         email: user.email,
         username: user.username,
         name: user.name,
-        // Job title for display only — it grants nothing.
+        // The posts they hold, for display only — they grant nothing here; grants
+        // are read per request from the appointments themselves.
         // @ts-ignore — employee is present via `with`
-        title: user.employee?.role || user.employee?.department || 'Staff',
+        title: await titleFor(c.env, user.employeeId, user.employee),
         employeeId: user.employeeId,
         // The header avatar reads this. It used to be absent from the login
         // payload entirely, so `ga_user.profilePhoto` was undefined until the
@@ -166,7 +198,7 @@ authRouter.get('/whoami', authMiddleware, async (c) => {
     username: userData.username,
     name: userData.name,
     // @ts-ignore — employee is present via `with`
-    title: userData.employee?.role || userData.employee?.department || 'Staff',
+    title: await titleFor(c.env, userData.employeeId, userData.employee),
     // Kept in step with the login payload so a photo set on another device
     // shows up here on the next load rather than only after a fresh sign-in.
     // @ts-ignore — employee is present via `with`

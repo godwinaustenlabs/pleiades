@@ -11,7 +11,7 @@ import {
   employees, labs, employeeLab, clients, committees,
   committeeMembers, monthlyReports, coreDocs,
 } from './core';
-import { sectors, appointments, payrollRecords, legalTracker } from './hr';
+import { sectors, appointments, appointmentAppPermissions, payrollRecords, legalTracker } from './hr';
 import {
   complianceEvents, generatedDocuments, agentConversations,
   conversationTurns,
@@ -148,9 +148,20 @@ export const sectorsRelations = relations(sectors, ({ many, one }) => ({
   headEmployee: one(employees, { fields: [sectors.headEmployeeId], references: [employees.id] }),
 }));
 
-export const appointmentsRelations = relations(appointments, ({ one }) => ({
+export const appointmentsRelations = relations(appointments, ({ one, many }) => ({
   employee: one(employees, { fields: [appointments.employeeId], references: [employees.id] }),
   committee: one(committees, { fields: [appointments.committeeId], references: [committees.id] }),
+  // What holding this appointment grants. Read through the holder's employee id
+  // in src/middleware/rbac.ts, never through a login named on the appointment —
+  // that column is gone, see migration 0047.
+  permissions: many(appointmentAppPermissions),
+}));
+
+export const appointmentAppPermissionsRelations = relations(appointmentAppPermissions, ({ one }) => ({
+  appointment: one(appointments, {
+    fields: [appointmentAppPermissions.appointmentId],
+    references: [appointments.id],
+  }),
 }));
 
 export const payrollRecordsRelations = relations(payrollRecords, ({ one }) => ({

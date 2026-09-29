@@ -3,7 +3,7 @@ import { eq, and, or, desc, inArray } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { requireAppAccess } from '../middleware/rbac';
+import { actorEmployeeId, requireAppAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 
@@ -17,10 +17,20 @@ dashboardRouter.get('/me', async (c) => {
     const user = c.get('user');
     const db = getDb(c.env);
 
+    /**
+     * The employee this login belongs to, read from the database.
+     *
+     * Not `user.employeeId`, which is the token's copy and can be a week stale — so
+     * somebody newly linked to an employee record saw an empty workspace until their
+     * session rolled over, and everything below (tasks, posts, committees, the
+     * avatar) keyed off the wrong person if they had been relinked.
+     */
+    const employeeId = await actorEmployeeId(c);
+
     // Get all tasks assigned to user via task_assignments junction table
-    const myAssignments = user.employeeId
+    const myAssignments = employeeId
       ? await db.query.taskAssignments.findMany({
-          where: eq(schema.taskAssignments.employeeId, user.employeeId),
+          where: eq(schema.taskAssignments.employeeId, employeeId),
         })
       : [];
     const myTaskIds = myAssignments.map((a: any) => a.taskId);
@@ -41,30 +51,36 @@ dashboardRouter.get('/me', async (c) => {
     // Get employee record for efficiency score
     let efficiencyScore = null;
     let employeeRecord = null;
-    if (user.employeeId) {
+    if (employeeId) {
       employeeRecord = await db.query.employees.findFirst({
-        where: eq(schema.employees.id, user.employeeId),
+        where: eq(schema.employees.id, employeeId),
       });
       efficiencyScore = employeeRecord?.efficiencyScore ?? null;
     }
 
-    // Get active appointments
-    const appointments = await db.query.appointments.findMany({
-      where: and(
-        or(
-          user.employeeId ? eq(schema.appointments.employeeId, user.employeeId) : undefined,
-          eq(schema.appointments.accountId, user.id)
-        ),
-        eq(schema.appointments.isActive, true)
-      ),
-    });
+    /**
+     * Every active appointment this person holds — all of them, in one workspace.
+     *
+     * Matched on employee id alone. The `account_id = user.id` branch that used to
+     * sit beside it dated from logins being per appointment, which is exactly what
+     * made somebody with two posts see one of them here and have to sign into
+     * another account for the other. Migration 0047 removed the column.
+     */
+    const appointments = employeeId
+      ? await db.query.appointments.findMany({
+          where: and(
+            eq(schema.appointments.employeeId, employeeId),
+            eq(schema.appointments.isActive, true),
+          ),
+        })
+      : [];
 
     const appointmentIds = appointments.map(a => a.id);
 
     // Get committee memberships
-    const committees = user.employeeId
+    const committees = employeeId
       ? await db.query.committeeMembers.findMany({
-          where: eq(schema.committeeMembers.employeeId, user.employeeId),
+          where: eq(schema.committeeMembers.employeeId, employeeId),
           with: { committee: true },
         })
       : [];
@@ -104,7 +120,7 @@ dashboardRouter.get('/me', async (c) => {
     return ok(c, {
       user: { 
         id: user.id,  
-        employeeId: user.employeeId,
+        employeeId: employeeId,
         avatarUrl: employeeRecord?.profilePhoto || null
       },
       employee: employeeRecord || null,
@@ -125,14 +141,22 @@ dashboardRouter.get('/me', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
-/* ── ATTENDANCE SELF-SERVICE ── */
+/**
+ * ── ATTENDANCE SELF-SERVICE ──
+ *
+ * Attendance is per EMPLOYEE, not per post: somebody holding two appointments
+ * checks in once, as themselves. The employee is resolved from the database via
+ * `actorEmployeeId` rather than read off the token, because a stale or relinked
+ * claim would file a day's attendance against the wrong person — a record that is
+ * wrong and looks right.
+ */
 dashboardRouter.get('/attendance/today', async (c) => {
   try {
-    const user = c.get('user');
-    if (!user.employeeId) return ok(c, null); // No employee record
+    const employeeId = await actorEmployeeId(c);
+    if (!employeeId) return ok(c, null); // No employee record
     const today = new Date().toISOString().split('T')[0];
     const record = await getDb(c.env).query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
     });
     return ok(c, record || null);
   } catch (err) { return serverError(c, err); }
@@ -140,8 +164,8 @@ dashboardRouter.get('/attendance/today', async (c) => {
 
 dashboardRouter.post('/attendance/checkin', async (c) => {
   try {
-    const user = c.get('user');
-    if (!user.employeeId) return badRequest(c, 'User has no employee profile');
+    const employeeId = await actorEmployeeId(c);
+    if (!employeeId) return badRequest(c, 'User has no employee profile');
     
     const db = getDb(c.env);
     const today = new Date().toISOString().split('T')[0];
@@ -149,7 +173,7 @@ dashboardRouter.post('/attendance/checkin', async (c) => {
     
     // Ensure no double check-in
     const existing = await db.query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
     });
     
     if (existing) return badRequest(c, 'Already checked in today');
@@ -157,7 +181,7 @@ dashboardRouter.post('/attendance/checkin', async (c) => {
     const id = generateId('att');
     await db.insert(schema.attendance).values({
       id,
-      employeeId: user.employeeId,
+      employeeId: employeeId,
       date: today,
       checkIn: now,
       status: 'Present',
@@ -169,15 +193,15 @@ dashboardRouter.post('/attendance/checkin', async (c) => {
 
 dashboardRouter.post('/attendance/checkout', async (c) => {
   try {
-    const user = c.get('user');
-    if (!user.employeeId) return badRequest(c, 'User has no employee profile');
+    const employeeId = await actorEmployeeId(c);
+    if (!employeeId) return badRequest(c, 'User has no employee profile');
     
     const db = getDb(c.env);
     const today = new Date().toISOString().split('T')[0];
     const now = new Date().toLocaleTimeString('en-US', { hour12: false });
     
     const existing = await db.query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, user.employeeId), eq(schema.attendance.date, today))
+      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
     });
     
     if (!existing || !existing.checkIn) return badRequest(c, 'Not checked in today');
