@@ -334,12 +334,18 @@ emailRouter.put('/mailboxes/:id/grants', requireFeatureAccess('admin', 'mailboxe
  */
 emailRouter.get('/mine', async (c) => {
   try {
+    /**
+     * `personal` and `catchall` are reserved values of `?app=`, not app names. Neither
+     * exists in APP_FEATURES, so there is nothing for them to shadow.
+     */
     const app = c.req.query('app');
     const scope = app === 'personal'
       ? { kind: 'personal' as const }
-      : app
-        ? { kind: 'app' as const, app }
-        : undefined;
+      : app === 'catchall'
+        ? { kind: 'catchall' as const }
+        : app
+          ? { kind: 'app' as const, app }
+          : undefined;
     const boxes = await listReadableMailboxes(c, scope);
 
     // Say what they may do with each, so the UI does not have to guess whether to

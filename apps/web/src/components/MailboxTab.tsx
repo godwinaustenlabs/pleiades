@@ -25,7 +25,13 @@ import { errorMessage } from '../lib/errors';
 
 export type MailboxScope =
   | { kind: 'personal' }
-  | { kind: 'app'; app: string };
+  | { kind: 'app'; app: string }
+  /**
+   * Mail addressed to nobody in particular. Its own scope because the catch-all
+   * belongs to no app and no person, so the other two both filtered it out and it
+   * collected everything with no screen able to open it.
+   */
+  | { kind: 'catchall' };
 
 interface MailboxTabProps {
   scope: MailboxScope;
@@ -117,7 +123,9 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
   const [composing, setComposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const query = scope.kind === 'personal' ? '?app=personal' : `?app=${encodeURIComponent(scope.app)}`;
+  const query = scope.kind === 'personal' ? '?app=personal'
+    : scope.kind === 'catchall' ? '?app=catchall'
+    : `?app=${encodeURIComponent(scope.app)}`;
   const current = useMemo(() => boxes?.find((b) => b.id === activeBox) ?? null, [boxes, activeBox]);
 
   useEffect(() => {
@@ -211,7 +219,9 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
         <p className="text-xs leading-relaxed text-textSecondary">
           {scope.kind === 'personal'
             ? 'You have not been assigned a personal mailbox. An administrator can create one for you on the Access page.'
-            : `No mailbox has been created for ${scope.app}. An administrator can add one on the Access page.`}
+            : scope.kind === 'catchall'
+              ? 'No catch-all mailbox exists, so mail to an address nobody created is refused at the door rather than collected.'
+              : `No mailbox has been created for ${scope.app}. An administrator can add one on the Access page.`}
         </p>
       </div>
     );

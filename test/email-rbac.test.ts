@@ -385,3 +385,42 @@ describe('moving a mailbox between departments', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('the catch-all is reachable, and only by an administrator', () => {
+  it('appears under its own scope', async () => {
+    const { SELF } = await import('cloudflare:test');
+    /**
+     * It belongs to no app and no person, so `?app=<name>` and `?app=personal` both
+     * filtered it out — it collected everything addressed to nobody and no screen
+     * could open it. `?app=catchall` is a reserved value, not an app name.
+     */
+    const res = await SELF.fetch('https://test.local/api/email/mine?app=catchall', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    const ids = ((await res.json()) as { data: { id: string }[] }).data.map((b) => b.id);
+    expect(ids).toEqual([BOX.catchall]);
+  });
+
+  it('is excluded from every department and personal scope', async () => {
+    const { SELF } = await import('cloudflare:test');
+    for (const q of ['?app=hr', '?app=acquisition', '?app=personal', '']) {
+      const res = await SELF.fetch(`https://test.local/api/email/mine${q}`, {
+        headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+      });
+      const ids = ((await res.json()) as { data: { id: string }[] }).data.map((b) => b.id);
+      // The unscoped listing is the one exception: it is what the admin screens use.
+      if (q === '') expect(ids).toContain(BOX.catchall);
+      else expect(ids).not.toContain(BOX.catchall);
+    }
+  });
+
+  it('is not offered to somebody without admin/mailboxes', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/mine?app=catchall', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    expect(((await res.json()) as { data: unknown[] }).data).toEqual([]);
+    // And asking for its contents directly is refused, not merely hidden.
+    expect(await readMessages('mkt', BOX.catchall)).toBe(403);
+  });
+});

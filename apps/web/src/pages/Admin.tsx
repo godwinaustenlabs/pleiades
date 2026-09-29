@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users, Inbox } from 'lucide-react';
 import PermissionMatrix from '../components/PermissionMatrix';
 import MailboxAdmin from '../components/MailboxAdmin';
 import AutomationsPanel from '../components/AutomationsPanel';
+import MailboxTab from '../components/MailboxTab';
 import ProfileModal from '../components/ProfileModal';
 import UserAvatar from '../components/UserAvatar';
 import { useFeatureCatalog } from '../lib/useFeatureCatalog';
@@ -49,7 +50,7 @@ export default function Admin() {
 	const [notice, setNotice] = useState<string | null>(null);
 	const [showProfile, setShowProfile] = useState(false);
 	/** Access | Mailboxes | Automations. Three jobs on one page, too much to stack. */
-	const [section, setSection] = useState<'access' | 'mailboxes' | 'automations'>('access');
+	const [section, setSection] = useState<'access' | 'mailboxes' | 'unrouted' | 'automations'>('access');
 	const [recovery, setRecovery] = useState('');
 	const [savingRecovery, setSavingRecovery] = useState(false);
 
@@ -234,12 +235,14 @@ export default function Admin() {
 				{([
 					{ id: 'access', label: 'Access', icon: Users },
 					{ id: 'mailboxes', label: 'Mailboxes', icon: Mail },
+					{ id: 'unrouted', label: 'Unrouted', icon: Inbox },
 					{ id: 'automations', label: 'Automations', icon: Bot },
 				] as const)
 					// Access always shows — reaching this page at all required
 					// admin/permissions. The other two carry their own grants.
 					.filter((t) => t.id === 'access'
 						|| (t.id === 'mailboxes' && can('admin', 'mailboxes', 'view'))
+						|| (t.id === 'unrouted' && can('admin', 'mailboxes', 'view'))
 						|| (t.id === 'automations' && can('admin', 'email_config', 'view')))
 					.map((t) => (
 						<button
@@ -258,6 +261,19 @@ export default function Admin() {
 			</div>
 
 			{section === 'automations' && <AutomationsPanel />}
+
+			{/* The catch-all. It belongs to no app and no person, so both of MailboxTab's
+			    other scopes filtered it out and it collected everything addressed to
+			    nobody with no screen able to open it. Gated on admin/mailboxes, which is
+			    also what canUseMailbox requires to read it — mail to an address nobody
+			    created is as likely to be a misdirected payroll query as it is spam. */}
+			{section === 'unrouted' && can('admin', 'mailboxes', 'view') && (
+				<MailboxTab
+					scope={{ kind: 'catchall' }}
+					heading="Unrouted mail"
+					description="Everything sent to an address that has no mailbox — typos, old addresses, DMARC reports, and spam. If something here should have a home, create the mailbox on the Mailboxes tab and later mail to it will route there."
+				/>
+			)}
 
 			{section === 'mailboxes' && can('admin', 'mailboxes', 'view') && (
 				<MailboxAdmin

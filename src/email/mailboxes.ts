@@ -169,7 +169,7 @@ export async function canUseMailbox(
  */
 export async function listReadableMailboxes(
   c: MailCtx,
-  scope?: { kind: 'personal' } | { kind: 'app'; app: string },
+  scope?: { kind: 'personal' } | { kind: 'app'; app: string } | { kind: 'catchall' },
 ): Promise<MailboxRow[]> {
   const db = getDb(c.env);
   const all = await db.query.mailboxes.findMany();
@@ -178,6 +178,12 @@ export async function listReadableMailboxes(
     if (box.kind === 'system') return false;
     if (!scope) return true;
     if (scope.kind === 'personal') return box.kind === 'personal';
+    /**
+     * The catch-all needed a scope of its own, because it belongs to no app and no
+     * person and was therefore excluded by both of the other two — so it collected
+     * everything addressed to nobody and there was no screen that could open it.
+     */
+    if (scope.kind === 'catchall') return box.kind === 'catchall';
     return box.kind === 'app' && box.appName === scope.app;
   });
 
