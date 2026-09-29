@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Inbox, Send, FileEdit, Archive, ShieldAlert, Trash2,
-  Loader2, Plus, Star, X, ChevronLeft, AlertCircle, Paperclip,
+  Inbox, Send, FileEdit, Archive, ShieldAlert, Trash2, Loader2, Plus, Star, X,
+  ChevronLeft, AlertCircle, Paperclip, Reply, ReplyAll, Forward, Search, Bell,
+  MailOpen, RefreshCw, CornerUpLeft,
 } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
@@ -9,27 +10,33 @@ import { errorMessage } from '../lib/errors';
 /**
  * The mail client, mounted once per place mail is read.
  *
- * One component for every department and for personal mail, parameterised by
- * `scope` — the `DocumentsTab` pattern, and for the same reason: nine copies of a
- * thread list is nine places a fix has to land. The server decides which
- * mailboxes a scope resolves to, so this never chooses what the reader may see;
- * it renders what `/api/email/mine` returns and shows a Compose button only when
- * that response says `canSend`.
+ * One component for every department and for personal mail, parameterised by `scope` —
+ * the `DocumentsTab` pattern, and for the same reason: nine copies of a thread list is
+ * nine places a fix has to land. The server decides which mailboxes a scope resolves
+ * to, so this never chooses what the reader may see; it renders what `/api/email/mine`
+ * returns and shows a Compose button only when that response says `canSend`.
  *
- * HTML from an inbound message is deliberately never rendered. `bodyText` is what
- * a received message shows, with the raw source offered as a download — putting a
- * stranger's markup into this DOM is a scripting hole that no amount of
- * sanitising makes worth the risk, and a sandboxed iframe can come later if
- * plain text proves annoying.
+ * Three things here are deliberate and easy to undo by accident:
+ *
+ *  - **HTML from an inbound message is never rendered.** `bodyText` is what a received
+ *    message shows, with the raw source offered as a download. Putting a stranger's
+ *    markup into this DOM is a scripting hole no amount of sanitising makes worth it.
+ *  - **Reply builds its headers server-side.** The composer sends `replyTo: <messageId>`
+ *    and the route derives In-Reply-To and References from the stored parent. A client
+ *    that supplied them freely could graft a message onto any conversation.
+ *  - **A draft exists before its attachments do.** An attachment needs a message id, so
+ *    choosing a file autosaves the draft first. That is also what keeps the attachment
+ *    upload route off `/api/assets/upload`, whose prefix allowlist must never include
+ *    the one that holds received mail.
  */
 
 export type MailboxScope =
   | { kind: 'personal' }
   | { kind: 'app'; app: string }
   /**
-   * Mail addressed to nobody in particular. Its own scope because the catch-all
-   * belongs to no app and no person, so the other two both filtered it out and it
-   * collected everything with no screen able to open it.
+   * Mail addressed to nobody in particular. Its own scope because the catch-all belongs
+   * to no app and no person, so the other two both filtered it out and it collected
+   * everything with no screen able to open it.
    */
   | { kind: 'catchall' };
 
@@ -62,19 +69,33 @@ interface MessageSummary {
   preview: string;
   isRead: boolean;
   isStarred: boolean;
-  spamVerdict: string | null;
-  receivedAt: number | null;
+  spamVerdict?: string | null;
+  receivedAt?: number | null;
   createdAt: number;
 }
 
+interface Attachment {
+  id: string;
+  filename: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  url: string;
+}
+
 interface MessageDetail extends MessageSummary {
+  /** Which mailbox it lives in — needed when a draft reopens in the composer. */
+  mailboxId: string;
   bodyText: string;
   bodyHtml: string | null;
   ccAddresses: string | null;
   bccAddresses: string | null;
   rawKey: string | null;
-  attachments: { id: string; filename: string; contentType: string | null; sizeBytes: number | null; url: string }[];
-  delivery: { status: string; attempts: number; sentAt: number | null; errorCode: string | null; errorMessage: string | null } | null;
+  messageIdHeader?: string | null;
+  attachments: Attachment[];
+  delivery: {
+    status: string; attempts: number; sentAt: number | null;
+    errorCode: string | null; errorMessage: string | null;
+  } | null;
 }
 
 const FOLDERS = [
@@ -85,6 +106,9 @@ const FOLDERS = [
   { id: 'spam', label: 'Spam', icon: ShieldAlert },
   { id: 'trash', label: 'Trash', icon: Trash2 },
 ] as const;
+
+/** How often to look for new mail. Quiet enough not to matter, often enough to notice. */
+const POLL_MS = 45_000;
 
 /** `to_addresses` is stored as JSON. A malformed value renders as nothing rather than throwing. */
 function addressList(json: string | null): string {
@@ -97,35 +121,69 @@ function addressList(json: string | null): string {
   }
 }
 
-function when(ts: number | null): string {
+function addressesOf(json: string | null): { email: string; name?: string }[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function when(ts: number | null | undefined): string {
   if (!ts) return '';
   const d = new Date(ts < 1e12 ? ts * 1000 : ts);
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
+  const sameDay = d.toDateString() === new Date().toDateString();
   return sameDay
     ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
+function size(bytes: number | null): string {
+  if (!bytes) return '';
+  return bytes < 1024 ? `${bytes} B`
+    : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB`
+      : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Quotes a message for a reply, the way every mail client does.
+ *
+ * Built client-side rather than on the server so the person can edit or delete it before
+ * sending — a quote they cannot remove is worse than no quote.
+ */
+function quote(m: MessageDetail): string {
+  const who = m.fromName ? `${m.fromName} <${m.fromAddress}>` : m.fromAddress;
+  const stamp = new Date((m.receivedAt ?? m.createdAt) * (m.createdAt < 1e12 ? 1000 : 1)).toLocaleString();
+  const body = m.bodyText.split('\n').map((l) => `> ${l}`).join('\n');
+  return `\n\nOn ${stamp}, ${who} wrote:\n${body}\n`;
+}
+
 export default function MailboxTab({ scope, heading, description }: MailboxTabProps) {
-  /**
-   * `null` means "not loaded yet" for both lists, which is what removes the
-   * separate loading flags — and with them the synchronous `setState` in an
-   * effect body that `react-hooks/set-state-in-effect` rightly complains about.
-   * It also reads better: a folder switch keeps the previous messages on screen
-   * until the new ones arrive, rather than blanking to a spinner every time.
-   */
   const [boxes, setBoxes] = useState<Mailbox[] | null>(null);
   const [activeBox, setActiveBox] = useState<string | null>(null);
   const [folder, setFolder] = useState<string>('inbox');
   const [messages, setMessages] = useState<MessageSummary[] | null>(null);
   const [open, setOpen] = useState<MessageDetail | null>(null);
-  const [composing, setComposing] = useState(false);
+  const [thread, setThread] = useState<MessageDetail[] | null>(null);
+  const [composing, setComposing] = useState<ComposerSeed | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [term, setTerm] = useState('');
+  const [results, setResults] = useState<MessageSummary[] | null>(null);
+
+  /** Ids already announced, so a poll does not notify about the same mail twice. */
+  const announced = useRef<Set<string>>(new Set());
+  const [notifyOn, setNotifyOn] = useState(
+    typeof Notification !== 'undefined' && Notification.permission === 'granted',
+  );
 
   const query = scope.kind === 'personal' ? '?app=personal'
     : scope.kind === 'catchall' ? '?app=catchall'
-    : `?app=${encodeURIComponent(scope.app)}`;
+      : `?app=${encodeURIComponent(scope.app)}`;
+
   const current = useMemo(() => boxes?.find((b) => b.id === activeBox) ?? null, [boxes, activeBox]);
 
   useEffect(() => {
@@ -146,52 +204,141 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     return () => { cancelled = true; };
   }, [query]);
 
-  const loadMessages = useCallback(async (boxId: string, f: string) => {
+  const loadMessages = useCallback(async (boxId: string, f: string, announce = false) => {
     try {
       const res = await fetch(`${API}/email/mailboxes/${boxId}/messages?folder=${f}`, { headers: authHeaders() });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not load messages');
-      setMessages(json.data ?? []);
+      const list: MessageSummary[] = json.data ?? [];
+
+      /**
+       * Notify only about mail that arrived while this tab was already open, and only
+       * once per message. On the first load every message is new, which would mean a
+       * wall of notifications for a full inbox — hence `announce` being false there.
+       */
+      if (announce && notifyOn && f === 'inbox') {
+        const fresh = list.filter((m) => !m.isRead && m.direction === 'inbound' && !announced.current.has(m.id));
+        for (const m of fresh.slice(0, 3)) {
+          try {
+            new Notification(m.fromName || m.fromAddress, {
+              body: m.subject || '(no subject)',
+              tag: m.id,
+            });
+          } catch { /* the browser may refuse; not worth surfacing */ }
+        }
+        if (fresh.length > 3) {
+          try { new Notification(`${fresh.length} new messages`, { tag: 'bulk' }); } catch { /* ignore */ }
+        }
+      }
+      for (const m of list) announced.current.add(m.id);
+
+      setMessages(list);
       setError(null);
     } catch (e) {
       setError(errorMessage(e));
-      setMessages([]);
+      setMessages((prev) => prev ?? []);
     }
-  }, []);
+  }, [notifyOn]);
 
   useEffect(() => {
     if (activeBox) loadMessages(activeBox, folder);
   }, [activeBox, folder, loadMessages]);
+
+  /**
+   * Live updates: a poll plus a refetch whenever the tab regains focus.
+   *
+   * Without this the list only changed when you switched folders, so new mail was
+   * invisible until you happened to click something — which for a mail client is the
+   * difference between a tool and an archive. Both triggers matter: the poll catches
+   * mail while you are looking at it, the focus handler catches everything that arrived
+   * while you were elsewhere, immediately rather than up to 45 seconds later.
+   */
+  useEffect(() => {
+    if (!activeBox) return;
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      loadMessages(activeBox, folder, true);
+    };
+    const id = window.setInterval(tick, POLL_MS);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', tick);
+    };
+  }, [activeBox, folder, loadMessages]);
+
+  async function manualRefresh() {
+    if (!activeBox) return;
+    setRefreshing(true);
+    await loadMessages(activeBox, folder, true);
+    setRefreshing(false);
+  }
+
+  async function enableNotifications() {
+    if (typeof Notification === 'undefined') return;
+    // Asked on a click, never on load: a permission prompt nobody invited is refused,
+    // and a refusal is permanent.
+    const result = await Notification.requestPermission();
+    setNotifyOn(result === 'granted');
+  }
 
   async function openMessage(id: string) {
     try {
       const res = await fetch(`${API}/email/messages/${id}`, { headers: authHeaders() });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not open that message');
-      setOpen(json.data);
-      if (!json.data.isRead) {
-        await fetch(`${API}/email/messages/${id}`, {
-          method: 'PATCH',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isRead: true }),
+      const detail: MessageDetail = json.data;
+
+      // A draft opens in the composer rather than the reader — it is unfinished writing,
+      // not correspondence.
+      if (detail.folder === 'drafts') {
+        setComposing({
+          draftId: detail.id,
+          mailboxId: detail.mailboxId ?? activeBox ?? '',
+          to: addressesOf(detail.toAddresses).map((a) => a.email).join(', '),
+          cc: addressesOf(detail.ccAddresses).map((a) => a.email).join(', '),
+          bcc: addressesOf(detail.bccAddresses).map((a) => a.email).join(', '),
+          subject: detail.subject ?? '',
+          text: detail.bodyText,
+          attachments: detail.attachments,
         });
-        setMessages((prev) => (prev ?? []).map((m) => (m.id === id ? { ...m, isRead: true } : m)));
+        return;
+      }
+
+      setOpen(detail);
+      setThread(null);
+      if (!detail.isRead) {
+        await patchMessage(id, { isRead: true }, false);
       }
     } catch (e) {
       setError(errorMessage(e));
     }
   }
 
-  async function patchMessage(id: string, patch: Record<string, unknown>) {
+  async function openThread(threadId: string) {
     try {
-      await fetch(`${API}/email/messages/${id}`, {
+      const res = await fetch(`${API}/email/threads/${threadId}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not open that conversation');
+      setThread(json.data.messages ?? []);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function patchMessage(id: string, patch: Record<string, unknown>, removeFromList = true) {
+    try {
+      const res = await fetch(`${API}/email/messages/${id}`, {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-      if (patch.folder) {
+      if (!res.ok) throw new Error((await res.json()).error || 'Could not update that message');
+
+      if (patch.folder && removeFromList) {
         setMessages((prev) => (prev ?? []).filter((m) => m.id !== id));
         setOpen(null);
+        setThread(null);
       } else {
         setMessages((prev) => (prev ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)));
         setOpen((o) => (o && o.id === id ? { ...o, ...patch } : o));
@@ -199,6 +346,57 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     } catch (e) {
       setError(errorMessage(e));
     }
+  }
+
+  async function runSearch() {
+    if (term.trim().length < 2) { setResults(null); return; }
+    try {
+      const res = await fetch(`${API}/email/search?q=${encodeURIComponent(term.trim())}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Search failed');
+      setResults(json.data ?? []);
+      setOpen(null);
+      setThread(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  /** Reply, reply-all and forward all seed the same composer; only the prefill differs. */
+  function startReply(m: MessageDetail, mode: 'reply' | 'replyAll' | 'forward') {
+    const box = current;
+    if (!box) return;
+    const subject = m.subject ?? '';
+    const prefixed = (p: string) => (subject.toLowerCase().startsWith(p.toLowerCase()) ? subject : `${p} ${subject}`);
+
+    if (mode === 'forward') {
+      setComposing({
+        mailboxId: box.id, to: '', cc: '', bcc: '',
+        subject: prefixed('Fwd:'),
+        text: quote(m),
+        attachments: [],
+      });
+      return;
+    }
+
+    const others = mode === 'replyAll'
+      ? [...addressesOf(m.toAddresses), ...addressesOf(m.ccAddresses)]
+        .map((a) => a.email)
+        // Never write back to ourselves — a reply-all that includes the mailbox it is
+        // sent from loops straight into the inbox it came from.
+        .filter((e) => e.toLowerCase() !== box.address.toLowerCase())
+      : [];
+
+    setComposing({
+      mailboxId: box.id,
+      replyTo: m.id,
+      to: m.fromAddress,
+      cc: [...new Set(others)].join(', '),
+      bcc: '',
+      subject: prefixed('Re:'),
+      text: quote(m),
+      attachments: [],
+    });
   }
 
   if (boxes === null) {
@@ -209,8 +407,6 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     );
   }
 
-  // No mailbox is the common first-run state, not an error — somebody with
-  // `<app>/email` still has nothing to read until an administrator creates one.
   if (boxes.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
@@ -227,9 +423,9 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
     );
   }
 
+  const list = results ?? messages;
+
   return (
-    // No gutter of its own: every mount site is inside a <main> that already has
-    // p-4/md:p-8, and adding px-4 here cost 32px of a 390px screen to padding.
     <div className="w-full">
       {(heading || description) && (
         <div className="mb-4">
@@ -238,13 +434,12 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
         </div>
       )}
 
-      {/* Mailbox picker, only when there is a choice to make. */}
       {boxes.length > 1 && (
         <div className="scroll-x no-scrollbar mb-3 flex gap-2">
           {boxes.map((b) => (
             <button
               key={b.id}
-              onClick={() => { setActiveBox(b.id); setOpen(null); }}
+              onClick={() => { setActiveBox(b.id); setOpen(null); setThread(null); setResults(null); }}
               className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-all ${
                 activeBox === b.id
                   ? 'border-module/40 bg-module/15 text-module'
@@ -258,6 +453,40 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
         </div>
       )}
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border bg-surfaceAlt px-2.5">
+          <Search className="h-3.5 w-3.5 shrink-0 text-textSecondary" />
+          <input
+            value={term}
+            onChange={(e) => { setTerm(e.target.value); if (e.target.value.trim().length < 2) setResults(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+            placeholder="Search mail…"
+            className="min-w-0 flex-1 bg-transparent py-2 text-textPrimary outline-none placeholder:text-textSecondary/50"
+          />
+          {results !== null && (
+            <button onClick={() => { setTerm(''); setResults(null); }} className="shrink-0 text-textSecondary">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={manualRefresh}
+          title="Check for new mail"
+          className="shrink-0 rounded-lg border border-border p-2 text-textSecondary transition-colors hover:bg-surfaceAlt"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+        {!notifyOn && typeof Notification !== 'undefined' && (
+          <button
+            onClick={enableNotifications}
+            title="Be notified in this browser when mail arrives"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt"
+          >
+            <Bell className="h-3.5 w-3.5" /> Notify me
+          </button>
+        )}
+      </div>
+
       {error && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -266,12 +495,10 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
       )}
 
       <div className="flex flex-col gap-3 md:flex-row">
-        {/* Folder rail. A scrolling row on a phone, a column on a desktop —
-            a six-item vertical list eats a third of a 390px screen. */}
         <div className="scroll-x no-scrollbar flex gap-1.5 md:w-40 md:shrink-0 md:flex-col">
           {current?.canSend && (
             <button
-              onClick={() => setComposing(true)}
+              onClick={() => setComposing({ mailboxId: current.id, to: '', cc: '', bcc: '', subject: '', text: '', attachments: [] })}
               className="mb-0 flex shrink-0 items-center gap-1.5 rounded-lg bg-module px-3 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim transition-all active:scale-[0.97] md:mb-2 md:justify-center md:py-2.5"
             >
               <Plus className="h-3.5 w-3.5" /> Compose
@@ -280,9 +507,9 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
           {FOLDERS.map((f) => (
             <button
               key={f.id}
-              onClick={() => { setFolder(f.id); setOpen(null); }}
+              onClick={() => { setFolder(f.id); setOpen(null); setThread(null); setResults(null); }}
               className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[11px] font-bold transition-all md:w-full ${
-                folder === f.id ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
+                folder === f.id && results === null ? 'bg-module/10 text-module' : 'text-textSecondary hover:bg-surfaceAlt'
               }`}
             >
               <f.icon className="h-3.5 w-3.5" />
@@ -291,45 +518,61 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
           ))}
         </div>
 
-        {/* List + reader. On a phone the reader replaces the list rather than
-            sitting beside it; there is no width for both. */}
         <div className="min-w-0 flex-1">
-          {open ? (
+          {thread ? (
+            <ThreadView
+              messages={thread}
+              onBack={() => setThread(null)}
+              onReply={(m, mode) => startReply(m, mode)}
+              canSend={!!current?.canSend}
+            />
+          ) : open ? (
             <MessageView
               message={open}
+              canSend={!!current?.canSend}
               onBack={() => setOpen(null)}
-              onStar={() => patchMessage(open.id, { isStarred: !open.isStarred })}
+              onStar={() => patchMessage(open.id, { isStarred: !open.isStarred }, false)}
+              onUnread={() => { patchMessage(open.id, { isRead: false }, false); setOpen(null); }}
               onMove={(f) => patchMessage(open.id, { folder: f })}
+              onReply={(mode) => startReply(open, mode)}
+              onOpenThread={() => open.threadId && openThread(open.threadId)}
             />
-          ) : messages === null ? (
+          ) : list === null ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-4 w-4 animate-spin text-textSecondary" />
             </div>
-          ) : messages.length === 0 ? (
+          ) : list.length === 0 ? (
             <div className="rounded-xl border border-border bg-surface px-4 py-16 text-center">
-              <p className="text-xs text-textSecondary">Nothing in {folder}.</p>
+              <p className="text-xs text-textSecondary">
+                {results !== null ? `Nothing matching “${term}”.` : `Nothing in ${folder}.`}
+              </p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-border bg-surface">
-              {messages.map((m) => (
-                <button
+              {results !== null && (
+                <div className="border-b border-border bg-surfaceAlt px-3 py-2 text-[11px] text-textSecondary md:px-4">
+                  {list.length} result{list.length === 1 ? '' : 's'} for “{term}”, newest first. Trash is excluded.
+                </div>
+              )}
+              {list.map((m) => (
+                <div
                   key={m.id}
-                  onClick={() => openMessage(m.id)}
-                  className={`flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors last:border-0 hover:bg-surfaceAlt md:px-4 ${
+                  className={`flex items-start gap-2 border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-surfaceAlt md:px-4 ${
                     m.isRead ? '' : 'bg-module/[0.04]'
                   }`}
                 >
-                  <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center">
-                    {m.isStarred
-                      ? <Star className="h-3.5 w-3.5 fill-warning text-warning" />
-                      : !m.isRead && <span className="h-1.5 w-1.5 rounded-full bg-module" />}
-                  </span>
-                  <span className="min-w-0 flex-1">
+                  {/* Starring from the list, which previously needed opening the message. */}
+                  <button
+                    onClick={() => patchMessage(m.id, { isStarred: !m.isStarred }, false)}
+                    title={m.isStarred ? 'Unflag' : 'Flag'}
+                    className="mt-0.5 shrink-0 p-0.5 text-textSecondary"
+                  >
+                    <Star className={`h-3.5 w-3.5 ${m.isStarred ? 'fill-warning text-warning' : ''}`} />
+                  </button>
+                  <button onClick={() => openMessage(m.id)} className="min-w-0 flex-1 text-left">
                     <span className="flex items-baseline justify-between gap-2">
                       <span className={`truncate text-xs ${m.isRead ? 'text-textSecondary' : 'font-bold text-textPrimary'}`}>
-                        {m.direction === 'outbound'
-                          ? `To: ${addressList(m.toAddresses)}`
-                          : (m.fromName || m.fromAddress)}
+                        {m.direction === 'outbound' ? `To: ${addressList(m.toAddresses)}` : (m.fromName || m.fromAddress)}
                       </span>
                       <span className="shrink-0 text-[10px] text-textSecondary">{when(m.receivedAt ?? m.createdAt)}</span>
                     </span>
@@ -340,29 +583,23 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
                       )}
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-textSecondary">{m.preview}</span>
-                  </span>
-                </button>
+                  </button>
+                </div>
               ))}
             </div>
           )}
         </div>
       </div>
 
-      {composing && current && (
+      {composing && boxes.length > 0 && (
         <Composer
-          /**
-           * Every mailbox in this scope the caller may send from, not just the one
-           * being read. A department commonly has several — HR has `hr@` for
-           * internal matters and `jobs@` for applicants — and which one a reply
-           * comes from is part of writing it, not a consequence of which folder
-           * you happened to be looking at.
-           */
+          seed={composing}
           mailboxes={boxes.filter((b) => b.canSend && b.isActive)}
-          initial={current.canSend ? current.id : undefined}
-          onClose={() => setComposing(false)}
+          onClose={() => setComposing(null)}
           onSent={(sentFrom) => {
-            setComposing(false);
+            setComposing(null);
             setFolder('sent');
+            setResults(null);
             setActiveBox(sentFrom);
             loadMessages(sentFrom, 'sent');
           }}
@@ -374,38 +611,114 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
 
 // ── Reader ──────────────────────────────────────────────────────────────────
 
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <span className="w-14 shrink-0 font-bold uppercase tracking-wider text-textSecondary">{label}</span>
+      <span className="min-w-0 break-words text-textPrimary">{value}</span>
+    </div>
+  );
+}
+
+function Attachments({ items }: { items: Attachment[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 border-t border-border px-3 py-3 md:px-4">
+      {items.map((a) => (
+        <a
+          key={a.id}
+          href={a.url}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surfaceAlt px-2.5 py-1.5 text-[11px] text-textPrimary transition-colors hover:border-module/40"
+        >
+          <Paperclip className="h-3 w-3 text-textSecondary" />
+          {a.filename}
+          {a.sizeBytes ? <span className="text-textSecondary">{size(a.sizeBytes)}</span> : null}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function Body({ message }: { message: MessageDetail }) {
+  return (
+    <>
+      {/* Plain text only. A stranger's HTML never enters this DOM — see the component
+          header. It is offered as a download instead. */}
+      <pre className="whitespace-pre-wrap break-words px-3 py-4 text-xs leading-relaxed text-textPrimary md:px-4">
+        {message.bodyText}
+      </pre>
+      {message.bodyHtml && message.direction === 'inbound' && message.rawKey && (
+        <div className="px-3 pb-3 md:px-4">
+          <a
+            href={`${API}/assets/download/${encodeURIComponent(message.rawKey)}`}
+            className="text-[11px] text-textSecondary underline"
+          >
+            This message had an HTML part — download the original
+          </a>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReplyBar({
+  canSend, onReply, compact,
+}: {
+  canSend: boolean;
+  onReply: (mode: 'reply' | 'replyAll' | 'forward') => void;
+  compact?: boolean;
+}) {
+  if (!canSend) return null;
+  const cls = 'flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt';
+  return (
+    <div className={`flex flex-wrap gap-2 ${compact ? '' : 'border-t border-border px-3 py-3 md:px-4'}`}>
+      <button onClick={() => onReply('reply')} className={cls}><Reply className="h-3.5 w-3.5" /> Reply</button>
+      <button onClick={() => onReply('replyAll')} className={cls}><ReplyAll className="h-3.5 w-3.5" /> Reply all</button>
+      <button onClick={() => onReply('forward')} className={cls}><Forward className="h-3.5 w-3.5" /> Forward</button>
+    </div>
+  );
+}
+
 function MessageView({
-  message, onBack, onStar, onMove,
+  message, canSend, onBack, onStar, onUnread, onMove, onReply, onOpenThread,
 }: {
   message: MessageDetail;
+  canSend: boolean;
   onBack: () => void;
   onStar: () => void;
+  onUnread: () => void;
   onMove: (folder: string) => void;
+  onReply: (mode: 'reply' | 'replyAll' | 'forward') => void;
+  onOpenThread: () => void;
 }) {
   return (
     <div className="rounded-xl border border-border bg-surface">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5 md:px-4">
+      <div className="flex items-center gap-1 border-b border-border px-2 py-2.5 md:px-3">
         <button onClick={onBack} className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
           <ChevronLeft className="h-4 w-4" />
         </button>
         <span className="min-w-0 flex-1 truncate text-xs font-bold text-textPrimary">
           {message.subject || '(no subject)'}
         </span>
-        <button onClick={onStar} className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
+        <button onClick={onStar} title="Flag" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
           <Star className={`h-4 w-4 ${message.isStarred ? 'fill-warning text-warning' : ''}`} />
         </button>
-        <button
-          onClick={() => onMove('archive')}
-          title="Archive"
-          className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt"
-        >
+        <button onClick={onUnread} title="Mark unread" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
+          <MailOpen className="h-4 w-4" />
+        </button>
+        {message.folder === 'spam' ? (
+          <button onClick={() => onMove('inbox')} title="Not spam — move to inbox" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
+            <Inbox className="h-4 w-4" />
+          </button>
+        ) : (
+          <button onClick={() => onMove('spam')} title="Mark as spam" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
+            <ShieldAlert className="h-4 w-4" />
+          </button>
+        )}
+        <button onClick={() => onMove('archive')} title="Archive" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
           <Archive className="h-4 w-4" />
         </button>
-        <button
-          onClick={() => onMove('trash')}
-          title="Move to trash"
-          className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt"
-        >
+        <button onClick={() => onMove('trash')} title="Move to trash" className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
@@ -414,10 +727,9 @@ function MessageView({
         <Row label="From" value={message.fromName ? `${message.fromName} <${message.fromAddress}>` : message.fromAddress} />
         <Row label="To" value={addressList(message.toAddresses)} />
         {message.ccAddresses && <Row label="Cc" value={addressList(message.ccAddresses)} />}
-        {/* Bcc shows only on mail we sent — it is stored so the sent log can
-            answer "who did this go to", and it is never part of a received
-            message's visible headers. */}
-        {message.direction === 'outbound' && message.bccAddresses && (
+        {/* Bcc shows only on mail we sent. It is stored so the sent log can answer "who
+            did this go to", and is never part of a received message's headers. */}
+        {message.direction === 'outbound' && message.bccAddresses && addressList(message.bccAddresses) && (
           <Row label="Bcc" value={addressList(message.bccAddresses)} />
         )}
         {message.delivery && (
@@ -431,140 +743,219 @@ function MessageView({
             }
           />
         )}
+        {message.threadId && (
+          <button onClick={onOpenThread} className="flex items-center gap-1 pt-0.5 text-[11px] font-bold text-module">
+            <CornerUpLeft className="h-3 w-3" /> View whole conversation
+          </button>
+        )}
       </div>
 
-      {/* Plain text only. See the component header: a stranger's HTML never
-          enters this DOM. */}
-      <pre className="whitespace-pre-wrap break-words px-3 py-4 text-xs leading-relaxed text-textPrimary md:px-4">
-        {message.bodyText}
-      </pre>
-
-      {(message.attachments.length > 0 || (message.bodyHtml && message.direction === 'inbound')) && (
-        <div className="flex flex-wrap gap-2 border-t border-border px-3 py-3 md:px-4">
-          {message.attachments.map((a) => (
-            <a
-              key={a.id}
-              href={a.url}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-surfaceAlt px-2.5 py-1.5 text-[11px] text-textPrimary transition-colors hover:border-module/40"
-            >
-              <Paperclip className="h-3 w-3 text-textSecondary" />
-              {a.filename}
-            </a>
-          ))}
-          {message.bodyHtml && message.direction === 'inbound' && message.rawKey && (
-            <a
-              href={`${API}/assets/download/${encodeURIComponent(message.rawKey)}`}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-surfaceAlt px-2.5 py-1.5 text-[11px] text-textSecondary transition-colors hover:border-module/40"
-            >
-              This message had an HTML part — download the original
-            </a>
-          )}
-        </div>
-      )}
+      <Body message={message} />
+      <Attachments items={message.attachments} />
+      <ReplyBar canSend={canSend} onReply={onReply} />
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function ThreadView({
+  messages, onBack, onReply, canSend,
+}: {
+  messages: MessageDetail[];
+  onBack: () => void;
+  onReply: (m: MessageDetail, mode: 'reply' | 'replyAll' | 'forward') => void;
+  canSend: boolean;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(messages[messages.length - 1]?.id ?? null);
   return (
-    <div className="flex gap-2">
-      <span className="w-14 shrink-0 font-bold uppercase tracking-wider text-textSecondary">{label}</span>
-      <span className="min-w-0 break-words text-textPrimary">{value}</span>
+    <div className="rounded-xl border border-border bg-surface">
+      <div className="flex items-center gap-2 border-b border-border px-2 py-2.5 md:px-3">
+        <button onClick={onBack} className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt">
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-xs font-bold text-textPrimary">
+          {messages[0]?.subject || '(no subject)'}
+        </span>
+        <span className="shrink-0 text-[10px] text-textSecondary">{messages.length} messages</span>
+      </div>
+
+      {messages.map((m) => {
+        const isOpen = expanded === m.id;
+        return (
+          <div key={m.id} className="border-b border-border last:border-0">
+            <button
+              onClick={() => setExpanded(isOpen ? null : m.id)}
+              className="flex w-full items-baseline gap-2 px-3 py-2.5 text-left transition-colors hover:bg-surfaceAlt md:px-4"
+            >
+              <span className={`min-w-0 flex-1 truncate text-xs ${m.direction === 'outbound' ? 'text-textSecondary' : 'font-bold text-textPrimary'}`}>
+                {m.direction === 'outbound' ? `You → ${addressList(m.toAddresses)}` : (m.fromName || m.fromAddress)}
+              </span>
+              <span className="shrink-0 text-[10px] text-textSecondary">{when(m.receivedAt ?? m.createdAt)}</span>
+            </button>
+            {isOpen && (
+              <>
+                <Body message={m} />
+                <Attachments items={m.attachments ?? []} />
+                {m.direction === 'inbound' && (
+                  <div className="px-3 pb-3 md:px-4">
+                    <ReplyBar canSend={canSend} onReply={(mode) => onReply(m, mode)} compact />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 // ── Composer ────────────────────────────────────────────────────────────────
 
-interface Template {
-  id: string;
-  key: string;
-  name: string;
-  appName: string | null;
+interface ComposerSeed {
+  draftId?: string;
+  mailboxId: string;
+  replyTo?: string;
+  to: string;
+  cc: string;
+  bcc: string;
   subject: string;
-  variables: string;
+  text: string;
+  attachments: Attachment[];
 }
 
 function Composer({
-  mailboxes, initial, onClose, onSent,
+  seed, mailboxes, onClose, onSent,
 }: {
+  seed: ComposerSeed;
   mailboxes: Mailbox[];
-  initial?: string;
   onClose: () => void;
   onSent: (sentFrom: string) => void;
 }) {
-  const [fromId, setFromId] = useState(() => initial ?? mailboxes[0]?.id ?? '');
+  const [fromId, setFromId] = useState(seed.mailboxId || mailboxes[0]?.id || '');
   const mailbox = mailboxes.find((b) => b.id === fromId) ?? mailboxes[0];
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [bcc, setBcc] = useState('');
-  const [showCc, setShowCc] = useState(false);
-  const [subject, setSubject] = useState('');
-  const [text, setText] = useState('');
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [sending, setSending] = useState(false);
+
+  const [draftId, setDraftId] = useState<string | undefined>(seed.draftId);
+  const [to, setTo] = useState(seed.to);
+  const [cc, setCc] = useState(seed.cc);
+  const [bcc, setBcc] = useState(seed.bcc);
+  const [showCc, setShowCc] = useState(!!(seed.cc || seed.bcc));
+  const [subject, setSubject] = useState(seed.subject);
+  const [text, setText] = useState(seed.text);
+  const [attachments, setAttachments] = useState<Attachment[]>(seed.attachments);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  /**
-   * Generated once per open composer, not per submit.
-   *
-   * This is what makes a double-clicked Send one message: the server keys the
-   * outbox row on it, so the second request finds the first and returns the same
-   * id instead of sending again.
-   */
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
-
-  useEffect(() => {
-    if (!mailbox || mailbox.kind !== 'app' || !mailbox.appName) return;
-    fetch(`${API}/email/templates`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((j) => setTemplates((j.data ?? []).filter((t: Template) => t.appName === mailbox.appName)))
-      .catch(() => setTemplates([]));
-  }, [mailbox?.kind, mailbox?.appName]);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const split = (v: string) => v.split(/[,;\s]+/).map((s) => s.trim()).filter((s) => s.includes('@'));
   const recipientCount = split(to).length + split(cc).length + split(bcc).length;
+  const overBulk = recipientCount > 10 && !mailbox?.canBulk;
+
+  /** Saves and returns the draft id, creating one if this is the first save. */
+  const saveDraft = useCallback(async (): Promise<string | null> => {
+    if (!mailbox) return null;
+    const res = await fetch(`${API}/email/drafts${draftId ? `/${draftId}` : ''}`, {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mailboxId: mailbox.id,
+        to: split(to), cc: split(cc), bcc: split(bcc),
+        subject, text,
+        ...(seed.replyTo ? { replyTo: seed.replyTo } : {}),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Could not save the draft');
+    const id = json.data.id as string;
+    setDraftId(id);
+    return id;
+  }, [mailbox, draftId, to, cc, bcc, subject, text, seed.replyTo]);
+
+  async function attach(file: File) {
+    setBusy('attach');
+    setError(null);
+    try {
+      /**
+       * An attachment needs a message id, so the draft is saved first. That is the whole
+       * reason attachments live on drafts rather than on an in-flight compose: it keeps
+       * the upload route off /api/assets/upload, whose prefix allowlist must never
+       * include the one holding received mail.
+       */
+      const id = draftId ?? (await saveDraft());
+      if (!id) return;
+
+      const form = new FormData();
+      form.set('file', file);
+      const res = await fetch(`${API}/email/drafts/${id}/attachments`, {
+        method: 'POST', headers: authHeaders(), body: form,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not attach that file');
+      setAttachments((prev) => [...prev, json.data]);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  async function removeAttachment(id: string) {
+    if (!draftId) return;
+    try {
+      await fetch(`${API}/email/drafts/${draftId}/attachments/${id}`, { method: 'DELETE', headers: authHeaders() });
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function saveAndClose() {
+    setBusy('save');
+    try {
+      await saveDraft();
+      onClose();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(null);
+    }
+  }
 
   async function submit() {
     if (!mailbox) return;
-    setSending(true);
+    setBusy('send');
     setError(null);
     try {
-      const res = await fetch(`${API}/email/send`, {
+      /**
+       * Everything sends through the draft path, attachments or not. One route means one
+       * place the caps, the bulk threshold and the authorisation are checked — and the
+       * draft id is the idempotency key, so a double-clicked Send cannot send twice.
+       */
+      const id = draftId ?? (await saveDraft());
+      if (!id) return;
+      const res = await fetch(`${API}/email/drafts/${id}/send`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mailboxId: mailbox.id,
-          to: split(to),
-          cc: split(cc),
-          bcc: split(bcc),
-          subject,
-          text,
-          idempotencyKey,
-        }),
+        body: '{}',
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not send');
       onSent(mailbox.id);
     } catch (e) {
       setError(errorMessage(e));
-    } finally {
-      setSending(false);
+      setBusy(null);
     }
   }
 
-  const overBulk = recipientCount > 10 && !mailbox?.canBulk;
-
-  // Nothing to send from. The Compose button is only rendered when there is,
-  // but a mailbox can be deactivated between the two.
   if (!mailbox) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="sheet flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-surface sm:max-w-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
-            <h3 className="text-xs font-black uppercase tracking-widest text-textPrimary">New message</h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-textPrimary">
+              {seed.replyTo ? 'Reply' : draftId ? 'Draft' : 'New message'}
+            </h3>
             {mailboxes.length > 1 ? (
               <label className="mt-0.5 flex items-center gap-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-textSecondary">From</span>
@@ -597,36 +988,40 @@ function Composer({
               <Field label="Bcc" value={bcc} onChange={setBcc} placeholder="" />
             </>
           ) : (
-            <button onClick={() => setShowCc(true)} className="text-[11px] font-bold text-module">
-              Add Cc / Bcc
-            </button>
-          )}
-
-          {templates.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-textSecondary">Template</span>
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setSubject(t.subject)}
-                  className="rounded-full border border-border bg-surfaceAlt px-2.5 py-1 text-[11px] text-textSecondary transition-colors hover:border-module/40"
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
+            <button onClick={() => setShowCc(true)} className="text-[11px] font-bold text-module">Add Cc / Bcc</button>
           )}
 
           <Field label="Subject" value={subject} onChange={setSubject} placeholder="" />
-          {/* Sized by class rather than `rows`, so a phone with the keyboard up —
-              where the visible sheet is a few hundred pixels tall — does not give
-              the body ten rows and push Send off the bottom. */}
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Write your message…"
             className="min-h-[7rem] w-full resize-y rounded-lg border border-border bg-surfaceAlt px-3 py-2 text-textPrimary outline-none transition-colors focus:border-module/50 md:min-h-[14rem]"
           />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) attach(f); }}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInput.current?.click()}
+              disabled={busy === 'attach'}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt disabled:opacity-40"
+            >
+              {busy === 'attach' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+              Attach
+            </button>
+            {attachments.map((a) => (
+              <span key={a.id} className="flex items-center gap-1.5 rounded-lg border border-border bg-surfaceAlt px-2.5 py-1.5 text-[11px] text-textPrimary">
+                {a.filename}
+                <span className="text-textSecondary">{size(a.sizeBytes)}</span>
+                <button onClick={() => removeAttachment(a.id)} className="text-textSecondary"><X className="h-3 w-3" /></button>
+              </span>
+            ))}
+          </div>
 
           {overBulk && (
             <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning">
@@ -651,17 +1046,18 @@ function Composer({
           </span>
           <div className="flex gap-2">
             <button
-              onClick={onClose}
-              className="rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt"
+              onClick={saveAndClose}
+              disabled={!!busy}
+              className="rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-textSecondary transition-colors hover:bg-surfaceAlt disabled:opacity-40"
             >
-              Cancel
+              {busy === 'save' ? 'Saving…' : 'Save draft'}
             </button>
             <button
               onClick={submit}
-              disabled={sending || recipientCount === 0 || !subject.trim() || !text.trim() || overBulk}
+              disabled={!!busy || recipientCount === 0 || !subject.trim() || !text.trim() || overBulk}
               className="flex items-center gap-1.5 rounded-lg bg-module px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim transition-all active:scale-[0.97] disabled:opacity-40"
             >
-              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {busy === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               Send
             </button>
           </div>

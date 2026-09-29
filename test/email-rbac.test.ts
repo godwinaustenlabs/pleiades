@@ -424,3 +424,208 @@ describe('the catch-all is reachable, and only by an administrator', () => {
     expect(await readMessages('mkt', BOX.catchall)).toBe(403);
   });
 });
+
+
+// ── Replying, drafts and threads ────────────────────────────────────────────
+
+describe('replying threads at both ends', () => {
+  const send = async (body: Record<string, unknown>) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch('https://test.local/api/email/send', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailboxId: 'mbx_acq', ...body }),
+    });
+  };
+
+  it('derives In-Reply-To and References from the parent, server-side', async () => {
+    const { env } = await import('cloudflare:test');
+    // A received message with a Message-ID and an existing chain.
+    await env.DB.prepare(
+      "INSERT INTO email_threads (thread_id, mailbox_id, subject, last_message_at, message_count, created_at) " +
+      "VALUES ('thr_reply','mbx_acq','Quote',0,1,0)",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO email_messages (message_id, mailbox_id, thread_id, direction, folder, from_address, to_addresses, subject, body_text, message_id_header, references_header, is_read, is_starred, created_at) " +
+      "VALUES ('eml_parent','mbx_acq','thr_reply','inbound','inbox','client@resend.dev','[]','Quote','how much?','<client-1@example.com>','<older-0@example.com>',1,0,0)",
+    ).run();
+
+    const res = await send({
+      replyTo: 'eml_parent',
+      to: ['delivered+client@resend.dev'],
+      subject: 'Re: Quote',
+      text: 'Here it is.',
+      idempotencyKey: 'reply-1',
+    });
+    expect(res.status).toBe(201);
+    const { id } = ((await res.json()) as { data: { id: string } }).data;
+
+    const row = await env.DB.prepare(
+      'SELECT in_reply_to_header, references_header, thread_id FROM email_messages WHERE message_id = ?',
+    ).bind(id).first<{ in_reply_to_header: string; references_header: string; thread_id: string }>();
+
+    expect(row!.in_reply_to_header).toBe('<client-1@example.com>');
+    // The whole chain, oldest first, parent appended — what lets a client joining
+    // late still assemble the thread.
+    expect(row!.references_header).toBe('<older-0@example.com> <client-1@example.com>');
+    // And it stays in the same conversation.
+    expect(row!.thread_id).toBe('thr_reply');
+  });
+
+  it('refuses to reply to a message in a mailbox the caller cannot read', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      "INSERT INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, message_id_header, is_read, is_starred, created_at) " +
+      "VALUES ('eml_hidden','mbx_payroll','inbound','inbox','x@resend.dev','[]','Salary','secret','<h@x>',1,0,0)",
+    ).run();
+    // Otherwise replying is a way to learn what is in a mailbox you cannot open.
+    const res = await send({ replyTo: 'eml_hidden', to: ['delivered+x@resend.dev'], subject: 'Re', text: 'x' });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns the whole conversation, and only to somebody who can read it', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const mine = await SELF.fetch('https://test.local/api/email/threads/thr_reply', {
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}` },
+    });
+    expect(mine.status).toBe(200);
+    const body = (await mine.json()) as { data: { messages: unknown[] } };
+    expect(body.data.messages.length).toBeGreaterThanOrEqual(2);
+
+    const theirs = await SELF.fetch('https://test.local/api/email/threads/thr_reply', {
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    expect(theirs.status).toBe(403);
+  });
+});
+
+describe('drafts', () => {
+  const put = async (body: Record<string, unknown>, id?: string) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch(`https://test.local/api/email/drafts${id ? `/${id}` : ''}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailboxId: 'mbx_acq', ...body }),
+    });
+  };
+
+  it('saves without a delivery row, so nothing can send it', async () => {
+    const { env } = await import('cloudflare:test');
+    const res = await put({ subject: 'half written', text: 'wip', to: ['delivered+d@resend.dev'] });
+    expect(res.status).toBe(201);
+    const { id } = ((await res.json()) as { data: { id: string } }).data;
+
+    const msg = await env.DB.prepare('SELECT folder, direction FROM email_messages WHERE message_id = ?')
+      .bind(id).first<{ folder: string; direction: string }>();
+    expect(msg!.folder).toBe('drafts');
+    expect(msg!.direction).toBe('outbound');
+
+    // No delivery row is the whole mechanism: the sweep selects from email_delivery,
+    // so a draft is structurally unsendable rather than merely flagged.
+    const del = await env.DB.prepare('SELECT count(*) AS n FROM email_delivery WHERE message_id = ?')
+      .bind(id).first<{ n: number }>();
+    expect(Number(del!.n)).toBe(0);
+
+    const { sweep } = await import('../src/email/outbox');
+    await sweep(env);
+    const after = await env.DB.prepare('SELECT folder FROM email_messages WHERE message_id = ?')
+      .bind(id).first<{ folder: string }>();
+    expect(after!.folder).toBe('drafts');
+  });
+
+  it('updates in place rather than accumulating rows', async () => {
+    const { env } = await import('cloudflare:test');
+    const first = await put({ subject: 'v1', text: 'a', to: ['delivered+d@resend.dev'] });
+    const { id } = ((await first.json()) as { data: { id: string } }).data;
+
+    for (const n of ['v2', 'v3', 'v4']) {
+      const r = await put({ subject: n, text: 'a', to: ['delivered+d@resend.dev'] }, id);
+      expect(r.status).toBe(200);
+    }
+    const row = await env.DB.prepare('SELECT subject FROM email_messages WHERE message_id = ?')
+      .bind(id).first<{ subject: string }>();
+    expect(row!.subject).toBe('v4');
+  });
+
+  it('does not count against the daily cap while unsent', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare("UPDATE mailboxes SET daily_send_cap = 2 WHERE mailbox_id = 'mbx_acq'").run();
+    // Three drafts would exceed a cap of two if drafts were counted — and leaving a
+    // half-written message open all afternoon would slowly close the mailbox.
+    for (let i = 0; i < 3; i += 1) {
+      const r = await put({ subject: `draft ${i}`, text: 'x', to: ['delivered+d@resend.dev'] });
+      expect(r.status).toBe(201);
+    }
+    await env.DB.prepare("UPDATE mailboxes SET daily_send_cap = 200 WHERE mailbox_id = 'mbx_acq'").run();
+  });
+
+  it('refuses to send one with no recipient, subject or body', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const empty = await put({ subject: '', text: '', to: [] });
+    const { id } = ((await empty.json()) as { data: { id: string } }).data;
+    const res = await SELF.fetch(`https://test.local/api/email/drafts/${id}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    // Checked at SEND time, not save time: a draft may sit for a week and the answers
+    // change.
+    expect(res.status).toBe(400);
+  });
+
+  it('sends, becomes a sent message, and cannot be sent twice', async () => {
+    const { SELF, env } = await import('cloudflare:test');
+    const saved = await put({ subject: 'ready', text: 'body', to: ['delivered+ready@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+
+    const first = await SELF.fetch(`https://test.local/api/email/drafts/${id}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(first.status).toBe(200);
+
+    const row = await env.DB.prepare('SELECT folder FROM email_messages WHERE message_id = ?')
+      .bind(id).first<{ folder: string }>();
+    // It stops being a draft the moment it acquires a delivery row — the two must not
+    // disagree, or it would be editable and in flight at once.
+    expect(row!.folder).toBe('sent');
+
+    const second = await SELF.fetch(`https://test.local/api/email/drafts/${id}/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(second.status).toBe(400);
+  });
+
+  it('is invisible to somebody who cannot send from its mailbox', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/drafts', {
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    const drafts = ((await res.json()) as { data: { mailboxId: string }[] }).data;
+    expect(drafts.every((d) => d.mailboxId !== 'mbx_acq')).toBe(true);
+  });
+
+  it('cannot be edited or deleted by somebody else', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const saved = await put({ subject: 'mine', text: 'x', to: ['delivered+m@resend.dev'] });
+    const { id } = ((await saved.json()) as { data: { id: string } }).data;
+
+    const edit = await SELF.fetch(`https://test.local/api/email/drafts/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailboxId: 'mbx_hr', subject: 'stolen', text: 'x' }),
+    });
+    // Authorised against the DRAFT's mailbox, not the one in the body — otherwise a
+    // caller could move somebody else's draft into a mailbox they hold.
+    expect(edit.status).toBe(403);
+
+    const del = await SELF.fetch(`https://test.local/api/email/drafts/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    expect(del.status).toBe(403);
+  });
+});

@@ -310,6 +310,18 @@ export default {
       } catch (err) {
         console.error('[journal] retention sweep failed:', err);
       }
+
+      // Mail retention, on the daily cron rather than the five-minute one: it deletes
+      // R2 objects and there is nothing to gain from doing that 288 times a day.
+      try {
+        const { prune } = await import('./email/outbox');
+        const r = await prune(env);
+        if (r.messages || r.drafts) {
+          console.log(`[email] pruned ${r.messages} message(s), ${r.drafts} stale draft(s), ${r.objects} object(s)`);
+        }
+      } catch (err) {
+        console.error('[email] retention sweep failed:', err);
+      }
     }
 
     // Guarded on the cron expression, and it has to be.

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, ne, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
@@ -13,9 +13,9 @@ import {
   listReadableMailboxes,
   loadMailbox,
 } from '../email/mailboxes';
-import { enqueue, drainOne } from '../email/outbox';
+import { enqueue, drainOne, promoteDraft } from '../email/outbox';
 import { parseVariables, render, validateTemplate } from '../email/render';
-import { Addr } from '../email/transport';
+import { Addr, LIMITS } from '../email/transport';
 import { EMAIL_EVENTS, SYSTEM_MAILBOX_ID } from '../email/events';
 
 /**
@@ -405,6 +405,49 @@ emailRouter.get('/mailboxes/:id/messages', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+/**
+ * Every message in one conversation, oldest first.
+ *
+ * Authorised through the thread's own mailbox rather than per message: a thread
+ * belongs to exactly one mailbox by construction — `inbound.ts` refuses to attach a
+ * message to a thread in a different one — so one check covers the set.
+ */
+emailRouter.get('/threads/:id', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const thread = await db.query.emailThreads.findFirst({
+      where: eq(schema.emailThreads.id, c.req.param('id')),
+    });
+    if (!thread) return notFound(c, 'Thread not found');
+    if (!(await canUseMailbox(c, thread.mailboxId, 'read'))) return forbidden(c, 'You cannot read that mailbox.');
+
+    const messages = await db.query.emailMessages.findMany({
+      where: eq(schema.emailMessages.threadId, thread.id),
+      orderBy: [asc(schema.emailMessages.createdAt)],
+    });
+
+    const attachments = messages.length
+      ? await db.query.emailAttachments.findMany({
+        where: inArray(schema.emailAttachments.messageId, messages.map((m) => m.id)),
+      })
+      : [];
+
+    return ok(c, {
+      thread: {
+        id: thread.id, subject: thread.subject, messageCount: thread.messageCount,
+        lastMessageAt: thread.lastMessageAt,
+      },
+      messages: messages.map((m) => ({
+        ...m,
+        attachments: attachments.filter((a) => a.messageId === m.id).map((a) => ({
+          id: a.id, filename: a.filename, contentType: a.contentType, sizeBytes: a.sizeBytes,
+          url: `/api/assets/download/${encodeURIComponent(a.r2Key)}`,
+        })),
+      })),
+    });
+  } catch (err) { return serverError(c, err); }
+});
+
 emailRouter.get('/messages/:id', async (c) => {
   try {
     const db = getDb(c.env);
@@ -475,6 +518,166 @@ emailRouter.patch('/messages/:id', async (c) => {
     // Moving mail to trash is the one of these worth an audit line.
     if (patch.folder) await logAudit(c.env, user.id, 'UPDATE', 'email_messages', msg.id, patch);
     return ok(c, { updated: true });
+  } catch (err) { return serverError(c, err); }
+});
+
+
+// ── Drafts ──────────────────────────────────────────────────────────────────
+
+/**
+ * A draft is an `email_messages` row with `folder='drafts'` and NO `email_delivery`
+ * row — the delivery row is what makes something a send, so a draft is simply a
+ * message that has not acquired one. That is why drafts need no table of their own,
+ * why the sweep cannot accidentally send one (it selects from email_delivery), and why
+ * `enqueue`'s daily cap explicitly excludes them: an outbound row that has spent no
+ * quota must not count against it.
+ *
+ * Saving is idempotent on the draft id, so the composer can autosave as often as it
+ * likes without accumulating rows.
+ */
+emailRouter.put('/drafts/:id?', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const body = await c.req.json();
+
+    const mailboxId = String(body.mailboxId ?? '');
+    if (!mailboxId) return badRequest(c, 'mailboxId is required.');
+    if (!(await canUseMailbox(c, mailboxId, 'send'))) return forbidden(c, 'You cannot send from that mailbox.');
+
+    const box = await loadMailbox(c.env, mailboxId);
+    if (!box) return notFound(c, 'Mailbox not found');
+
+    const existingId = c.req.param('id');
+    const fields = {
+      mailboxId,
+      threadId: body.threadId ? String(body.threadId) : null,
+      direction: 'outbound' as const,
+      folder: 'drafts' as const,
+      fromAddress: box.address,
+      fromName: box.displayName ?? null,
+      toAddresses: JSON.stringify(parseAddrs(body.to)),
+      ccAddresses: JSON.stringify(parseAddrs(body.cc)),
+      bccAddresses: JSON.stringify(parseAddrs(body.bcc)),
+      subject: typeof body.subject === 'string' ? body.subject : '',
+      // NOT NULL in the DDL, and a draft legitimately has an empty body.
+      bodyText: typeof body.text === 'string' ? body.text : '',
+      bodyHtml: null,
+      inReplyToHeader: body.inReplyTo ? String(body.inReplyTo) : null,
+      referencesHeader: body.references ? String(body.references) : null,
+      isRead: true,
+      createdBy: user.id,
+    };
+
+    if (existingId) {
+      const prior = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, existingId) });
+      if (!prior) return notFound(c, 'Draft not found');
+      if (prior.folder !== 'drafts') return badRequest(c, 'That message has already been sent and cannot be edited.');
+      // Its own mailbox, not the one in the body — otherwise a caller could move
+      // somebody else's draft into a mailbox they hold.
+      if (!(await canUseMailbox(c, prior.mailboxId, 'send'))) return forbidden(c, 'You cannot edit that draft.');
+
+      await db.update(schema.emailMessages).set(fields).where(eq(schema.emailMessages.id, existingId));
+      return ok(c, { id: existingId });
+    }
+
+    const id = generateId('eml');
+    await db.insert(schema.emailMessages).values({ ...fields, id, createdAt: new Date() });
+    return created(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+
+emailRouter.get('/drafts', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const boxes = await listReadableMailboxes(c);
+    const sendable: string[] = [];
+    for (const b of boxes) if (await canUseMailbox(c, b.id, 'send')) sendable.push(b.id);
+    if (sendable.length === 0) return ok(c, []);
+
+    const rows = await db.query.emailMessages.findMany({
+      where: and(
+        inArray(schema.emailMessages.mailboxId, sendable),
+        eq(schema.emailMessages.folder, 'drafts'),
+      ),
+      orderBy: [desc(schema.emailMessages.createdAt)],
+      limit: 100,
+    });
+    return ok(c, rows);
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * Sends a draft: gives it a delivery row and drains it.
+ *
+ * Everything the compose path checks is checked HERE rather than at save time — the
+ * daily cap, the bulk threshold, a body that is actually present — because a draft may
+ * sit for a week and the answers change. Keyed on the draft id so a double-click
+ * cannot send twice.
+ */
+emailRouter.post('/drafts/:id/send', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+
+    const draft = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, id) });
+    if (!draft) return notFound(c, 'Draft not found');
+    if (draft.folder !== 'drafts') return badRequest(c, 'That message has already been sent.');
+    if (!(await canUseMailbox(c, draft.mailboxId, 'send'))) return forbidden(c, 'You cannot send from that mailbox.');
+
+    const to = JSON.parse(draft.toAddresses || '[]') as Addr[];
+    const cc = JSON.parse(draft.ccAddresses || '[]') as Addr[];
+    const bcc = JSON.parse(draft.bccAddresses || '[]') as Addr[];
+    if (to.length === 0) return badRequest(c, 'Add at least one recipient before sending.');
+    if (!draft.subject?.trim()) return badRequest(c, 'Add a subject before sending.');
+    if (!draft.bodyText.trim()) return badRequest(c, 'Write a message before sending.');
+
+    const total = to.length + cc.length + bcc.length;
+    if (total > BULK_RECIPIENT_THRESHOLD && !(await canUseMailbox(c, draft.mailboxId, 'bulk'))) {
+      return forbidden(c, `Sending to ${total} recipients at once needs bulk permission on this mailbox.`);
+    }
+
+    const attachments = await db.query.emailAttachments.findMany({
+      where: eq(schema.emailAttachments.messageId, id),
+    });
+
+    const queued = await promoteDraft(c.env, draft, attachments.length);
+    if ('error' in queued) return badRequest(c, queued.error);
+
+    await logAudit(c.env, user.id, 'CREATE', 'email_messages', id, {
+      fromDraft: true, mailboxId: draft.mailboxId, to: to.map((t) => t.email),
+      bccCount: bcc.length, subject: draft.subject, attachments: attachments.length,
+    });
+
+    if (!queued.deduped) c.executionCtx.waitUntil(drainOne(c.env, id));
+    return ok(c, { id, sent: true, deduped: queued.deduped });
+  } catch (err) { return serverError(c, err); }
+});
+
+emailRouter.delete('/drafts/:id', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+    const draft = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, id) });
+    if (!draft) return notFound(c, 'Draft not found');
+    if (draft.folder !== 'drafts') return badRequest(c, 'That message has been sent; it is not a draft.');
+    if (!(await canUseMailbox(c, draft.mailboxId, 'send'))) return forbidden(c, 'You cannot delete that draft.');
+
+    // Its attachments go with it, rows and objects both — an orphaned R2 object is
+    // unreachable but still billed and still holds somebody's file.
+    const attachments = await db.query.emailAttachments.findMany({
+      where: eq(schema.emailAttachments.messageId, id),
+    });
+    for (const a of attachments) {
+      if (c.env.CRM_BUCKET) await c.env.CRM_BUCKET.delete(a.r2Key).catch(() => {});
+    }
+    await db.delete(schema.emailAttachments).where(eq(schema.emailAttachments.messageId, id));
+    await db.delete(schema.emailMessages).where(eq(schema.emailMessages.id, id));
+
+    await logAudit(c.env, user.id, 'DELETE', 'email_messages', id, { draft: true });
+    return ok(c, { deleted: true });
   } catch (err) { return serverError(c, err); }
 });
 
@@ -559,18 +762,57 @@ emailRouter.post('/send', async (c) => {
     if (!subject.trim()) return badRequest(c, 'A subject is required.');
     if (!text.trim()) return badRequest(c, 'A plain-text body is required.');
 
+    /**
+     * Replying to a stored message.
+     *
+     * `replyTo` names one of OUR messages, and the threading headers are derived from
+     * it server-side rather than taken from the body — a client that got them wrong
+     * would break threading silently at both ends, and a client that supplied them
+     * freely could graft its message onto any conversation.
+     *
+     * The message must be one the caller can read, checked through canUseMailbox like
+     * everything else, so this is not a way to learn what is in a mailbox you cannot
+     * open.
+     */
+    let inReplyTo: string | undefined;
+    let references: string | undefined;
+    let threadId: string | undefined = typeof body.threadId === 'string' ? body.threadId : undefined;
+
+    if (body.replyTo) {
+      const parent = await db.query.emailMessages.findFirst({
+        where: eq(schema.emailMessages.id, String(body.replyTo)),
+      });
+      if (!parent) return notFound(c, 'The message being replied to does not exist.');
+      if (!(await canUseMailbox(c, parent.mailboxId, 'read'))) {
+        return forbidden(c, 'You cannot read the message you are replying to.');
+      }
+
+      const parentId = parent.messageIdHeader;
+      if (parentId) {
+        inReplyTo = parentId;
+        // References is the whole chain, oldest first, with the parent appended —
+        // which is what lets a client that joins late still assemble the thread.
+        references = [parent.referencesHeader, parentId].filter(Boolean).join(' ');
+      }
+      // Keep the reply in the same conversation even when the parent carried no
+      // Message-ID, which is common on mail from poorly behaved senders.
+      threadId = parent.threadId ?? threadId;
+    }
+
     const queued = await enqueue(c.env, {
       mailboxId,
       to, cc, bcc,
       subject, text,
       ...(html ? { html } : {}),
+      ...(inReplyTo ? { inReplyTo } : {}),
+      ...(references ? { references } : {}),
       // Client-supplied when present, so a double-clicked Send is one message.
       // Server-generated otherwise, because absent a key every retry is a new
       // message and the column would be pointless.
       idempotencyKey: typeof body.idempotencyKey === 'string' && body.idempotencyKey
         ? `manual:${mailboxId}:${body.idempotencyKey}`
         : `manual:${generateId('snd')}`,
-      ...(body.threadId ? { threadId: String(body.threadId) } : {}),
+      ...(threadId ? { threadId } : {}),
       actorUserId: user.id,
     });
 
@@ -586,6 +828,174 @@ emailRouter.post('/send', async (c) => {
     if (!queued.deduped) c.executionCtx.waitUntil(drainOne(c.env, queued.messageId));
 
     return created(c, { id: queued.messageId, deduped: queued.deduped });
+  } catch (err) { return serverError(c, err); }
+});
+
+
+/**
+ * Attaching a file to a draft.
+ *
+ * Deliberately NOT through `PUT /api/assets/upload/*`. That route's allowlist has no
+ * `email-att/` entry, and adding one would let any caller who can upload write into
+ * the prefix that holds RECEIVED mail — forging a message that appears to have arrived
+ * from anybody. This route writes to `email-out/` instead, a prefix nothing else
+ * writes, and only ever against a draft the caller may send from.
+ *
+ * Requiring a draft first is what makes that possible: the attachment needs a
+ * `message_id`, so the composer saves a draft as soon as the first file is chosen.
+ */
+emailRouter.post('/drafts/:id/attachments', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+
+    const draft = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, id) });
+    if (!draft) return notFound(c, 'Draft not found');
+    if (draft.folder !== 'drafts') return badRequest(c, 'That message has been sent and cannot take new attachments.');
+    if (!(await canUseMailbox(c, draft.mailboxId, 'send'))) return forbidden(c, 'You cannot edit that draft.');
+    if (!c.env.CRM_BUCKET) return badRequest(c, 'No document bucket is configured on this Worker.');
+
+    const form = await c.req.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) return badRequest(c, 'Attach a file in the `file` field.');
+
+    const bytes = await file.arrayBuffer();
+
+    /**
+     * Resend caps a whole message at 5 MiB including attachments, and the message is
+     * base64-encoded on the way out — which costs about a third. Checked against the
+     * running total for this draft rather than per file, because three 2 MiB files
+     * pass individually and fail together.
+     */
+    const existing = await db.query.emailAttachments.findMany({
+      where: eq(schema.emailAttachments.messageId, id),
+    });
+    const already = existing.reduce((n, a) => n + (a.sizeBytes ?? 0), 0);
+    const projected = Math.ceil((already + bytes.byteLength) * 1.37) + draft.bodyText.length;
+    if (projected > LIMITS.messageBytes) {
+      return badRequest(
+        c,
+        `That would make the message about ${Math.round(projected / 1024)} KiB once encoded, over the ${LIMITS.messageBytes / 1024 / 1024} MiB limit. Send a link instead, or split it across messages.`,
+      );
+    }
+    if (existing.length >= 20) return badRequest(c, 'A message can carry at most 20 attachments.');
+
+    // Server-constructed key — no byte of the filename reaches it, so there is no
+    // traversal and no way to land in another mailbox's prefix.
+    const attachmentId = generateId('eatt');
+    const key = `email-out/${draft.mailboxId}/${id}/${attachmentId}`;
+    await c.env.CRM_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    });
+
+    await db.insert(schema.emailAttachments).values({
+      id: attachmentId,
+      messageId: id,
+      // Kept for display only; it is never used to build a path.
+      filename: file.name || 'attachment',
+      contentType: file.type || 'application/octet-stream',
+      sizeBytes: bytes.byteLength,
+      r2Key: key,
+      disposition: 'attachment',
+      contentId: null,
+      createdAt: new Date(),
+    });
+
+    await logAudit(c.env, user.id, 'CREATE', 'email_attachments', attachmentId, {
+      draft: id, filename: file.name, bytes: bytes.byteLength,
+    });
+
+    return created(c, {
+      id: attachmentId, filename: file.name, sizeBytes: bytes.byteLength,
+      url: `/api/assets/download/${encodeURIComponent(key)}`,
+    });
+  } catch (err) { return serverError(c, err); }
+});
+
+emailRouter.delete('/drafts/:id/attachments/:attachmentId', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const id = c.req.param('id');
+
+    const draft = await db.query.emailMessages.findFirst({ where: eq(schema.emailMessages.id, id) });
+    if (!draft) return notFound(c, 'Draft not found');
+    if (!(await canUseMailbox(c, draft.mailboxId, 'send'))) return forbidden(c, 'You cannot edit that draft.');
+
+    const att = await db.query.emailAttachments.findFirst({
+      where: and(
+        eq(schema.emailAttachments.id, c.req.param('attachmentId')),
+        // Scoped to this draft, so an id from another message cannot be removed here.
+        eq(schema.emailAttachments.messageId, id),
+      ),
+    });
+    if (!att) return notFound(c, 'Attachment not found');
+
+    if (c.env.CRM_BUCKET) await c.env.CRM_BUCKET.delete(att.r2Key).catch(() => {});
+    await db.delete(schema.emailAttachments).where(eq(schema.emailAttachments.id, att.id));
+    await logAudit(c.env, user.id, 'DELETE', 'email_attachments', att.id, { draft: id });
+    return ok(c, { deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
+// ── Search ──────────────────────────────────────────────────────────────────
+
+/**
+ * Searches the mailboxes the caller can read.
+ *
+ * `LIKE` rather than FTS5, deliberately. D1 supports FTS5 but it needs a virtual table
+ * and triggers to stay in sync, and at this volume — hundreds of messages, not millions
+ * — a scan is imperceptible. The note is here so the next person knows it is a chosen
+ * trade rather than an oversight: when a mailbox passes tens of thousands of messages,
+ * add the FTS table and change this function.
+ *
+ * The term is escaped and bound. `%` and `_` are LIKE wildcards, and a generated id is
+ * full of underscores — an unescaped term of `task_` would match far too much, and D1
+ * refuses a pattern with too many wildcards outright.
+ */
+emailRouter.get('/search', async (c) => {
+  try {
+    const term = (c.req.query('q') ?? '').trim();
+    if (term.length < 2) return badRequest(c, 'Search for at least two characters.');
+
+    const boxes = await listReadableMailboxes(c);
+    if (boxes.length === 0) return ok(c, []);
+
+    const db = getDb(c.env);
+    const escaped = term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    const pattern = `%${escaped}%`;
+
+    const rows = await db.query.emailMessages.findMany({
+      where: and(
+        inArray(schema.emailMessages.mailboxId, boxes.map((b) => b.id)),
+        ne(schema.emailMessages.folder, 'trash'),
+        or(
+          like(schema.emailMessages.subject, pattern),
+          like(schema.emailMessages.bodyText, pattern),
+          like(schema.emailMessages.fromAddress, pattern),
+          like(schema.emailMessages.toAddresses, pattern),
+        ),
+      ),
+      orderBy: [desc(schema.emailMessages.createdAt)],
+      limit: 60,
+    });
+
+    return ok(c, rows.map((m) => ({
+      id: m.id,
+      mailboxId: m.mailboxId,
+      threadId: m.threadId,
+      direction: m.direction,
+      folder: m.folder,
+      fromAddress: m.fromAddress,
+      fromName: m.fromName,
+      toAddresses: m.toAddresses,
+      subject: m.subject,
+      preview: m.bodyText.slice(0, 160),
+      isRead: m.isRead,
+      isStarred: m.isStarred,
+      createdAt: m.createdAt,
+    })));
   } catch (err) { return serverError(c, err); }
 });
 

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
@@ -52,6 +52,17 @@ export type EnqueueRequest = {
   /** Set for automated sends, so the sent log can say what caused this. */
   eventKey?: string;
   threadId?: string;
+  /**
+   * RFC 5322 threading, set when this is a reply.
+   *
+   * Both directions depend on these. Outbound, they are what makes the recipient's
+   * client show the reply under the original instead of as a new conversation.
+   * Inbound, `inbound.ts` matches a stranger's reply by looking for OUR
+   * `provider_message_id` in their References — so a reply we send without these
+   * breaks the thread at both ends.
+   */
+  inReplyTo?: string;
+  references?: string;
   scheduledFor?: Date;
   /** null for a system/cron send — there is genuinely no actor. */
   actorUserId?: string | null;
@@ -89,6 +100,61 @@ function startOfUtcDay(): Date {
 }
 
 /**
+ * Both caps, in one place because two callers need them — `enqueue` for a fresh send
+ * and `promoteDraft` for one that has been sitting. Returns the message to refuse
+ * with, or null.
+ *
+ * Counted from the rows rather than tracked in a counter, so neither can drift from
+ * what actually happened, and refused loudly: a send dropped quietly is the one nobody
+ * discovers until a client asks why they never heard back.
+ */
+async function overCap(env: Env, box: { id: string; address: string; dailySendCap: number }): Promise<string | null> {
+  const db = getDb(env);
+  const dayStart = startOfUtcDay();
+
+  // Per mailbox, so one department cannot spend the whole day before anybody else is
+  // awake.
+  if (box.dailySendCap > 0) {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.emailMessages)
+      .where(and(
+        eq(schema.emailMessages.mailboxId, box.id),
+        eq(schema.emailMessages.direction, 'outbound'),
+        /**
+         * A draft is an outbound row with no delivery row, so without this it would
+         * count against a quota it has not spent — leaving a half-written message open
+         * all afternoon would slowly close the mailbox.
+         */
+        ne(schema.emailMessages.folder, 'drafts'),
+        gte(schema.emailMessages.createdAt, dayStart),
+      ));
+    if (Number(count) >= box.dailySendCap) {
+      return `${box.address} has reached its daily limit of ${box.dailySendCap} messages. It resets at 00:00 UTC.`;
+    }
+  }
+
+  /**
+   * Per account, for Resend. Its free tier allows 100 a day across the whole account,
+   * not per sender, so no per-mailbox number can enforce it. Counted from
+   * `email_delivery.transport`, which is set only on success — a count of all delivery
+   * rows would charge quota for messages that never reached Resend.
+   */
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.emailDelivery)
+    .where(and(
+      eq(schema.emailDelivery.transport, 'resend'),
+      gte(schema.emailDelivery.queuedAt, dayStart),
+    ));
+  if (Number(count) >= RESEND_DAILY_CAP) {
+    return `The account has reached its daily limit of ${RESEND_DAILY_CAP} messages to outside addresses (Resend's free tier allows 100 a day across all mailboxes). It resets at 00:00 UTC.`;
+  }
+
+  return null;
+}
+
+/**
  * Writes a message and its delivery row. Does not send.
  *
  * Returning the existing id on a duplicate key is not an error path — it is the
@@ -107,62 +173,8 @@ export async function enqueue(env: Env, req: EnqueueRequest): Promise<EnqueueRes
   });
   if (existing) return { messageId: existing.messageId, deduped: true };
 
-  // Two caps, counted rather than tracked so neither can drift from reality, and
-  // both refused loudly — a send dropped silently is the one nobody discovers
-  // until a client asks why they never heard back.
-  const dayStart = startOfUtcDay();
-
-  // Per mailbox, so one department cannot spend the whole day's allowance before
-  // anybody else is awake.
-  if (box.dailySendCap > 0) {
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.emailMessages)
-      .where(and(
-        eq(schema.emailMessages.mailboxId, box.id),
-        eq(schema.emailMessages.direction, 'outbound'),
-        gte(schema.emailMessages.createdAt, dayStart),
-      ));
-    if (Number(count) >= box.dailySendCap) {
-      return { error: `${box.address} has reached its daily limit of ${box.dailySendCap} messages. It resets at 00:00 UTC.` };
-    }
-  }
-
-  /**
-   * Per account, for Resend only.
-   *
-   * Resend's free tier allows 100 messages a day across the whole account, not per
-   * sender, so no per-mailbox number can enforce it: three mailboxes at forty each
-   * sail past a hundred and start failing mid-afternoon, and the failures look
-   * like a broken integration rather than a quota. Counted across every mailbox
-   * that sends through Resend.
-   *
-   * The Cloudflare path is deliberately exempt — sends to verified destination
-   * addresses count against no quota at all, which is the whole reason
-   * transactional mail goes that way.
-   */
-  /**
-   * The account-wide cap, which now applies to every message because every message
-   * goes through Resend. It was conditional while there were two providers and a
-   * send might have been carried free.
-   */
-  {
-    // Counted from what actually went through Resend, not from how mailboxes are
-    // configured. Under `auto` those differ by definition, and the configured
-    // number would over-count every internal message the free path carried.
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.emailDelivery)
-      .where(and(
-        eq(schema.emailDelivery.transport, 'resend'),
-        gte(schema.emailDelivery.queuedAt, dayStart),
-      ));
-    if (Number(count) >= RESEND_DAILY_CAP) {
-      return {
-        error: `The account has reached its daily limit of ${RESEND_DAILY_CAP} messages to outside addresses (Resend's free tier allows 100 a day across all mailboxes). It resets at 00:00 UTC.`,
-      };
-    }
-  }
+  const capped = await overCap(env, box);
+  if (capped) return { error: capped };
 
   const messageId = generateId('eml');
   const now = new Date();
@@ -185,6 +197,8 @@ export async function enqueue(env: Env, req: EnqueueRequest): Promise<EnqueueRes
     bodyHtml: req.html ?? null,
     // Was accepted by EnqueueRequest and written nowhere. See migration 0043.
     eventKey: req.eventKey ?? null,
+    inReplyToHeader: req.inReplyTo ?? null,
+    referencesHeader: req.references ?? null,
     isRead: true,
     createdBy: req.actorUserId ?? null,
     createdAt: now,
@@ -273,6 +287,19 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
     subject: row.subject ?? '',
     text: row.bodyText,
     ...(row.bodyHtml ? { html: row.bodyHtml } : {}),
+    /**
+     * The threading headers, which were stored on the row and never sent — so a
+     * reply arrived at the recipient as a new conversation, and their answer came
+     * back unmatchable because it quoted nothing of ours.
+     */
+    ...(row.inReplyToHeader || row.referencesHeader
+      ? {
+        headers: {
+          ...(row.inReplyToHeader ? { 'In-Reply-To': row.inReplyToHeader } : {}),
+          ...(row.referencesHeader ? { References: row.referencesHeader } : {}),
+        },
+      }
+      : {}),
   });
 
   if (outcome.ok) {
@@ -388,4 +415,130 @@ export async function sweep(env: Env, limit = 50): Promise<{ attempted: number; 
   }
 
   return { attempted: due.length, sent, failed };
+}
+
+/**
+ * Turns a draft into a send.
+ *
+ * A draft already has its `email_messages` row; what it lacks is the `email_delivery`
+ * row, which is what the sweep looks at and therefore what makes a message a send. So
+ * this is the second half of `enqueue` and nothing else — deliberately not a new
+ * enqueue, because duplicating the insert would mean two places that decide what an
+ * outbound row looks like.
+ *
+ * The caps are checked HERE rather than when the draft was saved: a draft may sit for a
+ * week, and whether there is quota left is a question about now.
+ */
+export async function promoteDraft(
+  env: Env,
+  draft: { id: string; mailboxId: string; subject: string | null },
+  attachmentCount = 0,
+): Promise<EnqueueResult> {
+  const db = getDb(env);
+
+  const box = await loadMailbox(env, draft.mailboxId);
+  if (!box) return { error: 'That mailbox no longer exists.' };
+  if (!box.isActive) return { error: `${box.address} is deactivated and cannot send.` };
+
+  const existing = await db.query.emailDelivery.findFirst({
+    where: eq(schema.emailDelivery.messageId, draft.id),
+  });
+  if (existing) return { messageId: draft.id, deduped: true };
+
+  const capped = await overCap(env, box);
+  if (capped) return { error: capped };
+
+  const now = new Date();
+  await db.insert(schema.emailDelivery).values({
+    messageId: draft.id,
+    status: 'queued',
+    attempts: 0,
+    nextAttemptAt: null,
+    scheduledFor: null,
+    // Keyed on the draft, so a double-clicked Send finds this row rather than making
+    // a second one.
+    idempotencyKey: `manual:${box.id}:draft:${draft.id}`,
+    queuedAt: now,
+  });
+
+  // It stops being a draft at the moment it acquires a delivery row, and the two must
+  // not disagree — a row in `drafts` with a delivery row would be editable and in
+  // flight at the same time.
+  await db.update(schema.emailMessages)
+    .set({ folder: 'sent', createdAt: now })
+    .where(eq(schema.emailMessages.id, draft.id));
+
+  if (attachmentCount > 0) {
+    console.log(`[email] ${draft.id} sending with ${attachmentCount} attachment(s)`);
+  }
+
+  return { messageId: draft.id, deduped: false };
+}
+
+/**
+ * Retention. Called from the daily cron, not the five-minute one.
+ *
+ * Without this, trash and spam grow forever — and so does R2, which is billed by the
+ * byte and holds the raw MIME of every message ever received. Deliberately conservative:
+ * thirty days is long enough that nobody loses something they meant to recover, and the
+ * only things touched are folders whose whole purpose is "not wanted".
+ *
+ * Deletes the R2 objects as well as the rows. A row without its object is a broken
+ * download; an object without its row is unreachable, permanent and still billed.
+ */
+export async function prune(env: Env, days = 30): Promise<{ messages: number; objects: number; drafts: number }> {
+  const db = getDb(env);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  let objects = 0;
+
+  const doomed = await db
+    .select({ id: schema.emailMessages.id, rawKey: schema.emailMessages.rawKey })
+    .from(schema.emailMessages)
+    .where(and(
+      inArray(schema.emailMessages.folder, ['trash', 'spam']),
+      lt(schema.emailMessages.createdAt, cutoff),
+    ))
+    .limit(200);
+
+  for (const m of doomed) {
+    const atts = await db.query.emailAttachments.findMany({
+      where: eq(schema.emailAttachments.messageId, m.id),
+    });
+    for (const a of atts) {
+      if (env.CRM_BUCKET) { try { await env.CRM_BUCKET.delete(a.r2Key); objects += 1; } catch { /* already gone */ } }
+    }
+    if (m.rawKey && env.CRM_BUCKET) {
+      try { await env.CRM_BUCKET.delete(m.rawKey); objects += 1; } catch { /* already gone */ }
+    }
+    await db.delete(schema.emailAttachments).where(eq(schema.emailAttachments.messageId, m.id));
+    // The delivery row first: it references the message.
+    await db.delete(schema.emailDelivery).where(eq(schema.emailDelivery.messageId, m.id));
+    await db.delete(schema.emailMessages).where(eq(schema.emailMessages.id, m.id));
+  }
+
+  /**
+   * Abandoned drafts, at a shorter horizon. A draft nobody touched for a week is
+   * forgotten rather than pending, and each one may be holding attachments in R2.
+   */
+  const staleDrafts = await db
+    .select({ id: schema.emailMessages.id })
+    .from(schema.emailMessages)
+    .where(and(
+      eq(schema.emailMessages.folder, 'drafts'),
+      lt(schema.emailMessages.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+    ))
+    .limit(100);
+
+  for (const d of staleDrafts) {
+    const atts = await db.query.emailAttachments.findMany({
+      where: eq(schema.emailAttachments.messageId, d.id),
+    });
+    for (const a of atts) {
+      if (env.CRM_BUCKET) { try { await env.CRM_BUCKET.delete(a.r2Key); objects += 1; } catch { /* already gone */ } }
+    }
+    await db.delete(schema.emailAttachments).where(eq(schema.emailAttachments.messageId, d.id));
+    await db.delete(schema.emailMessages).where(eq(schema.emailMessages.id, d.id));
+  }
+
+  return { messages: doomed.length, objects, drafts: staleDrafts.length };
 }

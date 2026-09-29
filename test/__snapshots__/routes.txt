@@ -146,6 +146,12 @@ PATCH  /api/dashboard/notes/:id
 GET    /api/dashboard/preferences
 PATCH  /api/dashboard/preferences
 GET    /api/email/automations
+GET    /api/email/drafts
+DELETE /api/email/drafts/:id
+PUT    /api/email/drafts/:id?
+POST   /api/email/drafts/:id/attachments
+DELETE /api/email/drafts/:id/attachments/:attachmentId
+POST   /api/email/drafts/:id/send
 GET    /api/email/mailboxes
 POST   /api/email/mailboxes
 DELETE /api/email/mailboxes/:id
@@ -158,12 +164,14 @@ PATCH  /api/email/messages/:id
 GET    /api/email/mine
 GET    /api/email/prefs
 PUT    /api/email/prefs
+GET    /api/email/search
 POST   /api/email/send
 GET    /api/email/templates
 POST   /api/email/templates
 DELETE /api/email/templates/:id
 PATCH  /api/email/templates/:id
 POST   /api/email/test
+GET    /api/email/threads/:id
 GET    /api/finance/accounts
 POST   /api/finance/accounts
 DELETE /api/finance/accounts/:id
