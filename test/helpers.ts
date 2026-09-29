@@ -75,6 +75,30 @@ export async function resetDatabase(): Promise<void> {
 	}
 }
 
+/**
+ * Where fixtures send.
+ *
+ * `delivered@resend.dev` is Resend's own sink: it simulates a successful delivery and
+ * explicitly does not touch domain reputation. A `+label` keeps recipients distinct
+ * where a test counts them.
+ *
+ * This is not tidiness. The fixtures used `@example.test` and `@personal.example`,
+ * which are reserved and do not resolve — so when the real API key reached the suite
+ * through `.dev.vars` (Miniflare loads it), every send-path test hard-bounced at
+ * Resend. Roughly 200 of them in five minutes, which is the signature ESPs suspend
+ * accounts for.
+ *
+ * Two things stop that now, and both should stay: `vitest.config.mts` pins
+ * RESEND_API_KEY to the empty string so the suite cannot reach the network at all,
+ * and these addresses mean that if it ever does, nothing bounces.
+ *
+ * Use `SINK('something')` for a new recipient rather than inventing a domain.
+ */
+export const SINK = (label: string) => `delivered+${label}@resend.dev`;
+
+/** Simulates a hard bounce, for a test that wants one. Also reputation-safe. */
+export const SINK_BOUNCE = 'bounced@resend.dev';
+
 /** Fixture users, matching the four permission clusters found in production. */
 export const USERS = {
 	ceo: { id: 'u_ceo', roleId: 'role_ceo', isSuperadmin: true },

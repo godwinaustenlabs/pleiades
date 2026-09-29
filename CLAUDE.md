@@ -483,9 +483,10 @@ Client auth state is localStorage: `ga_token` + `ga_user` for staff, `ga_client_
 
 ### Mail (`src/email`)
 
-Pleiades sends and stores email. Outbound goes through Cloudflare Email Service's
-`send_email` binding (`EMAIL`); inbound arrives at the `email()` handler on the
-default export in `src/index.ts`. **Neither product stores anything** — Email
+Pleiades sends and stores email. Outbound goes through **Resend** over HTTP
+(`RESEND_API_KEY`); inbound arrives at the `email()` handler on the default export in
+`src/index.ts`, via Cloudflare Email Routing — which is free on every plan and is a
+different product from Email Sending, removed below. **Neither product stores anything** — Email
 Routing forwards or hands the Worker a raw message and keeps no copy — so
 `email_messages` plus R2 *are* the mail store, and the consequences of that
 (spam filtering, durability, no IMAP) are Pleiades' problem now.
@@ -568,76 +569,59 @@ Sending splits on exactly that line: sending to a *verified destination address*
 is free on every plan and uncapped, sending to an arbitrary recipient needs
 Workers Paid. So:
 
-| service | reaches | limit |
-|---|---|---|
-| `env.EMAIL` (Cloudflare) | verified destination addresses only — staff | none, free |
-| Resend | anybody | **90/day across the whole account** |
+**Resend is the only transport.** There was briefly a second — Cloudflare Email
+Sending, via a `send_email` binding — and removing it is worth recording because the
+obvious design was the broken one. On the Workers Free plan that path delivers only
+to *verified destination addresses*, which are the external addresses Email Routing
+forwards TO; once the apex MX moved into Cloudflare every staff address became an
+own-domain address, which cannot be one. It was never verified on the account either
+(`cf-bounce._domainkey` publishes an empty key), so in practice every send was
+refused and fell through to Resend anyway, costing a doomed API call first. Gone,
+along with `mailboxes.transport` and `email_delivery.transport_override`.
 
-`mailboxes.transport` picks between them and takes three values. **`auto` is the
-default and decides per message: Cloudflare first, Resend when it refuses.** The
-alternative was a fixed choice per mailbox, and that is wrong half the time —
-`hr@` pinned to Resend spends the day's allowance telling staff their tasks
-changed, and pinned to Cloudflare it cannot write to a candidate at all. A
-department mailbox has both kinds of recipient.
+`email_delivery.transport` stays. It is set only on success, which makes it what the
+daily cap counts — a cap counting all delivery rows would charge quota for messages
+that never reached Resend.
 
-The fallback triggers on any refusal **except** two, which are facts about the
-message rather than about the plan: `E_RECIPIENT_SUPPRESSED` (Cloudflare has the
-address on its bounce/complaint list — sending it via Resend anyway is how a
-sender reaches a blocklist) and `E_CONTENT_TOO_LARGE` (Resend's ceiling is no
-higher). Which service actually carried a message is recorded on
-`email_delivery.transport`, so a fallback is visible rather than silent — and that
-column, not the mailbox configuration, is what the daily quota is counted from.
-Under `auto` the two differ by definition, and counting the configuration would
-charge the quota for every internal message the free path carried for nothing.
+**Resend's free tier counts per account, not per sender**: 100 a day, 3,000 a month,
+which no per-mailbox cap can express. `enqueue` checks `RESEND_DAILY_CAP` (90, for
+headroom) across the account as well as the per-mailbox number.
 
-`cloudflare` and `resend` remain as explicit pins, and **nothing currently uses
-them** — every send is `auto`, including the password-reset link. That is a
-reversal arrived at twice over, and the history matters because the obvious design
-is the broken one:
+Resend sends from **any address at a verified domain** with no per-address setup, and
+puts its SPF and MX on a `send.` subdomain — so the apex SPF that other mail depends
+on is never edited, and its DKIM selector (`resend._domainkey`) collides with nothing.
 
-`mbx_system` was pinned to `cloudflare` so a reset notice could not traverse a
-third party. Production refused the first send with `E_RECIPIENT_NOT_ALLOWED` — on
-the Free plan the Cloudflare path reaches only *verified destination addresses*,
-which are the external addresses Email Routing forwards TO, so an own-domain
-recipient cannot be one, and a pinned mailbox cannot fall back. Moving the pin to
-the message (`sensitive` events only) fixed the collateral damage and left the
-reset link itself undeliverable, because Email Sending is not verified on this
-account at all: `cf-bounce._domainkey` publishes an empty `p=`. A password reset
-that does not arrive is not a safer password reset.
+Unset, `RESEND_API_KEY` makes `transport.ts` log the message and report success, so a
+deployment that lost the secret degrades to "mail is not going out, loudly in the
+logs" rather than throwing inside whatever was sending. **`vitest.config.mts` pins it
+to the empty string**, and that line is load-bearing: Miniflare loads `.dev.vars`,
+which holds the real key, so without it the suite makes live calls to Resend on every
+test that reaches `drainOne`.
 
-So the link goes through Resend, and the trade is stated rather than hidden:
-Resend sees a single-use link for up to sixty minutes. `sensitive` still governs
-**redaction**, which was always the part worth having. To restore the pin, verify
-Email Sending, confirm `cf-bounce._domainkey` has a non-empty key, and set
-`transport` in `dispatch` back to `spec.sensitive ? 'cloudflare' : 'auto'`.
 
-Why no list of verified destinations here: Cloudflare holds it, and mirroring it
-would be a second copy of somebody else's truth that drifts the first time an
-address is added on one side only. Trying and falling back needs no list.
+**Password reset is self-service, and deliberately has no approval step.** A person
+types their email or username and a single-use link, good for **10 minutes**, is
+emailed to them. The earlier design queued the request for an HR manager, which meant
+somebody locked out at 9pm stayed locked out until a colleague noticed a list.
 
-**Resend sends from any address at a verified domain** with no per-address setup,
-and its SPF and MX sit on a `send.` subdomain — the same shape as Cloudflare's
-`cf-bounce` — so the apex SPF that GoDaddy's mailboxes depend on is never edited
-and the two DKIM selectors (`resend._domainkey` vs `cf-bounce`) do not collide.
-Verify the apex with Resend; a subdomain is not required.
+Removing approval took a protection with it, and the replacements are in
+`src/email/password-reset.ts`: approval was what stopped an unauthenticated stranger
+causing mail to be sent, so there is now a per-account rate limit (3/hour) and each
+request supersedes the previous token, so spamming it yields one usable link rather
+than a drawer of them.
 
-Both paths fall back to a console transport with a warning when their binding or
-key is absent, so a misconfigured deploy is "mail is not going out, loudly in the
-logs" rather than a throw inside whatever was sending. **Miniflare simulates
-`send_email`**, so the suite drives the real binding on the Cloudflare path.
+**It also SHORTENED the escalation path to superadmin** — from two grants to one,
+since approval was the second permission. Three guards close it: `issueResetLink`
+refuses a superadmin outright, `PATCH /admin/users/:id` refuses a `recovery_email`
+write on a superadmin by anyone but that account, and a superadmin's password is a
+direct database operation, the same rule that governs the flag.
 
-Moving to Workers Paid collapses all of this: pin every mailbox to `cloudflare`,
-drop the sixth secret, and the account cap stops applying.
-
-**Password reset depends on mail, so it must not depend on this mail.**
-`users_logins.recovery_email` is where a reset link goes, validated to be off the
-company domain — once the apex MX moves to Cloudflare, sending a reset to
-`users_logins.email` tells a locked-out person to read a mailbox they cannot log
-in to reach. The flow in `src/routes/auth.ts` already existed and was sound
-(hashed single-use token, HR approval, non-enumerating response); what it lacked
-was delivery, and the token is now minted **at approval** rather than at request
-so an unauthenticated stranger cannot cause mail to reach any staff address.
-Nothing ever emails a password.
+The link goes to `recovery_email` when set, otherwise the login address **only if it
+is off a domain this system hosts the mail for** — a reset sent to a Pleiades-hosted
+mailbox tells a locked-out person to log in to read the email that lets them log in.
+That is live, not theoretical: most accounts log in on an external domain and need no
+setup, while the ones on `godwinausten.org` need a recovery address on file. Nothing
+ever emails a password.
 
 **Inbound** is `src/email/inbound.ts`, plus `mime.ts` (a reader, not a MIME
 library — nothing in the runtime parses MIME) and `spam.ts`. Three rules, and all
@@ -690,9 +674,7 @@ is never rendered** — `body_text` with the raw source as a download.
 ### Bindings and secrets
 
 `wrangler.jsonc` defines `DB` (D1 `pleiades-db`), `ASSETS`, `SELF` (this Worker,
-bound to itself), `AI`, `EMAIL` (Cloudflare Email Service, outbound — no resource
-to provision and no API key, but on the Free plan it reaches verified destination
-addresses only, which is why there is a sixth secret), `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
+bound to itself), `AI`, `VECTORIZE` (`pleiades-compliance`), `CRM_BUCKET` (R2
 `pleiades-docs`, used by `/api/assets` for uploads/downloads),
 `COMPLIANCE_BUCKET` (R2 `pleiades-compliance-docs`), and the two Durable Object
 bindings `SLACK_AGENT` / `ACCOUNTANT_AGENT` (classes `SlackAgent` /

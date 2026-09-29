@@ -9,7 +9,7 @@ import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 import { chunk } from '../utils/batch';
 import { hashPassword } from '../utils/password';
-import { sendResetApprovedEmail, validateRecoveryAddress } from '../email/password-reset';
+import { validateRecoveryAddress } from '../email/password-reset';
 
 
 const adminRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
@@ -395,188 +395,21 @@ adminRouter.post(
 // ── DELEGATED RESET APPROVAL ──────────────────────────────────────────────────
 
 /**
- * Reset approval is reachable through either `admin/resets` or `hr/resets`.
+ * The manual reset-approval queue used to live here — GET /pending-resets and
+ * POST /pending-resets/:id/{approve,reject}, gated on `admin/resets` or `hr/resets`.
  *
- * These routes live under /api/admin because that is where the file is, and they
- * were gated on `admin/resets` alone — while the screen that drives them is HR's
- * Resets tab, which gates on `hr/resets`. Both features are declared in
- * APP_FEATURES and in production one person holds each, so an HR manager with
- * `hr/resets` was shown a tab whose every request came back 403.
+ * It is gone, and reset is self-service: POST /auth/request-reset mints a link and
+ * emails it. The queue meant somebody locked out at 9pm stayed locked out until a
+ * colleague noticed a list, which is a worse failure than the one approval prevented.
  *
- * Accepting either is the non-breaking direction: it admits exactly the people who
- * were already being offered the screen. Approving is still `edit`, so the widening
- * is on which grant names the capability, not on what the capability is.
+ * What approval DID protect against was an unauthenticated stranger causing mail to be
+ * sent, and that is replaced in src/email/password-reset.ts by a per-account rate
+ * limit plus each request superseding the previous token. Read the note there before
+ * changing either: removing approval also SHORTENED the escalation path to superadmin
+ * from two grants to one, which is why the superadmin guard there and the
+ * recovery-address guard below are load-bearing rather than belt-and-braces.
  */
-function requireResetAccess(level: 'view' | 'edit'): MiddlewareHandler {
-  return async (c, next) => {
-    const ctx = c as Parameters<typeof checkFeaturePermission>[0];
-    if (await checkFeaturePermission(ctx, 'admin', 'resets', level)) return next();
-    if (await checkFeaturePermission(ctx, 'hr', 'resets', level)) return next();
-    return c.json({ error: `Forbidden: cannot ${level} password resets` }, 403);
-  };
-}
 
-adminRouter.get('/pending-resets', requireResetAccess('view'), async (c) => {
-  try {
-    const db = getDb(c.env);
-    const actor = c.get('user')!!;
-
-    // This previously read user_app_access, a table with no rows in production,
-    // so the "is an admin" branch below was unreachable for every caller.
-    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
-
-    let pendingResets = await db.query.passwordResetTokens.findMany({
-      where: eq(schema.passwordResetTokens.status, 'pending'),
-      with: { user: { columns: { passwordHash: false } } },
-      orderBy: [desc(schema.passwordResetTokens.requestedAt)],
-    });
-
-    if (!isUserAdmin) {
-      const ownerships = await db.query.userOwnership.findMany({
-        where: eq(schema.userOwnership.ownerUserId, actor.id),
-      });
-      const ownedUserIds = new Set(ownerships.map((o) => o.userId));
-      pendingResets = pendingResets.filter((r) => ownedUserIds.has(r.userId));
-    }
-
-    const now = new Date();
-    const expired = pendingResets.filter((r) => new Date(r.expiresAt) < now);
-    if (expired.length > 0) {
-      await Promise.all(expired.map((r) =>
-        db.update(schema.passwordResetTokens)
-          .set({ status: 'expired' })
-          .where(eq(schema.passwordResetTokens.id, r.id))
-      ));
-    }
-
-    return ok(c, pendingResets.filter((r) => new Date(r.expiresAt) >= now));
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.post('/pending-resets/:tokenId/approve', requireResetAccess('edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const actor = c.get('user')!!;
-    const tokenId = c.req.param('tokenId')!;
-
-    const resetRecord = await db.query.passwordResetTokens.findFirst({
-      where: eq(schema.passwordResetTokens.id, tokenId),
-    });
-    if (!resetRecord) return notFound(c);
-    if (resetRecord.status !== 'pending') {
-      return badRequest(c, `Token is already '${resetRecord.status}'`);
-    }
-    if (new Date(resetRecord.expiresAt) < new Date()) {
-      await db.update(schema.passwordResetTokens).set({ status: 'expired' }).where(eq(schema.passwordResetTokens.id, tokenId));
-      return badRequest(c, 'Token has expired');
-    }
-
-    /**
-     * A superadmin's reset is not approvable here at all.
-     *
-     * The branch below treats admin/users edit as blanket authority and skips the
-     * ownership check. That is reasonable for a staff account and is not reasonable
-     * for the account that bypasses every permission in the system.
-     *
-     * Third of three checks on one chain — the others are the `recoveryEmail` write
-     * in PATCH /users/:id and the guard in sendResetApprovedEmail. This is the
-     * earliest of the three: refusing here means no token is minted, so there is
-     * nothing to deliver even if the other two are later refactored away.
-     */
-    const subject = await db.query.usersLogins.findFirst({
-      where: eq(schema.usersLogins.id, resetRecord.userId),
-      columns: { isSuperadmin: true },
-    });
-    if (subject?.isSuperadmin) {
-      await logAudit(c.env, actor.id, 'RESET', 'password_reset_tokens', tokenId, {
-        action: 'reset_approval_refused', reason: 'target is a superadmin',
-      });
-      return c.json({
-        success: false,
-        error: "A superadmin's password is reset by direct database access, never through this flow.",
-      }, 403);
-    }
-
-    // This previously read user_app_access, a table with no rows in production,
-    // so the "is an admin" branch below was unreachable for every caller.
-    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
-
-    if (!isUserAdmin) {
-      const ownership = await db.query.userOwnership.findFirst({
-        where: and(
-          eq(schema.userOwnership.userId, resetRecord.userId),
-          eq(schema.userOwnership.ownerUserId, actor.id),
-        ),
-      });
-      if (!ownership) {
-        return c.json({ error: 'Forbidden: you do not own this user account' }, 403);
-      }
-    }
-
-    await db.update(schema.passwordResetTokens)
-      .set({ status: 'approved', approvedByUserId: actor.id, approvedAt: new Date() })
-      .where(eq(schema.passwordResetTokens.id, tokenId));
-
-    await logAudit(c.env, actor.id, 'UPDATE', 'password_reset_tokens', tokenId, { action: 'reset_approved' });
-
-    // Mint the token and mail the link, and AWAIT it rather than using waitUntil:
-    // the approver is the only person who can fix the common failure, which is
-    // that the user has no recovery address on file. Telling them so in this
-    // response is the difference between an instruction and a mystery.
-    //
-    // The approval itself stands either way. A reset that is approved but unsent
-    // can be re-sent; one that is refused because the email failed would have to
-    // be requested again by a person who is already locked out.
-    const mail = await sendResetApprovedEmail(c.env, tokenId);
-    if (!mail.sent) {
-      await logAudit(c.env, actor.id, 'UPDATE', 'password_reset_tokens', tokenId, {
-        action: 'reset_email_failed', reason: mail.reason,
-      });
-    }
-
-    return ok(c, {
-      tokenId,
-      approved: true,
-      emailSent: mail.sent,
-      // Named `emailProblem` rather than `error`: the approval succeeded, and a
-      // client that treats this as a failed request would be wrong.
-      emailProblem: mail.sent ? null : mail.reason,
-    });
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.post('/pending-resets/:tokenId/reject', requireResetAccess('edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const actor = c.get('user')!!;
-    const tokenId = c.req.param('tokenId')!;
-
-    const resetRecord = await db.query.passwordResetTokens.findFirst({
-      where: eq(schema.passwordResetTokens.id, tokenId),
-    });
-    if (!resetRecord) return notFound(c);
-    if (resetRecord.status !== 'pending') return badRequest(c, `Token is already '${resetRecord.status}'`);
-
-    // This previously read user_app_access, a table with no rows in production,
-    // so the "is an admin" branch below was unreachable for every caller.
-    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
-
-    if (!isUserAdmin) {
-      const ownership = await db.query.userOwnership.findFirst({
-        where: and(
-          eq(schema.userOwnership.userId, resetRecord.userId),
-          eq(schema.userOwnership.ownerUserId, actor.id),
-        ),
-      });
-      if (!ownership) return c.json({ error: 'Forbidden: you do not own this user account' }, 403);
-    }
-
-    await db.update(schema.passwordResetTokens)
-      .set({ status: 'rejected' })
-      .where(eq(schema.passwordResetTokens.id, tokenId));
-
-    await logAudit(c.env, actor.id, 'UPDATE', 'password_reset_tokens', tokenId, { action: 'reset_rejected' });
-    return ok(c, { tokenId, rejected: true });
-  } catch (err) { return serverError(c, err); }
-});
 
 // ── API KEYS ───────────────────────────────────────────────────────────────────
 

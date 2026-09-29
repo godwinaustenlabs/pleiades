@@ -121,20 +121,5 @@
 			"binding": "VECTORIZE",
 			"index_name": "pleiades-compliance"
 		}
-	],
-	// Cloudflare Email Service, outbound half. There is no resource to
-	// provision and no API key, which is the reason this is the transport:
-	// the binding IS the integration, so Pleiades stays a five-secret Worker
-	// and no external quota can stall a payroll notification.
-	//
-	// Inbound does not appear here. It arrives through the email() handler on
-	// the default export in src/index.ts, aimed at this Worker by a routing
-	// rule that only exists in the dashboard — so wrangler.jsonc cannot show
-	// you that mail is being received. src/email/inbound.ts is where to look.
-	// Read by: src/email/transport.ts
-	"send_email": [
-		{
-			"name": "EMAIL"
-		}
 	]
 }

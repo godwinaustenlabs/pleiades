@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Shield, Activity,
-  Key, Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
+   Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
 , Mail
 } from 'lucide-react';
 import Login from './Login';
@@ -15,7 +15,6 @@ import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
 import AppHeader from '../components/AppHeader';
 import ModuleTabs from '../components/ModuleTabs';
-import PendingResets from '../components/PendingResets';
 import MailboxTab from '../components/MailboxTab';
 import HRDashboard from '../components/HRDashboard';
 import HRReports from '../components/HRReports';
@@ -29,7 +28,7 @@ import { errorMessage } from '../lib/errors';
 
 
 
-type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'resets' | 'reports' | 'sops' | 'email';
+type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'reports' | 'sops' | 'email';
 
 const DEPARTMENT_OPTIONS = [
   { value: '', label: 'None (e.g. CEO)' },
@@ -57,7 +56,6 @@ function HR() {
   const [showPayrollForm, setShowPayrollForm] = useState(false);
   const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
 
   // Granular Permissions
   // Grants come from the shared hook, which resolves them from the user's role.
@@ -140,11 +138,6 @@ function HR() {
         fetchEmployees();
       }
 
-      if (getPerm('resets').canView) {
-        fetch(`${API}/admin/pending-resets`, { headers: { Authorization: `Bearer ${token()}` } })
-          .then(r => r.json())
-          .then(d => setPendingCount((d.data || []).length)).catch(() => { });
-      }
     }
   }, [tab, isAuthenticated, permsLoaded]);
 
@@ -159,13 +152,12 @@ function HR() {
       { id: 'tasks', label: 'Tasks', icon: Activity, feature: 'tasks' },
       { id: 'reports', label: 'Reports', icon: FileText, feature: 'employees' },
       { id: 'sops', label: 'SOPs', icon: FileText, feature: 'employees' },
-      { id: 'resets', label: 'Resets', icon: Key, badge: pendingCount, feature: 'resets' },
       { id: 'email', label: 'Email', icon: Mail, feature: 'email' },
     ] as const;
 
     if (user.isSuperadmin) return all;
     return all.filter(t => getPerm(t.feature).canView);
-  }, [userPermissions, pendingCount, user.isSuperadmin]);
+  }, [userPermissions, user.isSuperadmin]);
 
   // Auto-switch tab if current tab is restricted
   useEffect(() => {
@@ -407,7 +399,6 @@ function HR() {
           />
         )}
 
-        {tab === 'resets' && <PendingResets canApprove={getPerm('resets').canEdit} />}
 
         {tab === 'payroll' && (
           <div className="space-y-12">

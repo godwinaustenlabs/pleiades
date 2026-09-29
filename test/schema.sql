@@ -1065,7 +1065,7 @@ CREATE TABLE mailboxes (
   created_by             TEXT REFERENCES users_logins (id),
   created_at             INTEGER NOT NULL,
   updated_at             INTEGER NOT NULL
-, transport text DEFAULT 'auto' NOT NULL);
+);
 CREATE TABLE mailbox_grants (
   mailbox_id TEXT NOT NULL REFERENCES mailboxes (mailbox_id),
   user_id    TEXT NOT NULL REFERENCES users_logins (id),
@@ -1129,7 +1129,7 @@ CREATE TABLE email_delivery (
   idempotency_key     TEXT NOT NULL UNIQUE,
   queued_at           INTEGER NOT NULL,
   sent_at             INTEGER
-, transport text, transport_override text);
+, transport text);
 CREATE TABLE email_attachments (
   attachment_id TEXT PRIMARY KEY,
   message_id    TEXT NOT NULL REFERENCES email_messages (message_id),
@@ -1182,6 +1182,5 @@ CREATE INDEX idx_email_delivery_provider ON email_delivery (provider_message_id)
 CREATE INDEX idx_email_attachments_msg   ON email_attachments (message_id);
 CREATE INDEX idx_email_attachments_key   ON email_attachments (r2_key);
 CREATE INDEX idx_email_templates_scope ON email_templates (scope, app_name);
-CREATE INDEX idx_mailboxes_transport ON mailboxes (transport);
 CREATE INDEX idx_email_delivery_transport ON email_delivery (transport, queued_at);
 CREATE INDEX idx_email_messages_event ON email_messages (event_key, created_at);

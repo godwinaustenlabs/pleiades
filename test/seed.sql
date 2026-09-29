@@ -26,7 +26,7 @@ INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_supe
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_crm','u_crm@test.local','u_crm','u_crm','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_none','u_none@test.local','u_none','u_none','x',1,0,0,0);
 INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts) VALUES ('u_tasks','u_tasks@test.local','u_tasks','u_tasks','x',1,0,0,0);
-INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts,recovery_email) VALUES ('u_mail','u_mail@test.local','u_mail','u_mail','x',1,0,0,0,'u_mail@personal.test');
+INSERT INTO users_logins (id,email,username,name,password_hash,is_active,is_superadmin,created_at,failed_attempts,recovery_email) VALUES ('u_mail','u_mail@test.local','u_mail','u_mail','x',1,0,0,0,'delivered+u_mail@resend.dev');
 
 -- u_tasks holds nothing but the `tasks` feature of four modules. Before those
 -- routers were gated per feature, app-level access let that grant alone read and
@@ -326,11 +326,8 @@ INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) 
 -- Addresses are on godwinausten.org because the create route refuses anything
 -- else, and a fixture that could not be created through the API is a fixture
 -- that proves less than it appears to.
--- On `auto` like the rest. The pin that stops a secret-bearing message touching a
--- third party lives on the MESSAGE now (dispatch sets it for `sensitive` events),
--- because pinning the mailbox meant no-reply@ could not reach an own-domain address
--- at all on the Free plan — and could not fall back either.
-INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,transport,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_system','no-reply@godwinausten.org','Pleiades','system',NULL,NULL,'auto',2000,1,0,0);
+-- The machine identity every automated message sends as.
+INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_system','no-reply@godwinausten.org','Pleiades','system',NULL,NULL,2000,1,0,0);
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_catchall','catchall@godwinausten.org','Catch-all','catchall',NULL,NULL,0,1,0,0);
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_hr','hr@godwinausten.org','People','app',NULL,'hr',200,1,0,0);
 INSERT INTO mailboxes (mailbox_id,address,display_name,kind,owner_user_id,app_name,daily_send_cap,is_active,created_at,updated_at) VALUES ('mbx_acq','sales@godwinausten.org','Sales','app',NULL,'acquisition',200,1,0,0);

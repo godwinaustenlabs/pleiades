@@ -8,7 +8,7 @@ import { checkFeaturePermission } from '../middleware/rbac';
 import { ok, badRequest, notFound, forbidden, serverError } from '../utils/response';
 import { generateId } from '../utils/id';
 import { generateToken, sha256hex } from '../utils/token';
-import { notifyResetRequested } from '../email/password-reset';
+import { issueResetLink } from '../email/password-reset';
 import { logAudit } from '../utils/audit';
 import { hashPassword, verifyPassword } from '../utils/password';
 
@@ -20,11 +20,17 @@ const authRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>
  * The one response `POST /auth/request-reset` ever gives.
  *
  * A single constant rather than two matching literals, because two literals drift:
- * that is exactly how this endpoint came to enumerate accounts.
+ * that is exactly how this endpoint came to enumerate accounts, with "Your password
+ * reset request has been queued" for a real address and "If this email exists" for an
+ * unknown one behind the same 200.
+ *
+ * Worded so it is true in every case, including the ones that send nothing — a
+ * superadmin, an account with no reachable address, one that has asked three times in
+ * an hour. None of those may be distinguishable from success.
  */
 const RESET_REQUEST_RESPONSE = {
   submitted: true,
-  message: 'If an account exists for that address, a reset request has been queued for HR approval.',
+  message: 'If that account exists, a link to choose a new password is on its way. It expires in 10 minutes.',
 } as const;
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -292,61 +298,52 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
  */
 authRouter.post('/request-reset', async (c) => {
   try {
-    const { email } = await c.req.json<{ email: string }>();
-    if (!email) return badRequest(c, 'email is required');
+    const body = await c.req.json<{ identifier?: string; email?: string }>();
+    // `email` is still accepted so an older client keeps working; the field is named
+    // `identifier` now because either an email or a username is fine.
+    const identifier = (body.identifier ?? body.email ?? '').trim().toLowerCase();
+    if (!identifier) return badRequest(c, 'Enter your email address or username.');
 
     const db = getDb(c.env);
 
+    /**
+     * Either identifier resolves the same account. Somebody locked out should not have
+     * to remember which of the two they signed up with.
+     */
     const user = await db.query.usersLogins.findFirst({
-      where: eq(schema.usersLogins.email, email.toLowerCase().trim()),
+      where: or(
+        eq(schema.usersLogins.email, identifier),
+        eq(schema.usersLogins.username, identifier),
+      ),
     });
 
-    // Return the same response whether or not the user exists (prevents email
-    // enumeration). Byte-identical, not merely the same shape — see the note above.
-    if (!user || !user.isActive) {
-      return ok(c, RESET_REQUEST_RESPONSE);
+    /**
+     * Everything below returns RESET_REQUEST_RESPONSE, byte for byte, whatever
+     * happened: an unknown identifier, a deactivated account, a superadmin, a
+     * rate-limited one, an account with nowhere to send to, and a successful send all
+     * look identical from outside.
+     *
+     * That is the only thing standing between this endpoint and a list of valid staff
+     * addresses, and it is easy to erode — the previous version leaked exactly that by
+     * having two different `message` strings behind the same 200. The real outcome goes
+     * to the log and the audit trail, never to the caller.
+     */
+    if (user) {
+      c.executionCtx.waitUntil((async () => {
+        const outcome = await issueResetLink(c.env, user);
+        await logAudit(c.env, user.id, 'RESET', 'password_reset_tokens', user.id, {
+          action: outcome.sent ? 'reset_link_sent' : 'reset_link_not_sent',
+          ...(outcome.sent ? {} : { reason: outcome.reason }),
+        });
+        if (!outcome.sent) {
+          console.warn(`[auth] reset for ${user.id} not sent: ${outcome.reason}`);
+        }
+      })());
+    } else {
+      // Logged so a burst of attempts against addresses that do not exist is visible.
+      console.warn(`[auth] reset requested for an unknown identifier`);
     }
 
-    // Cancel any existing pending tokens for this user
-    await db.update(schema.passwordResetTokens)
-      .set({ status: 'expired' })
-      .where(and(
-        eq(schema.passwordResetTokens.userId, user.id),
-        eq(schema.passwordResetTokens.status, 'pending'),
-      ));
-
-    const rawToken = generateToken();
-    const tokenHash = await sha256hex(rawToken);
-    const id = generateId('rst');
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 h
-
-    await db.insert(schema.passwordResetTokens).values({
-      id,
-      userId: user.id,
-      tokenHash,
-      requestedAt: now,
-      expiresAt,
-      status: 'pending',
-    });
-
-    await logAudit(c.env, user.id, 'RESET', 'password_reset_tokens', id, {
-      action: 'reset_requested',
-      email,
-    });
-
-    // Tell HR. Nothing announced a pending request before this: it sat on
-    // GET /admin/pending-resets until somebody thought to look.
-    //
-    // Note what is NOT sent here, and that it is the security-relevant half: the
-    // person who requested the reset gets no email at all, and no token is minted
-    // until a human approves. This endpoint is unauthenticated, so anything it
-    // mailed to the named address would be mail a stranger could cause to appear
-    // in a colleague's inbox, as often as they liked.
-    c.executionCtx.waitUntil(notifyResetRequested(c.env, user.id, id));
-
-    // Identical to the unknown-account branch above. If you change one, change both
-    // — or better, keep using the constant.
     return ok(c, RESET_REQUEST_RESPONSE);
   } catch (err) {
     return serverError(c, err);

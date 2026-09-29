@@ -92,24 +92,6 @@ export type Env = {
    * Read by: src/utils/model.ts, agents/accountant/{knowledge,journal}.ts
    */
   AI?: Ai;
-  /**
-   * Cloudflare Email Service, outbound. `env.EMAIL.send(...)`.
-   *
-   * Optional, and the fallback it enables is the point: `src/email/transport.ts`
-   * logs the message instead of sending it when this is absent, the same way
-   * `utils/model.ts` falls back to the bare AI binding without a gateway token.
-   * So a deployment that lost this block degrades to "mail is not going out,
-   * loudly in the logs" rather than throwing inside every task assignment.
-   *
-   * Miniflare simulates `send_email` locally, writing each message to a temp file,
-   * so tests drive the real binding rather than that fallback.
-   *
-   * Inbound is not a binding. It is the `email()` handler on the default export
-   * below, reached only because a routing rule in the dashboard points at this
-   * script.
-   * Read by: src/email/transport.ts
-   */
-  EMAIL?: SendEmail;
   /** The Slack agent Durable Object — one instance per Slack conversation. */
   SLACK_AGENT: DurableObjectNamespace;
   /** The accountant agent Durable Object — one instance per conversation. */
@@ -145,17 +127,21 @@ export type Env = {
    */
   SLACK_BOT_OAUTH_TOKEN?: string;
   /**
-   * Resend API key, for mail to anyone outside the company.
+   * Resend API key. The only way mail leaves this Worker.
    *
-   * **The sixth secret, and the reason there are now six.** CLAUDE.md said five
-   * for a long time and the count was load-bearing — it is how you notice an
-   * integration appearing. This one exists because the account is on the Workers
-   * FREE plan, where `EMAIL` above reaches verified destination addresses only:
-   * free for staff, refused for every prospect and client. Resend carries those.
+   * **The sixth secret, and the reason there are now six.** CLAUDE.md said five for
+   * a long time and the count was load-bearing — it is how you notice an integration
+   * appearing.
    *
-   * Unset, `transport.ts` logs the message and reports success, so a missing key
-   * is "outreach is not going out, loudly in the logs" rather than a throw inside
-   * whatever handler was sending.
+   * There was briefly a `send_email` binding alongside it for Cloudflare Email
+   * Sending. On the Workers Free plan that reaches only verified destination
+   * addresses, and once the apex MX moved into Cloudflare every staff address became
+   * an own-domain address, which cannot be one — so it could reach almost nobody and
+   * was never verified anyway. Removed rather than left declared.
+   *
+   * Unset, `transport.ts` logs the message and reports success, so a missing key is
+   * "mail is not going out, loudly in the logs" rather than a throw inside whatever
+   * handler was sending.
    * Read by: src/email/transport.ts
    */
   RESEND_API_KEY?: string;

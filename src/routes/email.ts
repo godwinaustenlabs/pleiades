@@ -45,7 +45,6 @@ emailRouter.use('*', authMiddleware);
 const SENDABLE_DOMAINS = ['godwinausten.org'];
 
 const KINDS = ['personal', 'app', 'alias', 'catchall', 'system'] as const;
-const TRANSPORTS = ['auto', 'cloudflare', 'resend'] as const;
 const FOLDERS = ['inbox', 'sent', 'drafts', 'archive', 'spam', 'trash'] as const;
 
 function addressIsOurs(address: string): boolean {
@@ -105,17 +104,6 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
       return badRequest(c, `kind must be one of: ${KINDS.join(', ')}.`);
     }
 
-    /**
-     * Which service this mailbox sends through.
-     *
-     * `auto` by default: the free Cloudflare path first, Resend when it refuses.
-     * Pinning `cloudflare` produces a mailbox that silently cannot reach a client,
-     * which is the wrong thing to guess for anybody's first mailbox.
-     */
-    const transport = String(body.transport ?? 'auto');
-    if (!TRANSPORTS.includes(transport as typeof TRANSPORTS[number])) {
-      return badRequest(c, `transport must be one of: ${TRANSPORTS.join(', ')}.`);
-    }
 
     // The invariants the DDL cannot express, since SQLite cannot gain a CHECK
     // constraint without rebuilding the table. A mailbox in the wrong shape is
@@ -158,7 +146,6 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
       ownerUserId: kind === 'personal' ? String(body.ownerUserId) : null,
       appName: kind === 'app' ? String(body.appName) : null,
       forwardsToMailboxId: kind === 'alias' ? String(body.forwardsToMailboxId) : null,
-      transport,
       dailySendCap: Number.isFinite(Number(body.dailySendCap)) ? Number(body.dailySendCap) : 200,
       isActive: true,
       createdBy: user.id,
@@ -166,7 +153,7 @@ emailRouter.post('/mailboxes', requireFeatureAccess('admin', 'mailboxes', 'edit'
       updatedAt: now,
     });
 
-    await logAudit(c.env, user.id, 'CREATE', 'mailboxes', id, { address, kind, transport, appName: body.appName ?? null, ownerUserId: body.ownerUserId ?? null });
+    await logAudit(c.env, user.id, 'CREATE', 'mailboxes', id, { address, kind, appName: body.appName ?? null, ownerUserId: body.ownerUserId ?? null });
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
@@ -204,7 +191,7 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
      * worse than the thing being guarded against. It is validated, restricted to app
      * mailboxes, and the previous value goes into the audit entry.
      */
-    const ALLOWED = ['displayName', 'transport', 'dailySendCap', 'isActive', 'appName'] as const;
+    const ALLOWED = ['displayName', 'dailySendCap', 'isActive', 'appName'] as const;
     const patch: Record<string, unknown> = {};
     const rejected: string[] = [];
     for (const [key, value] of Object.entries(body)) {
@@ -212,9 +199,6 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
       else rejected.push(key);
     }
 
-    if (patch.transport !== undefined && !TRANSPORTS.includes(String(patch.transport) as typeof TRANSPORTS[number])) {
-      return badRequest(c, `transport must be one of: ${TRANSPORTS.join(', ')}.`);
-    }
     if (patch.dailySendCap !== undefined && !Number.isFinite(Number(patch.dailySendCap))) {
       return badRequest(c, 'dailySendCap must be a number.');
     }
@@ -368,7 +352,6 @@ emailRouter.get('/mine', async (c) => {
         displayName: box.displayName,
         kind: box.kind,
         appName: box.appName,
-        transport: box.transport,
         isActive: box.isActive,
         canSend: await canUseMailbox(c, box.id, 'send'),
         canBulk: await canUseMailbox(c, box.id, 'bulk'),
@@ -858,7 +841,7 @@ emailRouter.get('/automations', requireFeatureAccess('admin', 'email_config', 'v
 
     return ok(c, {
       sender: sender
-        ? { address: sender.address, transport: sender.transport, isActive: sender.isActive, dailySendCap: sender.dailySendCap }
+        ? { address: sender.address, isActive: sender.isActive, dailySendCap: sender.dailySendCap }
         : null,
       events: Object.values(EMAIL_EVENTS).map((e) => {
         const tpl = templates.find((t) => t.key === e.key);

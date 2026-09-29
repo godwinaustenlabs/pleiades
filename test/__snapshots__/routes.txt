@@ -55,9 +55,6 @@ GET    /api/admin/api-keys
 POST   /api/admin/api-keys
 DELETE /api/admin/api-keys/:id
 GET    /api/admin/audit-logs
-GET    /api/admin/pending-resets
-POST   /api/admin/pending-resets/:tokenId/approve
-POST   /api/admin/pending-resets/:tokenId/reject
 GET    /api/admin/permissions
 POST   /api/admin/permissions
 DELETE /api/admin/permissions/:id

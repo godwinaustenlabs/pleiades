@@ -142,7 +142,7 @@ describe('template validation happens at save time', () => {
 describe('outgoing validation refuses before the provider has to', () => {
   const base = {
     from: { email: 'a@godwinausten.org' },
-    to: [{ email: 'b@example.test' }],
+    to: [{ email: 'delivered+b@resend.dev' }],
     subject: 'hi',
     text: 'hi',
   };
@@ -203,7 +203,7 @@ beforeAll(async () => {
 
 describe('the outbox', () => {
   it('writes a message and a delivery row, and attempts the send immediately', async () => {
-    const res = await send({ to: ['one@example.test'], subject: 'first', text: 'first', idempotencyKey: 'k1' });
+    const res = await send({ to: ['delivered+one@resend.dev'], subject: 'first', text: 'first', idempotencyKey: 'k1' });
     expect(res.status).toBe(201);
     const { id } = (await res.json() as { data: { id: string } }).data;
 
@@ -230,7 +230,7 @@ describe('the outbox', () => {
 
   it('dedupes a repeated idempotency key instead of sending twice', async () => {
     const before = await countDelivery();
-    const res = await send({ to: ['one@example.test'], subject: 'first again', text: 'x', idempotencyKey: 'k1' });
+    const res = await send({ to: ['delivered+one@resend.dev'], subject: 'first again', text: 'x', idempotencyKey: 'k1' });
     expect(res.status).toBe(201);
     const body = (await res.json() as { data: { id: string; deduped: boolean } }).data;
     expect(body.deduped).toBe(true);
@@ -241,13 +241,13 @@ describe('the outbox', () => {
     // Otherwise two unrelated messages with the same subject would collapse into
     // one, which is a worse failure than sending twice.
     const before = await countDelivery();
-    await send({ to: ['two@example.test'], subject: 'no key', text: 'x' });
-    await send({ to: ['two@example.test'], subject: 'no key', text: 'x' });
+    await send({ to: ['delivered+two@resend.dev'], subject: 'no key', text: 'x' });
+    await send({ to: ['delivered+two@resend.dev'], subject: 'no key', text: 'x' });
     expect(await countDelivery()).toBe(before + 2);
   });
 
   it('refuses an empty body rather than sending a blank message', async () => {
-    const res = await send({ to: ['three@example.test'], subject: 'subject only', text: '' });
+    const res = await send({ to: ['delivered+three@resend.dev'], subject: 'subject only', text: '' });
     expect(res.status).toBe(400);
   });
 
@@ -259,7 +259,7 @@ describe('the outbox', () => {
   it('enforces the mailbox daily cap', async () => {
     const { env } = await import('cloudflare:test');
     await env.DB.prepare("UPDATE mailboxes SET daily_send_cap = 1 WHERE mailbox_id = 'mbx_acq'").run();
-    const res = await send({ to: ['capped@example.test'], subject: 'over', text: 'over' });
+    const res = await send({ to: ['delivered+capped@resend.dev'], subject: 'over', text: 'over' });
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).toContain('daily limit');
     await env.DB.prepare("UPDATE mailboxes SET daily_send_cap = 200 WHERE mailbox_id = 'mbx_acq'").run();
@@ -268,7 +268,7 @@ describe('the outbox', () => {
   it('refuses to send from a deactivated mailbox', async () => {
     const { env } = await import('cloudflare:test');
     await env.DB.prepare("UPDATE mailboxes SET is_active = 0 WHERE mailbox_id = 'mbx_acq'").run();
-    const res = await send({ to: ['off@example.test'], subject: 'off', text: 'off' });
+    const res = await send({ to: ['delivered+off@resend.dev'], subject: 'off', text: 'off' });
     // The kill switch is a 403 from canUseMailbox rather than a 400 from the
     // enqueue: an inactive mailbox is one you may no longer send as.
     expect(res.status).toBe(403);
@@ -404,10 +404,10 @@ describe('assigning a task emails the assignee', () => {
     // nullable in production and plenty of rows have nothing in it, so the
     // no-address case is the normal case and not an edge one.
     await env.DB.prepare(
-      "INSERT INTO employees (employee_id, name, email, created_at, updated_at) VALUES ('emp_a','Ayesha','ayesha@example.test',0,0)",
+      "INSERT INTO employees (employee_id, name, email, created_at, updated_at) VALUES ('emp_a','Ayesha','delivered+ayesha@resend.dev',0,0)",
     ).run();
     await env.DB.prepare(
-      "INSERT INTO employees (employee_id, name, email, created_at, updated_at) VALUES ('emp_b','Bilal','bilal@example.test',0,0)",
+      "INSERT INTO employees (employee_id, name, email, created_at, updated_at) VALUES ('emp_b','Bilal','delivered+bilal@resend.dev',0,0)",
     ).run();
     await env.DB.prepare(
       "INSERT INTO employees (employee_id, name, created_at, updated_at) VALUES ('emp_c','No Address',0,0)",
@@ -508,7 +508,7 @@ async function queue(idempotencyKey: string, overrides: Record<string, unknown> 
   const { enqueue } = await import('../src/email/outbox');
   const result = await enqueue(env, {
     mailboxId: 'mbx_acq',
-    to: [{ email: 'lifecycle@example.test' }],
+    to: [{ email: 'delivered+lifecycle@resend.dev' }],
     subject: 'lifecycle',
     text: 'body',
     idempotencyKey,
@@ -638,109 +638,32 @@ describe('scheduled sends', () => {
  * where the plan split can go wrong silently.
  */
 
-describe('transport routing', () => {
-  it('pins a secret-bearing message to Cloudflare, per message not per mailbox', async () => {
-    const { env } = await import('cloudflare:test');
-    const { dispatch } = await import('../src/email/events');
-
-    // The mailbox itself is `auto` — pinning it meant no-reply@ could not reach any
-    // own-domain address on the Free plan (E_RECIPIENT_NOT_ALLOWED, seen in
-    // production) and, being pinned, could not fall back either.
-    const box = await env.DB.prepare("SELECT transport FROM mailboxes WHERE mailbox_id = 'mbx_system'")
-      .first<{ transport: string }>();
-    expect(box!.transport).toBe('auto');
-
-    const sensitive = await dispatch(env, {
-      event: 'password_reset',
-      to: [{ email: 'personal@external.example' }],
-      values: { userName: 'X', resetUrl: 'https://pleiades.test/reset?token=T', expiresAt: 'soon' },
-      idempotencyKey: 'pin-sensitive',
-    });
-    expect(sensitive.sent).toBe(true);
-    if (!sensitive.sent) return;
-
-    const pinned = await env.DB.prepare('SELECT transport_override FROM email_delivery WHERE message_id = ?')
-      .bind(sensitive.messageId).first<{ transport_override: string }>();
-    /**
-     * `auto`, not `cloudflare`. This asserted the pin until production showed the
-     * pinned path could not deliver at all: Cloudflare Email Sending is unverified on
-     * this account, so the one event pinned to it was the one that never arrived. A
-     * reset that does not turn up is not a safer reset. The override column stays —
-     * it is how the pin comes back once that DKIM key provisions.
-     */
-    expect(pinned!.transport_override).toBe('auto');
-
-    const ordinary = await dispatch(env, {
-      event: 'task_assigned',
-      to: [{ email: 'colleague@godwinausten.org' }],
-      values: { assigneeName: 'X', taskTitle: 'T', department: 'HR', dueDate: '-', taskUrl: 'u' },
-      idempotencyKey: 'pin-ordinary',
-    });
-    expect(ordinary.sent).toBe(true);
-    if (!ordinary.sent) return;
-    const notPinned = await env.DB.prepare('SELECT transport_override FROM email_delivery WHERE message_id = ?')
-      .bind(ordinary.messageId).first<{ transport_override: string | null }>();
-    // Falls back, so a notification to an own-domain colleague actually arrives.
-    expect(notPinned!.transport_override).toBe('auto');
-  });
-
-  it('leaves a department mailbox on auto, deciding per message', async () => {
-    const { env } = await import('cloudflare:test');
-    const box = await env.DB.prepare("SELECT transport FROM mailboxes WHERE mailbox_id = 'mbx_acq'")
-      .first<{ transport: string }>();
-    // A department mailbox writes to colleagues AND to clients, and the two
-    // services differ on exactly that. Pinned either way it is wrong half the
-    // time, so the choice belongs at send time.
-    expect(box!.transport).toBe('auto');
-  });
-
-  it('refuses a transport it does not recognise rather than falling through', async () => {
-    const { SELF } = await import('cloudflare:test');
-    const res = await SELF.fetch('https://test.local/api/email/mailboxes', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: 'weird@godwinausten.org', kind: 'app', appName: 'ops', transport: 'carrier-pigeon' }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('defaults a new mailbox to auto', async () => {
-    const { SELF, env } = await import('cloudflare:test');
-    const res = await SELF.fetch('https://test.local/api/email/mailboxes', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: 'ops-mail@godwinausten.org', kind: 'app', appName: 'ops' }),
-    });
-    expect(res.status).toBe(201);
-    const row = await env.DB.prepare("SELECT transport FROM mailboxes WHERE address = 'ops-mail@godwinausten.org'")
-      .first<{ transport: string }>();
-    // Not `cloudflare`: that would produce a mailbox which silently cannot reach a
-    // client, which is the wrong thing to guess for anybody's first mailbox.
-    expect(row!.transport).toBe('auto');
-  });
-});
-
-describe("Resend's daily allowance is counted per account, not per mailbox", () => {
-  it('refuses an explicitly-Resend mailbox once the account total is reached', async () => {
+describe("Resend's daily allowance is counted per account", () => {
+  /**
+   * There used to be three describes here, covering a two-provider design: Cloudflare
+   * for verified destinations, Resend for everyone else, and an `auto` mode that tried
+   * the free path first. All of it is gone — on the Workers Free plan the Cloudflare
+   * path could reach only external verified addresses, and once the apex MX moved into
+   * Cloudflare every staff address became an own-domain one, so it could reach almost
+   * nobody and was never verified anyway.
+   *
+   * What survives is the part that was never about which provider: Resend's free tier
+   * counts 100 messages a day PER ACCOUNT, and no per-mailbox cap can express that.
+   */
+  it('refuses once the account total is reached, even on an under-cap mailbox', async () => {
     const { env } = await import('cloudflare:test');
     const { enqueue } = await import('../src/email/outbox');
     const { RESEND_DAILY_CAP } = await import('../src/email/transport');
 
-    // Two Resend mailboxes with per-mailbox caps far below the account allowance —
-    // the exact shape that makes a per-mailbox limit insufficient.
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO mailboxes (mailbox_id,address,display_name,kind,app_name,transport,daily_send_cap,is_active,created_at,updated_at) " +
-      "VALUES ('mbx_legal','legal@godwinausten.org','Legal','app','legal','resend',40,1,0,0)",
-    ).run();
-    await env.DB.prepare(
-      "INSERT OR IGNORE INTO mailboxes (mailbox_id,address,display_name,kind,app_name,transport,daily_send_cap,is_active,created_at,updated_at) " +
-      "VALUES ('mbx_pinned','outreach@godwinausten.org','Outreach','app','acquisition','resend',40,1,0,0)",
+      "INSERT OR IGNORE INTO mailboxes (mailbox_id,address,display_name,kind,app_name,daily_send_cap,is_active,created_at,updated_at) " +
+      "VALUES ('mbx_legal','legal@godwinausten.org','Legal','app','legal',40,1,0,0)",
     ).run();
 
     /**
-     * Fill the allowance with sends that actually went through Resend. The count
-     * comes from `email_delivery.transport`, not from how mailboxes are configured —
-     * under `auto` those differ by definition.
+     * Filled from `email_delivery.transport`, which is set only on a successful send.
+     * A cap counting all delivery rows would charge quota for messages that never
+     * reached Resend at all.
      */
     const now = Math.floor(Date.now() / 1000);
     for (let i = 0; i < RESEND_DAILY_CAP; i += 1) {
@@ -754,10 +677,10 @@ describe("Resend's daily allowance is counted per account, not per mailbox", () 
       ).bind(`eml_filler_${i}`, `filler-${i}`, now, now).run();
     }
 
-    // mbx_pinned has sent nothing itself, so only the account-wide check can refuse.
+    // mbx_acq has sent almost nothing itself, so only the account-wide check refuses.
     const result = await enqueue(env, {
-      mailboxId: 'mbx_pinned',
-      to: [{ email: 'prospect@example.test' }],
+      mailboxId: 'mbx_acq',
+      to: [{ email: 'delivered+prospect@resend.dev' }],
       subject: 'over the account limit',
       text: 'body',
       idempotencyKey: 'account-cap',
@@ -765,183 +688,45 @@ describe("Resend's daily allowance is counted per account, not per mailbox", () 
 
     expect('error' in result).toBe(true);
     if ('error' in result) expect(result.error).toContain('outside addresses');
-  });
-
-  it('does not pre-refuse an auto mailbox, which may never touch Resend', async () => {
-    const { env } = await import('cloudflare:test');
-    const { enqueue, drainOne } = await import('../src/email/outbox');
 
     /**
-     * The allowance is spent from the test above. An `auto` message must still be
-     * accepted — at enqueue time we do not know whether Resend will be involved, and
-     * refusing there rejected sends the free path would have carried for nothing.
-     * That is exactly what broke when mbx_system moved from `cloudflare` to `auto`.
+     * Clean up, because this test deliberately exhausts an ACCOUNT-wide quota and the
+     * cap is counted from the rows. Leaving them made every later send in the file
+     * refuse, which read as unrelated failures in tests that had nothing to do with
+     * quota.
      */
-    const result = await enqueue(env, {
-      mailboxId: 'mbx_acq',
-      to: [{ email: 'someone@example.test' }],
-      subject: 'auto under a spent allowance',
-      text: 'body',
-      idempotencyKey: 'auto-not-prerefused',
-    });
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
-
-    // And at send time it degrades to Cloudflare-only rather than spending an
-    // allowance that is already gone.
-    await drainOne(env, result.messageId);
-    const row = await env.DB.prepare('SELECT transport, status FROM email_delivery WHERE message_id = ?')
-      .bind(result.messageId).first<{ transport: string | null; status: string }>();
-    expect(row!.transport).not.toBe('resend');
+    await env.DB.prepare("DELETE FROM email_delivery WHERE idempotency_key LIKE 'filler-%'").run();
+    await env.DB.prepare("DELETE FROM email_messages WHERE subject = 'filler'").run();
   });
 
-  it('does not count Cloudflare sends against it', async () => {
+  it('records what carried each message', async () => {
     const { env } = await import('cloudflare:test');
-    const { enqueue } = await import('../src/email/outbox');
-
-    // The account allowance is still full from the test above. A send on the free
-    // path must be unaffected — sends to verified destinations count against no
-    // quota at all, which is the whole reason transactional mail goes that way.
-    const result = await enqueue(env, {
-      mailboxId: 'mbx_system',
-      to: [{ email: 'staff@godwinausten.org' }],
-      subject: 'internal notice',
-      text: 'body',
-      idempotencyKey: 'cloudflare-unaffected',
-    });
-
-    expect('error' in result).toBe(false);
+    const row = await env.DB.prepare(
+      "SELECT transport FROM email_delivery WHERE status = 'sent' AND transport IS NOT NULL LIMIT 1",
+    ).first<{ transport: string }>();
+    // `console` in the suite, since RESEND_API_KEY is unset here — which is the
+    // fallback earning its keep: the whole outbox is exercised with nothing leaving
+    // the machine.
+    expect(['resend', 'console']).toContain(row!.transport);
   });
 });
 
-describe('auto: the free path first, Resend as the fallback', () => {
-  it('records which service actually carried a message', async () => {
-    const { env } = await import('cloudflare:test');
-    const { enqueue, drainOne } = await import('../src/email/outbox');
+// ── The send lifecycle ──────────────────────────────────────────────────────
 
-    const r = await enqueue(env, {
-      mailboxId: 'mbx_system',
-      to: [{ email: 'staff-member@example.test' }],
-      subject: 'via cloudflare',
-      text: 'body',
-      idempotencyKey: 'transport-recorded',
-    });
-    if ('error' in r) throw new Error(r.error);
-    expect(await drainOne(env, r.messageId)).toBe('sent');
-
-    const row = await env.DB.prepare('SELECT transport FROM email_delivery WHERE message_id = ?')
-      .bind(r.messageId).first<{ transport: string }>();
-    // mbx_system is pinned to cloudflare, and Miniflare simulates that binding.
-    expect(row!.transport).toBe('cloudflare');
-  });
-
-  it('does not fall back on a suppressed recipient', async () => {
-    const { sendMail } = await import('../src/email/transport');
-    const { env } = await import('cloudflare:test');
-
-    // Cloudflare's suppression list is a fact about the address, not about the
-    // plan. Sending it through Resend anyway is how a sender reaches a blocklist,
-    // so this refusal has to be terminal rather than a reason to try harder.
-    const stub = {
-      ...env,
-      EMAIL: {
-        send: async () => {
-          const err = new Error('Recipient is suppressed.') as Error & { code?: string };
-          err.code = 'E_RECIPIENT_SUPPRESSED';
-          throw err;
-        },
-      },
-      RESEND_API_KEY: 'test-key-should-not-be-used',
-    } as unknown as Parameters<typeof sendMail>[0];
-
-    const outcome = await sendMail(stub, {
-      from: { email: 'no-reply@godwinausten.org' },
-      to: [{ email: 'bounced@example.test' }],
-      subject: 'suppressed',
-      text: 'body',
-    }, 'auto');
-
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.code).toBe('E_RECIPIENT_SUPPRESSED');
-    expect(outcome.suppressed).toBe(true);
-  });
-
-  it('falls back to Resend when Cloudflare refuses for any other reason', async () => {
-    const { sendMail } = await import('../src/email/transport');
-    const { env } = await import('cloudflare:test');
-
-    // The case this whole mechanism exists for: on the Free plan, a recipient that
-    // is not a verified destination. Whatever code that turns out to be, it must
-    // fall through rather than becoming a message nobody receives.
-    const stub = {
-      ...env,
-      EMAIL: {
-        send: async () => {
-          const err = new Error('Recipient is not a verified destination address.') as Error & { code?: string };
-          err.code = 'E_NOT_ALLOWED_ON_PLAN';
-          throw err;
-        },
-      },
-      // Unset, so the Resend path reports its console fallback — which is enough
-      // to prove control reached it without needing a real account.
-      RESEND_API_KEY: undefined,
-    } as unknown as Parameters<typeof sendMail>[0];
-
-    const outcome = await sendMail(stub, {
-      from: { email: 'sales@godwinausten.org' },
-      to: [{ email: 'prospect@example.test' }],
-      subject: 'outreach',
-      text: 'body',
-    }, 'auto');
-
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.transport).toBe('console');
-  });
-
-  it('honours an explicit cloudflare pin and never falls through', async () => {
-    const { sendMail } = await import('../src/email/transport');
-    const { env } = await import('cloudflare:test');
-
-    // What the pin is for: a payroll or password-reset notice must not quietly
-    // route through a third party because the free path had a bad minute.
-    const stub = {
-      ...env,
-      EMAIL: {
-        send: async () => {
-          const err = new Error('nope') as Error & { code?: string };
-          err.code = 'E_NOT_ALLOWED_ON_PLAN';
-          throw err;
-        },
-      },
-      RESEND_API_KEY: 'test-key-should-not-be-used',
-    } as unknown as Parameters<typeof sendMail>[0];
-
-    const outcome = await sendMail(stub, {
-      from: { email: 'no-reply@godwinausten.org' },
-      to: [{ email: 'someone@example.test' }],
-      subject: 'pinned',
-      text: 'body',
-    }, 'cloudflare');
-
-    expect(outcome.ok).toBe(false);
-  });
-});
 
 describe('a reset link is not kept in the database', () => {
   it('sends the real link, then redacts the stored copy', async () => {
     const { env } = await import('cloudflare:test');
     const { dispatch } = await import('../src/email/events');
 
-    await env.DB.prepare(
-      "UPDATE users_logins SET recovery_email = 'someone@personal.example' WHERE id = 'u_mkt'",
-    ).run();
-
     const result = await dispatch(env, {
       event: 'password_reset',
-      to: [{ email: 'someone@personal.example' }],
-      values: { userName: 'Marketing', resetUrl: 'https://pleiades.test/reset?token=SECRETTOKEN', expiresAt: 'in 60 minutes' },
+      to: [{ email: 'delivered+someone@resend.dev' }],
+      values: {
+        userName: 'Marketing',
+        resetUrl: 'https://pleiades.test/reset?token=SECRETTOKEN',
+        expiresAt: 'in 10 minutes',
+      },
       idempotencyKey: 'redact-check',
       recipientUserId: 'u_mkt',
     });
@@ -951,14 +736,20 @@ describe('a reset link is not kept in the database', () => {
     const row = await env.DB.prepare('SELECT body_text, body_html FROM email_messages WHERE message_id = ?')
       .bind(result.messageId).first<{ body_text: string; body_html: string | null }>();
 
-    // The token is gone from the row. It was present while the transport read it —
-    // the first version of this redacted before the send and would have delivered
-    // the placeholder.
+    /**
+     * `utils/token.ts` stores only a hash of a reset token so that a database read
+     * yields nothing usable — and then the sent-mail row kept the rendered body with
+     * the working link in it. For the ten minutes that token is valid, the hash and a
+     * live copy of the secret it guards sat in the same database.
+     *
+     * The order matters and an earlier version got it wrong: redacting before the send
+     * would have delivered the placeholder, because `drainOne` reads the body back out
+     * of the row.
+     */
     expect(row!.body_text).not.toContain('SECRETTOKEN');
     expect(row!.body_text).toContain('redacted');
     expect(row!.body_html).toBeNull();
 
-    // And it was actually sent, not merely queued and blanked.
     const delivery = await env.DB.prepare('SELECT status FROM email_delivery WHERE message_id = ?')
       .bind(result.messageId).first<{ status: string }>();
     expect(delivery!.status).toBe('sent');
@@ -969,8 +760,11 @@ describe('a reset link is not kept in the database', () => {
     const { dispatch } = await import('../src/email/events');
     const result = await dispatch(env, {
       event: 'task_assigned',
-      to: [{ email: 'staffer@example.test' }],
-      values: { assigneeName: 'Staffer', taskTitle: 'Write the brief', department: 'Acquisition', dueDate: 'Friday', taskUrl: 'https://pleiades.test/acquisition' },
+      to: [{ email: 'delivered+staffer@resend.dev' }],
+      values: {
+        assigneeName: 'Staffer', taskTitle: 'Write the brief', department: 'Acquisition',
+        dueDate: 'Friday', taskUrl: 'https://pleiades.test/acquisition',
+      },
       idempotencyKey: 'no-redact-check',
     });
     expect(result.sent).toBe(true);

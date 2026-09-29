@@ -99,7 +99,7 @@ describe('app mailboxes follow <app>/email', () => {
     expect(await readMessages('tech', BOX.hr)).toBe(200);
     const res = await send('tech', {
       mailboxId: BOX.hr,
-      to: ['someone@example.test'],
+      to: ['delivered+someone@resend.dev'],
       subject: 'no',
       text: 'no',
     });
@@ -109,7 +109,7 @@ describe('app mailboxes follow <app>/email', () => {
   it('edit on the app grant sends', async () => {
     const res = await send('mkt', {
       mailboxId: BOX.acq,
-      to: ['prospect@example.test'],
+      to: ['delivered+prospect@resend.dev'],
       subject: 'hello',
       text: 'hello',
     });
@@ -156,7 +156,7 @@ describe('the system mailbox is not a mailbox anybody can use', () => {
     // automated. A person being able to send one is the impersonation risk.
     const res = await send('mailAdmin', {
       mailboxId: BOX.system,
-      to: ['someone@example.test'],
+      to: ['delivered+someone@resend.dev'],
       subject: 'from the system',
       text: 'trust me',
     });
@@ -197,7 +197,7 @@ describe('the From address cannot come from the request', () => {
       mailboxId: BOX.acq,
       from: 'ceo@godwinausten.org',
       fromAddress: 'ceo@godwinausten.org',
-      to: ['prospect2@example.test'],
+      to: ['delivered+prospect2@resend.dev'],
       subject: 'forged',
       text: 'forged',
       idempotencyKey: 'forge-test',
@@ -217,7 +217,7 @@ describe('the From address cannot come from the request', () => {
   it('refuses a mailbox the caller does not hold, even a real one', async () => {
     const res = await send('mkt', {
       mailboxId: BOX.hr,
-      to: ['someone@example.test'],
+      to: ['delivered+someone@resend.dev'],
       subject: 'as HR',
       text: 'as HR',
     });
@@ -265,8 +265,8 @@ describe('a department with several mailboxes', () => {
     // HR really does need two: hr@ for internal matters and jobs@ for applicants,
     // and which one a reply comes from is part of writing it.
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO mailboxes (mailbox_id,address,display_name,kind,app_name,transport,daily_send_cap,is_active,created_at,updated_at) " +
-      "VALUES ('mbx_jobs','jobs@godwinausten.org','Careers','app','hr','auto',40,1,0,0)",
+      "INSERT OR IGNORE INTO mailboxes (mailbox_id,address,display_name,kind,app_name,daily_send_cap,is_active,created_at,updated_at) " +
+      "VALUES ('mbx_jobs','jobs@godwinausten.org','Careers','app','hr',40,1,0,0)",
     ).run();
     // u_tech holds hr/email at view only.
     await env.DB.prepare(
@@ -295,7 +295,7 @@ describe('a department with several mailboxes', () => {
         headers: { Authorization: `Bearer ${await tokenFor('tech')}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mailboxId,
-          to: ['candidate@example.test'],
+          to: ['delivered+candidate@resend.dev'],
           subject: 'from two senders',
           text: 'body',
           idempotencyKey: `two-senders-${mailboxId}`,
@@ -311,7 +311,7 @@ describe('a department with several mailboxes', () => {
     const res = await SELF.fetch('https://test.local/api/email/send', {
       method: 'POST',
       headers: { Authorization: `Bearer ${await tokenFor('tech')}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mailboxId: 'mbx_acq', to: ['x@example.test'], subject: 'x', text: 'x' }),
+      body: JSON.stringify({ mailboxId: 'mbx_acq', to: ['delivered+x@resend.dev'], subject: 'x', text: 'x' }),
     });
     expect(res.status).toBe(403);
   });

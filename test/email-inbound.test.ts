@@ -159,7 +159,7 @@ describe('MIME: bodies', () => {
 });
 
 describe('spam scoring', () => {
-  const msg = (subject: string, text: string, from = 'stranger@example.test') =>
+  const msg = (subject: string, text: string, from = 'delivered+stranger@resend.dev') =>
     parseMessage(raw({ From: from, Subject: subject }, text));
 
   it('trusts a DMARC pass', () => {
@@ -228,30 +228,30 @@ beforeAll(async () => {
 
 describe('inbound delivery', () => {
   it('files a message into the addressed mailbox', async () => {
-    await deliver('hr@godwinausten.org', 'applicant@example.test', { Subject: 'Application' }, 'CV attached, thanks.');
+    await deliver('hr@godwinausten.org', 'delivered+applicant@resend.dev', { Subject: 'Application' }, 'CV attached, thanks.');
     const found = (await rows('mbx_hr')).find((r) => r.subject === 'Application');
     expect(found).toBeTruthy();
     expect(found!.folder).toBe('inbox');
-    expect(found!.from_address).toBe('applicant@example.test');
+    expect(found!.from_address).toBe('delivered+applicant@resend.dev');
     expect(found!.body_text).toContain('CV attached');
   });
 
   it('follows an alias one hop into its target', async () => {
     // info@ is an alias for hr@ in the fixture.
-    await deliver('info@godwinausten.org', 'curious@example.test', { Subject: 'Question' }, 'What do you do?');
+    await deliver('info@godwinausten.org', 'delivered+curious@resend.dev', { Subject: 'Question' }, 'What do you do?');
     const found = (await rows('mbx_hr')).find((r) => r.subject === 'Question');
     expect(found).toBeTruthy();
   });
 
   it('sends mail for an unknown address to the catch-all rather than bouncing', async () => {
     // A bounce tells a stranger which of our addresses exist.
-    await deliver('nobody-here@godwinausten.org', 'typo@example.test', { Subject: 'Mistyped' }, 'oops');
+    await deliver('nobody-here@godwinausten.org', 'delivered+typo@resend.dev', { Subject: 'Mistyped' }, 'oops');
     const found = (await rows('mbx_catchall')).find((r) => r.subject === 'Mistyped');
     expect(found).toBeTruthy();
   });
 
   it('discards mail addressed to the system mailbox', async () => {
-    await deliver('no-reply@godwinausten.org', 'chatty@example.test', { Subject: 'thanks!' }, 'ok');
+    await deliver('no-reply@godwinausten.org', 'delivered+chatty@resend.dev', { Subject: 'thanks!' }, 'ok');
     const found = (await rows('mbx_system')).find((r) => r.subject === 'thanks!');
     expect(found).toBeUndefined();
   });
@@ -270,7 +270,7 @@ describe('inbound delivery', () => {
 
     await deliver(
       'hr@godwinausten.org',
-      'candidate@example.test',
+      'delivered+candidate@resend.dev',
       { Subject: 'Re: Offer', 'In-Reply-To': '<offer-1@godwinausten.org>', References: '<offer-1@godwinausten.org>' },
       'I accept.',
     );
@@ -283,7 +283,7 @@ describe('inbound delivery', () => {
   it('files an unmatchable message rather than dropping it', async () => {
     await deliver(
       'hr@godwinausten.org',
-      'ghost@example.test',
+      'delivered+ghost@resend.dev',
       { Subject: 'Out of nowhere', 'In-Reply-To': '<never-sent@elsewhere.test>' },
       'no thread for this',
     );
@@ -310,7 +310,7 @@ describe('inbound delivery', () => {
   it('stores an unparseable message rather than losing it', async () => {
     const { env } = await import('cloudflare:test');
     const { handleInbound } = await import('../src/email/inbound');
-    await handleInbound(fakeMessage('hr@godwinausten.org', 'odd@example.test', 'not a message at all'), env);
+    await handleInbound(fakeMessage('hr@godwinausten.org', 'delivered+odd@resend.dev', 'not a message at all'), env);
     const all = await rows('mbx_hr');
     // It lands with the raw text as its body: a message that arrived and could not
     // be read is still a message that arrived.
@@ -351,15 +351,15 @@ describe('the Free plan CPU budget', () => {
     // the raw message in R2 with no row behind it — received, stored, and
     // invisible. A placeholder row is strictly better than that gamble.
     const huge = raw(
-      { From: 'bulk@example.test', To: 'hr@godwinausten.org', Subject: 'Big attachment' },
+      { From: 'delivered+bulk@resend.dev', To: 'hr@godwinausten.org', Subject: 'Big attachment' },
       'x'.repeat(700 * 1024),
     );
-    await handleInbound(fakeMessage('hr@godwinausten.org', 'bulk@example.test', huge), env);
+    await handleInbound(fakeMessage('hr@godwinausten.org', 'delivered+bulk@resend.dev', huge), env);
 
     const found = (await rows('mbx_hr')).find((r) => r.subject === 'Big attachment');
     expect(found).toBeTruthy();
     expect(found!.body_text).toContain('too large to render');
     // The headers were still read, so authentication and threading are intact.
-    expect(found!.from_address).toBe('bulk@example.test');
+    expect(found!.from_address).toBe('delivered+bulk@resend.dev');
   });
 });

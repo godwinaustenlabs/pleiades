@@ -42,8 +42,6 @@
     200 ok data=array<empty>
 /api/admin/audit-logs
     200 ok data=array<empty>
-/api/admin/pending-resets
-    200 ok data=array<empty>
 /api/admin/permissions
     200 ok data=array<empty>
 /api/admin/users
@@ -113,7 +111,7 @@
 /api/email/automations
     200 ok data={events,recentFailures,sender}
 /api/email/mailboxes
-    200 ok data=array<{address,appName,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,transport,updatedAt}>
+    200 ok data=array<{address,appName,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,updatedAt}>
 /api/email/mailboxes/:id/grants
     200 ok data=array<empty>
 /api/email/mailboxes/:id/messages
@@ -121,7 +119,7 @@
 /api/email/messages/:id
     404 err="Message not found"
 /api/email/mine
-    200 ok data=array<{address,appName,canBulk,canSend,displayName,id,isActive,kind,transport}>
+    200 ok data=array<{address,appName,canBulk,canSend,displayName,id,isActive,kind}>
 /api/email/prefs
     200 ok data=array<{changeable,description,enabled,key,kind}>
 /api/email/templates

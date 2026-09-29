@@ -167,7 +167,7 @@ describe('reading somebody else’s mail by guessing', () => {
     const { env } = await import('cloudflare:test');
     await env.DB.prepare(
       "INSERT INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, is_read, is_starred, created_at) " +
-      "VALUES ('eml_secret','mbx_payroll','inbound','inbox','someone@example.test','[]','Salary query','confidential',0,0,0)",
+      "VALUES ('eml_secret','mbx_payroll','inbound','inbox','delivered+someone@resend.dev','[]','Salary query','confidential',0,0,0)",
     ).run();
 
     // u_tech holds hr/email and mbx_payroll is an hr mailbox — only the
@@ -234,7 +234,7 @@ describe('sending as somebody you are not', () => {
         fromAddress: 'ceo@godwinausten.org',
         fromName: 'The CEO',
         sender: 'ceo@godwinausten.org',
-        to: ['target@example.test'],
+        to: ['delivered+target@resend.dev'],
         subject: 'spoof attempt',
         text: 'body',
         idempotencyKey: 'spoof-1',
@@ -252,7 +252,7 @@ describe('sending as somebody you are not', () => {
     for (const user of ['mkt', 'mailAdmin', 'crm'] as FixtureUser[]) {
       const res = await AS(user, '/api/email/send', {
         method: 'POST',
-        body: JSON.stringify({ mailboxId: 'mbx_system', to: ['x@example.test'], subject: 'x', text: 'x' }),
+        body: JSON.stringify({ mailboxId: 'mbx_system', to: ['delivered+x@resend.dev'], subject: 'x', text: 'x' }),
       });
       expect(res.status).toBe(403);
     }
@@ -266,7 +266,7 @@ describe('sending as somebody you are not', () => {
     await AS('mkt', '/api/email/send', {
       method: 'POST',
       body: JSON.stringify({
-        mailboxId: 'mbx_acq', to: ['x@example.test'], subject: 'collide', text: 'x',
+        mailboxId: 'mbx_acq', to: ['delivered+x@resend.dev'], subject: 'collide', text: 'x',
         idempotencyKey: 'task_assigned:task_victim:emp_victim',
       }),
     });
@@ -286,7 +286,7 @@ describe('injection', () => {
     // Bcc smuggled through a subject is invisible on the message we stored.
     const out = validate({
       from: { email: 'a@godwinausten.org' },
-      to: [{ email: 'b@example.test' }],
+      to: [{ email: 'delivered+b@resend.dev' }],
       subject: 'ok',
       text: 'body',
     });
@@ -406,7 +406,7 @@ describe('password recovery cannot be turned into a way in', () => {
   it('accepts an external recovery address', async () => {
     const res = await AS('ceo', '/api/admin/users/u_none', {
       method: 'PATCH',
-      body: JSON.stringify({ recoveryEmail: 'someone@personal.example' }),
+      body: JSON.stringify({ recoveryEmail: 'delivered+someone@resend.dev' }),
     });
     expect(res.status).toBe(200);
   });
@@ -462,7 +462,7 @@ describe('quota cannot be bypassed', () => {
     await env.DB.prepare("UPDATE mailboxes SET is_active = 0 WHERE mailbox_id = 'mbx_acq'").run();
     const res = await AS('mkt', '/api/email/send', {
       method: 'POST',
-      body: JSON.stringify({ mailboxId: 'mbx_acq', to: ['x@example.test'], subject: 'x', text: 'x' }),
+      body: JSON.stringify({ mailboxId: 'mbx_acq', to: ['delivered+x@resend.dev'], subject: 'x', text: 'x' }),
     });
     expect(res.status).toBe(403);
     await env.DB.prepare("UPDATE mailboxes SET is_active = 1 WHERE mailbox_id = 'mbx_acq'").run();
@@ -474,9 +474,9 @@ describe('quota cannot be bypassed', () => {
       method: 'POST',
       body: JSON.stringify({
         mailboxId: 'mbx_acq',
-        to: ['a@example.test'],
-        cc: ['b@example.test', 'c@example.test', 'd@example.test', 'e@example.test'],
-        bcc: ['f@example.test', 'g@example.test', 'h@example.test', 'i@example.test', 'j@example.test', 'k@example.test'],
+        to: ['delivered+a@resend.dev'],
+        cc: ['delivered+b@resend.dev', 'delivered+c@resend.dev', 'delivered+d@resend.dev', 'delivered+e@resend.dev'],
+        bcc: ['delivered+f@resend.dev', 'delivered+g@resend.dev', 'delivered+h@resend.dev', 'delivered+i@resend.dev', 'delivered+j@resend.dev', 'delivered+k@resend.dev'],
         subject: 'bulk via bcc', text: 'x',
       }),
     });
@@ -490,7 +490,7 @@ describe('read-only really is read-only', () => {
     await env.DB.prepare("UPDATE user_app_permissions SET can_edit = 0 WHERE id = 'uap_u_tech_hr_email'").run();
     await env.DB.prepare(
       "INSERT OR IGNORE INTO email_messages (message_id, mailbox_id, direction, folder, from_address, to_addresses, subject, body_text, is_read, is_starred, created_at) " +
-      "VALUES ('eml_hrmail','mbx_hr','inbound','inbox','client@example.test','[]','Contract','text',0,0,0)",
+      "VALUES ('eml_hrmail','mbx_hr','inbound','inbox','delivered+client@resend.dev','[]','Contract','text',0,0,0)",
     ).run();
 
     const res = await AS('tech', '/api/email/messages/eml_hrmail', {
@@ -539,7 +539,7 @@ describe('the system templates are not a phishing kit', () => {
     const res = await AS('ceo', '/api/email/send', {
       method: 'POST',
       body: JSON.stringify({
-        mailboxId: 'mbx_hr', to: ['x@example.test'], templateKey: 'password_reset',
+        mailboxId: 'mbx_hr', to: ['delivered+x@resend.dev'], templateKey: 'password_reset',
         values: { userName: 'x', resetUrl: 'https://evil.example', expiresAt: 'soon' },
       }),
     });
@@ -575,25 +575,34 @@ describe('admin grants cannot be walked up to superadmin', () => {
     await env.DB.prepare("UPDATE users_logins SET is_superadmin = 0 WHERE id = 'u_mail'").run();
   });
 
-  it('refuses to approve a superadmin’s reset at all, so no token is minted', async () => {
-    const { SELF, env } = await import('cloudflare:test');
-    await env.DB.prepare(
-      "INSERT OR IGNORE INTO password_reset_tokens (id, user_id, token_hash, requested_at, expires_at, status) " +
-      "VALUES ('rst_super','u_ceo','deadbeef',0,?, 'pending')",
-    ).bind(Math.floor(Date.now() / 1000) + 86400).run();
+  it('refuses to issue a reset link for a superadmin, so no token is minted', async () => {
+    const { env } = await import('cloudflare:test');
+    const { issueResetLink } = await import('../src/email/password-reset');
 
-    const res = await SELF.fetch('https://test.local/api/admin/pending-resets/rst_super/approve', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${await tokenFor('ceo')}`, 'Content-Type': 'application/json' },
-      body: '{}',
+    /**
+     * The approval queue this used to test is gone — reset is self-service now. That
+     * REMOVED a permission from the escalation chain rather than adding one: it used to
+     * take admin/users edit (to point the recovery address at yourself) plus
+     * admin/resets edit (to approve), and now it takes only the first. So this guard
+     * matters more than it did, not less.
+     */
+    const before = await env.DB.prepare('SELECT count(*) AS n FROM password_reset_tokens').first<{ n: number }>();
+
+    const outcome = await issueResetLink(env, {
+      id: 'u_ceo',
+      name: 'CEO',
+      email: 'u_ceo@test.local',
+      recoveryEmail: 'attacker@gmail.example',
+      isActive: true,
+      isSuperadmin: true,
     });
-    expect(res.status).toBe(403);
 
-    const row = await env.DB.prepare("SELECT status, token_hash FROM password_reset_tokens WHERE id = 'rst_super'")
-      .first<{ status: string; token_hash: string }>();
-    // Still pending, and the hash is untouched — nothing was minted or delivered.
-    expect(row!.status).toBe('pending');
-    expect(row!.token_hash).toBe('deadbeef');
+    expect(outcome.sent).toBe(false);
+    if (!outcome.sent) expect(outcome.reason).toContain('Superadmin');
+
+    // Nothing minted at all — not an expired token, not a used one.
+    const after = await env.DB.prepare('SELECT count(*) AS n FROM password_reset_tokens').first<{ n: number }>();
+    expect(Number(after!.n)).toBe(Number(before!.n));
   });
 });
 
@@ -607,7 +616,7 @@ describe('recipient counting cannot be evaded', () => {
       headers: { Authorization: `Bearer ${await tokenFor('mkt')}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mailboxId: 'mbx_acq',
-        to: ['a@example.test, b@example.test, c@example.test'],
+        to: ['delivered+a@resend.dev, delivered+b@resend.dev, delivered+c@resend.dev'],
         subject: 'packed', text: 'x', idempotencyKey: 'packed-1',
       }),
     });
@@ -619,12 +628,180 @@ describe('recipient counting cannot be evaded', () => {
   });
 
   it('rejects an address carrying angle brackets or whitespace', async () => {
-    for (const addr of ['Name <a@example.test>', 'a@example.test b@example.test', 'a@b@example.test']) {
+    for (const addr of ['Name <delivered+a@resend.dev>', 'delivered+a@resend.dev delivered+b@resend.dev', 'a@delivered+b@resend.dev']) {
       const res = await AS('mkt', '/api/email/send', {
         method: 'POST',
         body: JSON.stringify({ mailboxId: 'mbx_acq', to: [addr], subject: 'x', text: 'x' }),
       });
       expect(res.status).toBe(400);
+    }
+  });
+});
+
+describe('self-service password reset', () => {
+  const request = async (identifier: string) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch('https://test.local/api/auth/request-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier }),
+    });
+  };
+
+  const tokensFor = async (userId: string) => {
+    const { env } = await import('cloudflare:test');
+    const { results } = await env.DB.prepare(
+      'SELECT id, status, requested_at, expires_at FROM password_reset_tokens WHERE user_id = ? ORDER BY requested_at DESC',
+    ).bind(userId).all<{ id: string; status: string; requested_at: number; expires_at: number }>();
+    return results;
+  };
+
+  it('accepts either an email or a username', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare(
+      "UPDATE users_logins SET recovery_email = 'delivered+crm-personal@resend.dev' WHERE id = 'u_crm'",
+    ).run();
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+
+    // Somebody locked out should not have to remember which of the two they used.
+    const byEmail = await request('u_crm@test.local');
+    expect(byEmail.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await tokensFor('u_crm')).length).toBe(1);
+
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+    const byUsername = await request('u_crm');
+    expect(byUsername.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await tokensFor('u_crm')).length).toBe(1);
+  });
+
+  it('issues a link with no approval step, usable immediately', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+    await request('u_crm');
+    await new Promise((r) => setTimeout(r, 200));
+
+    const [row] = await tokensFor('u_crm');
+    expect(row).toBeTruthy();
+    /**
+     * `approved` with no approver is what self-service means in this table, and it is
+     * what `complete-reset` accepts. The null approved_by_user_id is what tells these
+     * rows apart from the ones a human signed off under the old flow.
+     */
+    expect(row.status).toBe('approved');
+    const approver = await env.DB.prepare(
+      'SELECT approved_by_user_id FROM password_reset_tokens WHERE id = ?',
+    ).bind(row.id).first<{ approved_by_user_id: string | null }>();
+    expect(approver!.approved_by_user_id).toBeNull();
+  });
+
+  it('expires the link in 10 minutes', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+    await request('u_crm');
+    await new Promise((r) => setTimeout(r, 200));
+
+    const [row] = await tokensFor('u_crm');
+    const minutes = (row.expires_at - row.requested_at) / 60;
+    expect(minutes).toBeGreaterThan(9);
+    expect(minutes).toBeLessThanOrEqual(10);
+  });
+
+  it('supersedes the previous link rather than stacking them', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+
+    await request('u_crm');
+    await new Promise((r) => setTimeout(r, 150));
+    await request('u_crm');
+    await new Promise((r) => setTimeout(r, 200));
+
+    const rows = await tokensFor('u_crm');
+    // Exactly one usable link however many times it is asked for. This is also what
+    // makes a low rate limit safe: a second request never rescues a lost first one.
+    expect(rows.filter((r) => r.status === 'approved').length).toBe(1);
+    expect(rows.filter((r) => r.status === 'expired').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('stops after three requests in an hour', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+
+    for (let i = 0; i < 5; i += 1) {
+      await request('u_crm');
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    // HR approval used to be what stopped a stranger pointing this at a colleague's
+    // inbox. The rate limit is what replaced it.
+    expect((await tokensFor('u_crm')).length).toBeLessThanOrEqual(3);
+  });
+
+  it('answers identically for an unknown account, a superadmin and a real one', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+
+    const real = await request('u_crm');
+    const unknown = await request('nobody-at-all@nowhere.example');
+    const superadmin = await request('u_ceo@test.local');
+
+    const bodies = await Promise.all([real.text(), unknown.text(), superadmin.text()]);
+    // The only thing standing between this endpoint and a list of valid staff
+    // addresses. Byte-identical, not merely the same shape.
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies[2]).toBe(bodies[0]);
+    expect(real.status).toBe(unknown.status);
+
+    await new Promise((r) => setTimeout(r, 200));
+    // And the superadmin really did get nothing.
+    expect((await tokensFor('u_ceo')).length).toBe(0);
+  });
+
+  it('will not send to an address this system hosts the mail for', async () => {
+    const { env } = await import('cloudflare:test');
+    const { resetDestination } = await import('../src/email/password-reset');
+
+    // A reset sent to a Pleiades-hosted mailbox tells a locked-out person to log in to
+    // read the email that lets them log in.
+    const hosted = resetDestination({ email: 'someone@godwinausten.org', recoveryEmail: null });
+    expect('problem' in hosted).toBe(true);
+
+    // An external login address needs no recovery address at all — which is six of the
+    // nine accounts in production.
+    const external = resetDestination({ email: 'someone@exaverse.site', recoveryEmail: null });
+    expect(external).toEqual({ address: 'someone@exaverse.site' });
+
+    // And a recovery address wins when one is set.
+    const recovered = resetDestination({ email: 'someone@godwinausten.org', recoveryEmail: 'delivered+me@resend.dev' });
+    expect(recovered).toEqual({ address: 'delivered+me@resend.dev' });
+  });
+
+  it('mints nothing for an account with nowhere to send', async () => {
+    const { env } = await import('cloudflare:test');
+    await env.DB.prepare('DELETE FROM password_reset_tokens').run();
+    // u_none has no recovery address and a @test.local login, which is not hosted here,
+    // so it CAN receive — use a hosted address to exercise the refusal.
+    await env.DB.prepare(
+      "UPDATE users_logins SET email = 'stuck@godwinausten.org', recovery_email = NULL WHERE id = 'u_none'",
+    ).run();
+
+    const res = await request('stuck@godwinausten.org');
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await tokensFor('u_none')).length).toBe(0);
+
+    await env.DB.prepare("UPDATE users_logins SET email = 'u_none@test.local' WHERE id = 'u_none'").run();
+  });
+
+  it('has no approval queue left to call', async () => {
+    const { SELF } = await import('cloudflare:test');
+    for (const path of ['/api/admin/pending-resets', '/api/admin/pending-resets/x/approve']) {
+      const res = await SELF.fetch(`https://test.local${path}`, {
+        method: path.endsWith('approve') ? 'POST' : 'GET',
+        headers: { Authorization: `Bearer ${await tokenFor('ceo')}` },
+      });
+      // Gone, not merely unreachable — even for a superadmin.
+      expect(res.status).toBe(404);
     }
   });
 });

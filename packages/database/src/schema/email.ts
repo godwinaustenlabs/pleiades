@@ -41,30 +41,13 @@ export const mailboxes = sqliteTable('mailboxes', {
   appName: text('app_name'),
   forwardsToMailboxId: text('forwards_to_mailbox_id').references((): AnySQLiteColumn => mailboxes.id),
   /**
-   * Which service this mailbox sends through — `auto` | `cloudflare` | `resend`.
-   *
-   * `auto` is the default and decides per message: the free Cloudflare path first,
-   * Resend when it refuses. The two explicit values are overrides — `cloudflare`
-   * for a mailbox that must never route through a third party, `resend` for one
-   * that must never risk a refusal.
-   *
-   * Two transports because the account is on the Workers Free plan, where the
-   * `EMAIL` binding reaches verified destination addresses only: free for staff,
-   * refused for every prospect. So transactional mail goes via Cloudflare and
-   * anything addressed outside the company goes via Resend.
-   *
-   * A stored column rather than a rule inferred from the address, so it is visible
-   * where mailboxes are created and can carry an exception.
-   */
-  transport: text('transport').notNull().default('auto'),
-  /**
    * Counted from email_delivery per mailbox per UTC day. Exceeding it fails the
    * enqueue with a 400 — a send that is refused loudly is recoverable, one
    * dropped quietly is not.
    *
-   * Not the only cap on a Resend mailbox: Resend's free tier limits the whole
-   * ACCOUNT to 100 a day, which no per-mailbox number can express, so
-   * `outbox.enqueue` checks RESEND_DAILY_CAP across every Resend mailbox too.
+   * Not the only cap: Resend's free tier limits the whole ACCOUNT to 100 a day,
+   * which no per-mailbox number can express, so `outbox.enqueue` checks
+   * RESEND_DAILY_CAP across every mailbox as well.
    */
   dailySendCap: integer('daily_send_cap').notNull().default(200),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
@@ -187,23 +170,13 @@ export const emailDelivery = sqliteTable('email_delivery', {
   errorCode: text('error_code'),
   errorMessage: text('error_message'),
   /**
-   * Which service actually sent it, as opposed to which the mailbox is set to.
+   * What carried it — `resend`, or `console` when no API key was configured.
    *
-   * With `auto` in play these differ, and the difference is what the quota is
-   * counted from: what matters is how many messages really went through Resend
-   * today, not how many mailboxes are configured for it.
+   * Kept even though there is only one provider, because it is set ONLY on success
+   * and is therefore what the daily cap counts. A cap counting all delivery rows
+   * would charge quota for messages that never reached Resend at all.
    */
   transport: text('transport'),
-  /**
-   * Pins this one message's transport, overriding `mailboxes.transport`.
-   *
-   * Set by `dispatch` for `sensitive` events, so that whether a third party may
-   * carry a message is a property of the event and not of the mailbox — a reset
-   * link is pinned to Cloudflare and allowed to fail, while an ordinary
-   * notification from the same mailbox falls back to Resend so that it arrives.
-   * Null means "use the mailbox's setting".
-   */
-  transportOverride: text('transport_override'),
   idempotencyKey: text('idempotency_key').notNull().unique(),
   queuedAt: integer('queued_at', { mode: 'timestamp' }).notNull(),
   sentAt: integer('sent_at', { mode: 'timestamp' }),

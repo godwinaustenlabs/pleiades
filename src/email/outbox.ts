@@ -2,7 +2,7 @@ import { and, asc, eq, gte, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
-import { Addr, RESEND_DAILY_CAP, sendMail, TransportChoice } from './transport';
+import { Addr, RESEND_DAILY_CAP, sendMail } from './transport';
 import { loadMailbox } from './mailboxes';
 
 /**
@@ -55,15 +55,6 @@ export type EnqueueRequest = {
   scheduledFor?: Date;
   /** null for a system/cron send — there is genuinely no actor. */
   actorUserId?: string | null;
-  /**
-   * Overrides `mailboxes.transport` for this one message.
-   *
-   * Used only by `dispatch`, so that whether a third party may carry a message is a
-   * property of the EVENT rather than of the mailbox: a reset link is pinned to the
-   * Cloudflare path and allowed to fail, while an ordinary notification from the
-   * same mailbox falls back to Resend so that it arrives.
-   */
-  transport?: TransportChoice;
 };
 
 export type EnqueueResult =
@@ -151,16 +142,11 @@ export async function enqueue(env: Env, req: EnqueueRequest): Promise<EnqueueRes
    * transactional mail goes that way.
    */
   /**
-   * Checked here only when Resend is certain.
-   *
-   * Under `auto` the message may well go out free on the Cloudflare path, so
-   * refusing it up front would reject sends that were never going to cost anything
-   * — which is what happened the moment `mbx_system` became `auto`. The cap for an
-   * `auto` message is enforced at the point it actually matters, in `drainOne`,
-   * immediately before the fallback.
+   * The account-wide cap, which now applies to every message because every message
+   * goes through Resend. It was conditional while there were two providers and a
+   * send might have been carried free.
    */
-  const certainlyResend = (req.transport ?? box.transport) === 'resend';
-  if (certainlyResend) {
+  {
     // Counted from what actually went through Resend, not from how mailboxes are
     // configured. Under `auto` those differ by definition, and the configured
     // number would over-count every internal message the free path carried.
@@ -212,7 +198,6 @@ export async function enqueue(env: Env, req: EnqueueRequest): Promise<EnqueueRes
       nextAttemptAt: null,
       scheduledFor: req.scheduledFor ?? null,
       idempotencyKey: req.idempotencyKey,
-      transportOverride: req.transport ?? null,
       queuedAt: now,
     });
   } catch (err) {
@@ -246,7 +231,7 @@ export async function enqueue(env: Env, req: EnqueueRequest): Promise<EnqueueRes
  * from both sending the same message — the unique key prevents two *rows*, this
  * prevents two *attempts* on one row.
  */
-export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'failed' | 'suppressed' | 'skipped'> {
+export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'failed' | 'skipped'> {
   const db = getDb(env);
 
   const now = Date.now();
@@ -280,44 +265,6 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
   const box = await loadMailbox(env, row.mailboxId);
   const from: Addr = { email: row.fromAddress, ...(row.fromName ? { name: row.fromName } : {}) };
 
-  // The mailbox decides the service, and `auto` means "decide per message" — see
-  // sendMail. A mailbox deleted between the enqueue and the send gets `auto`,
-  // which can still reach anybody; guessing `cloudflare` would be the one that
-  // silently cannot.
-  let via = (delivery.transportOverride as TransportChoice | null)
-    ?? (box?.transport as TransportChoice | undefined)
-    ?? 'auto';
-
-  /**
-   * With the day's Resend allowance gone, `auto` becomes Cloudflare-only.
-   *
-   * This is where the account cap belongs for an `auto` message: at the enqueue we
-   * did not yet know whether Resend would be involved, and refusing there rejected
-   * sends that the free path would have carried for nothing. Here we are about to
-   * find out, so the check is exact.
-   *
-   * Degrading rather than refusing outright is deliberate: the message may still go
-   * out free to a verified destination. If it cannot, it fails with Cloudflare's own
-   * reason recorded on the row, which is more use than "quota exhausted" on a
-   * message that never needed the quota.
-   */
-  if (via === 'auto') {
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.emailDelivery)
-      .where(and(
-        eq(schema.emailDelivery.transport, 'resend'),
-        gte(schema.emailDelivery.queuedAt, startOfUtcDay()),
-      ));
-    if (Number(count) >= RESEND_DAILY_CAP) {
-      console.warn(
-        `[email] ${messageId}: the day's Resend allowance (${RESEND_DAILY_CAP}) is spent, so this will only go out if ` +
-        'the recipient is a verified destination on the free path.',
-      );
-      via = 'cloudflare';
-    }
-  }
-
   const outcome = await sendMail(env, {
     from,
     to: JSON.parse(row.toAddresses) as Addr[],
@@ -326,7 +273,7 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
     subject: row.subject ?? '',
     text: row.bodyText,
     ...(row.bodyHtml ? { html: row.bodyHtml } : {}),
-  }, via);
+  });
 
   if (outcome.ok) {
     await db.update(schema.emailDelivery)
@@ -350,11 +297,11 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
   }
 
   const attempts = delivery.attempts + 1;
-  const terminal = outcome.suppressed || !outcome.retryable || attempts >= MAX_ATTEMPTS;
+  const terminal = !outcome.retryable || attempts >= MAX_ATTEMPTS;
 
   await db.update(schema.emailDelivery)
     .set({
-      status: outcome.suppressed ? 'suppressed' : 'failed',
+      status: 'failed',
       attempts,
       // Null on a terminal failure is load-bearing: it is what excludes the row
       // from the sweep above. Do not "tidy" it to a date.
@@ -365,12 +312,12 @@ export async function drainOne(env: Env, messageId: string): Promise<'sent' | 'f
     .where(eq(schema.emailDelivery.messageId, messageId));
 
   console.error(
-    `[email] ${messageId} ${outcome.suppressed ? 'suppressed' : 'failed'} (${outcome.code}) attempt ${attempts}` +
+    `[email] ${messageId} failed (${outcome.code}) attempt ${attempts}` +
     `${terminal ? ', giving up' : `, retrying after ${backoffFrom(attempts).toISOString()}`}: ${outcome.message}` +
     `${box ? ` from=${box.address}` : ''}`,
   );
 
-  return outcome.suppressed ? 'suppressed' : 'failed';
+  return 'failed';
 }
 
 /**

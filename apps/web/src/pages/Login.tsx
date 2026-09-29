@@ -27,7 +27,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       await fetch(`${API}/auth/request-reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: identifier.trim() }),
+        body: JSON.stringify({ identifier: identifier.trim() }),
       });
       // Shown whatever the server said. The endpoint answers identically for an
       // address that exists and one that does not — branching on the response here
@@ -177,10 +177,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
             <div className="mt-4 flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-[11px] leading-relaxed text-success">
               <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                If an account exists for that address, the request has gone to your HR manager for
-                approval. Once they approve it, a link to choose a new password arrives at your
-                recovery address — not at your work address, which you cannot reach if you are
-                locked out.
+                If that account exists, a link to choose a new password is on its way. It expires in
+                10 minutes, and asking again replaces it rather than sending a second one. Your
+                current password keeps working until you set a new one.
               </span>
             </div>
           ) : (

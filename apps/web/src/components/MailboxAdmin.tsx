@@ -24,7 +24,6 @@ interface Mailbox {
   ownerUserId: string | null;
   appName: string | null;
   forwardsToMailboxId: string | null;
-  transport: 'auto' | 'cloudflare' | 'resend';
   dailySendCap: number;
   isActive: boolean;
 }
@@ -91,7 +90,6 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
     ownerUserId: '',
     appName: apps[0] ?? '',
     forwardsToMailboxId: '',
-    transport: 'auto' as Mailbox['transport'],
     dailySendCap: '40',
   });
 
@@ -120,7 +118,6 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
         // only produce a 400 they could not act on.
         address: `${form.localPart.trim().toLowerCase()}@godwinausten.org`,
         kind: form.kind,
-        transport: form.transport,
         displayName: form.displayName.trim() || null,
         dailySendCap: Number(form.dailySendCap) || 200,
       };
@@ -310,26 +307,6 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
             </label>
 
             <label className="block">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-textSecondary mb-1">Sends via</span>
-              <select
-                value={form.transport}
-                onChange={(e) => setForm({ ...form, transport: e.target.value as Mailbox['transport'] })}
-                className="w-full rounded border border-border bg-surface px-2 py-1.5 outline-none"
-              >
-                <option value="auto">Automatic — free path first</option>
-                <option value="resend">Resend only — always reaches anybody</option>
-                <option value="cloudflare">Cloudflare only — staff, never a third party</option>
-              </select>
-              <span className="mt-1 block text-[10px] leading-relaxed text-textSecondary">
-                {form.transport === 'auto'
-                  ? 'Tries Cloudflare first, which is free and uncapped but only delivers to staff addresses registered as verified destinations. Anything it refuses goes via Resend instead, so a message to a client still arrives and only that one costs allowance.'
-                  : form.transport === 'cloudflare'
-                    ? 'Never routes through a third party — right for payroll and password notices. On this plan it delivers only to verified destination addresses, so a message to a client is refused rather than sent.'
-                    : 'Always Resend. Reaches any address, and every message counts against the 90/day allowance shared by the whole account, including ones to colleagues that would have been free.'}
-              </span>
-            </label>
-
-            <label className="block">
               <span className="block text-[10px] font-bold uppercase tracking-wider text-textSecondary mb-1">
                 Daily send limit
               </span>
@@ -410,7 +387,6 @@ export default function MailboxAdmin({ apps, people, disabled = false }: Mailbox
                           {b.kind === 'catchall' && 'Anything addressed to nobody in particular'}
                           {b.kind === 'system' && 'Automated mail only — nobody can read or send as this'}
                           {b.dailySendCap > 0 && ` · ${b.dailySendCap}/day`}
-                          {` · ${b.transport === 'auto' ? 'free path, then Resend' : b.transport === 'cloudflare' ? 'Cloudflare only' : 'Resend only'}`}
                         </div>
                       </div>
 

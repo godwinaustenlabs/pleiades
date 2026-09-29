@@ -53,11 +53,6 @@ export const EMAIL_EVENTS: Record<string, EmailEvent> = {
     description: 'A reset request was approved; carries the single-use link. Goes to recovery_email only.',
     sensitive: true,
   },
-  reset_requested: {
-    key: 'reset_requested',
-    kind: 'transactional',
-    description: 'Tells HR a reset request is waiting, because nothing else did.',
-  },
 };
 
 /** The mailbox every automated message sends as. Seeded by migration 0038. */
@@ -143,37 +138,6 @@ export async function dispatch(env: Env, req: DispatchRequest): Promise<Dispatch
       eventKey: spec.key,
       ...(req.threadId ? { threadId: req.threadId } : {}),
       actorUserId: null,
-      /**
-       * Everything uses `auto`, including the reset link. That is a reversal, and the
-       * reasoning is worth keeping because the first two attempts were both wrong.
-       *
-       * Attempt one pinned `mbx_system` to `cloudflare`, so a payroll or reset notice
-       * could not traverse a third party. Production refused the very first send:
-       * on the Workers Free plan the Cloudflare path reaches only *verified
-       * destination addresses*, which are the external addresses Email Routing
-       * forwards TO — an own-domain recipient like `hr@godwinausten.org` cannot be
-       * one, so it came back E_RECIPIENT_NOT_ALLOWED and, being pinned, could not
-       * fall back.
-       *
-       * Attempt two moved the pin from the mailbox to the message, so only
-       * `sensitive` events forced Cloudflare. Better, and still broken: Cloudflare
-       * Email Sending is not verified on this account (`cf-bounce._domainkey`
-       * publishes an empty key), so the one event that was pinned to it was the one
-       * event that could never be delivered. A password reset that does not arrive is
-       * not a safer password reset.
-       *
-       * So the pin is gone and the reset link goes out through Resend like everything
-       * else. The trade is stated plainly rather than hidden: Resend sees the link,
-       * and a link that a third party saw for sixty minutes beats a colleague who
-       * cannot get back into their account. `sensitive` still governs REDACTION, which
-       * is the part that was always worth doing — the link does not linger in D1.
-       *
-       * To restore the pin later: complete the Email Sending onboarding so that DKIM
-       * key provisions, then set this back to
-       * `spec.sensitive ? 'cloudflare' : 'auto'`. Check `cf-bounce._domainkey` has a
-       * non-empty `p=` first, or the flow breaks again in exactly this way.
-       */
-      transport: 'auto',
     });
 
     if ('error' in queued) return { sent: false, reason: queued.error };
