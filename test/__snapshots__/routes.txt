@@ -109,6 +109,7 @@ POST   /api/core/employees
 DELETE /api/core/employees/:id
 GET    /api/core/employees/:id
 PATCH  /api/core/employees/:id
+GET    /api/core/employees/:id/impact
 GET    /api/core/labs
 POST   /api/core/labs
 DELETE /api/core/labs/:id
@@ -150,6 +151,7 @@ PATCH  /api/dashboard/notes/:id
 GET    /api/dashboard/preferences
 PATCH  /api/dashboard/preferences
 GET    /api/email/automations
+GET    /api/email/delivery-health
 GET    /api/email/drafts
 DELETE /api/email/drafts/:id
 PUT    /api/email/drafts/:id?
@@ -257,6 +259,7 @@ POST   /api/hr/appointments
 DELETE /api/hr/appointments/:id
 GET    /api/hr/appointments/:id
 PATCH  /api/hr/appointments/:id
+GET    /api/hr/appointments/:id/impact
 GET    /api/hr/assets
 POST   /api/hr/assets
 PATCH  /api/hr/assets/:id

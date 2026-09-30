@@ -379,3 +379,53 @@ describe('what it deliberately ignores', () => {
     expect((await post(body, await sign(body))).status).toBe(200);
   });
 });
+
+/**
+ * Delivery confirmation being switched off is a SILENT failure, and this is the pin
+ * for the thing that makes it visible.
+ *
+ * `status='sent'` is set locally when Resend accepts a message. Everything past it —
+ * delivered, bounced, complained — arrives only through this webhook, which refuses
+ * every request when `RESEND_WEBHOOK_SECRET` is unset. That refusal is correct, and
+ * from a mailbox it is indistinguishable from "no reply yet": messages sit on Sent
+ * forever and a hard bounce reads as a success.
+ *
+ * It happened in production. Three messages accepted by Resend, zero webhook events
+ * ever applied, because the secret was never set there.
+ */
+describe('GET /email/delivery-health', () => {
+  it('reports the webhook as configured and idle when nothing has been sent', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const { tokenFor } = await import('./helpers');
+    const res = await SELF.fetch('https://test.local/api/email/delivery-health', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    expect(res.status).toBe(200);
+    const { data } = await res.json() as any;
+    // vitest.config.mts pins a real signing secret, so the suite's answer is "set".
+    expect(data.configured).toBe(true);
+    expect(data.webhookUrl).toContain('/api/webhooks/resend');
+    // Nothing sent, so silence is not yet a problem worth shouting about.
+    expect(data.problem).toBeNull();
+  });
+
+  it('never returns the secret itself, only whether one exists', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const { tokenFor } = await import('./helpers');
+    const res = await SELF.fetch('https://test.local/api/email/delivery-health', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    const body = await res.text();
+    expect(body).not.toContain('whsec_');
+    expect(JSON.parse(body).data.configured).toBe(true);
+  });
+
+  it('is administration, not use — an ordinary mail user cannot read it', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const { tokenFor } = await import('./helpers');
+    const res = await SELF.fetch('https://test.local/api/email/delivery-health', {
+      headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});

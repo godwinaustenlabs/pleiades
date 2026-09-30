@@ -11,6 +11,7 @@ import GAGrid, { type Column } from '../components/GAGrid';
 import TaskBoard from '../components/TaskBoard';
 import AppointmentForm from '../components/AppointmentForm';
 import AccountForm from '../components/AccountForm';
+import DeleteWizard from '../components/DeleteWizard';
 import ProfileModal from '../components/ProfileModal';
 import EntityForm from '../components/EntityForm';
 import CropModal from '../components/CropModal';
@@ -56,6 +57,8 @@ function HR() {
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   /** The employee whose single login is being created or amended, if any. */
   const [accountFor, setAccountFor] = useState<{ id: string; name: string } | null>(null);
+  /** What is being deleted, if anything. The wizard fetches its own impact report. */
+  const [deleting, setDeleting] = useState<{ kind: 'appointment' | 'employee'; id: string; name: string } | null>(null);
   const [showPayrollForm, setShowPayrollForm] = useState(false);
   const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -307,32 +310,21 @@ function HR() {
     setShowAppointmentForm(true);
   };
 
+  /**
+   * Deleting opens the wizard rather than a `confirm()`.
+   *
+   * The old dialog said "this will PERMANENTLY DELETE this appointment. Are you sure?"
+   * and then the request failed with a foreign-key error whenever anything depended on
+   * it — so the warning was noise and the refusal was unactionable. The wizard shows
+   * the server's own impact report and offers the files first.
+   */
   const handleAppointmentDelete = async (record: any) => {
-    if (!confirm(`CRITICAL WARNING: This will PERMANENTLY DELETE this appointment. Are you sure?`)) return;
-    const res = await fetch(`${API}/hr/appointments/${record.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.status === 401) { handleLogout(); return; }
-    fetchAppointments();
+    setDeleting({ kind: 'appointment', id: record.id, name: record.roleOrTitle || 'this post' });
   };
 
+  /** Same wizard, the other subject — it lists their posts, assets and documents. */
   const handleEmployeeDelete = async (record: any) => {
-    if (!confirm(`CRITICAL WARNING: This will PERMANENTLY DELETE the employee "${record.name}". Are you sure? This action is IRREVERSIBLE.`)) return;
-    try {
-      const res = await fetch(`${API}/core/employees/${record.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.status === 401) { handleLogout(); return; }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to delete employee');
-      }
-      fetchEmployees();
-    } catch (err) {
-      alert(errorMessage(err, 'An error occurred during deletion.'));
-    }
+    setDeleting({ kind: 'employee', id: record.id, name: record.name });
   };
 
   const handlePayrollSubmit = async (data: any) => {
@@ -560,6 +552,22 @@ function HR() {
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save the appointment');
             setShowAppointmentForm(false);
             setEditingRecord(null);
+            fetchAppointments();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <DeleteWizard
+          kind={deleting.kind}
+          id={deleting.id}
+          name={deleting.name}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            // Both lists, whichever was deleted: removing an employee removes their
+            // posts too, so refreshing only one would leave the other showing rows
+            // that no longer exist.
+            fetchEmployees();
             fetchAppointments();
           }}
         />

@@ -42,6 +42,16 @@ export interface AppointmentOption {
 
 interface MailboxGrant { mailboxId: string; userId: string; canRead: boolean; canSend: boolean }
 
+/** Whether delivery confirmation is wired up. See GET /api/email/delivery-health. */
+interface DeliveryHealth {
+  configured: boolean;
+  receiving: boolean;
+  handedToProvider: number;
+  eventsApplied: number;
+  webhookUrl: string;
+  problem: string | null;
+}
+
 interface MailboxAdminProps {
   /** Apps that have an `email` feature, from the permission catalogue. */
   apps: string[];
@@ -100,6 +110,7 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
   const [saving, setSaving] = useState(false);
   /** The mailbox whose per-user access is open, if any. */
   const [editingAccess, setEditingAccess] = useState<Mailbox | null>(null);
+  const [health, setHealth] = useState<DeliveryHealth | null>(null);
 
   const [form, setForm] = useState({
     localPart: '',
@@ -126,6 +137,23 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Is delivery confirmation actually working?
+   *
+   * Surfaced here rather than left to the logs because the failure is invisible from
+   * a mailbox: with the webhook secret unset, every message stops at "Sent" and a
+   * hard bounce shows as a success. That is exactly what was happening in production,
+   * and nothing in the product said so.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API}/email/delivery-health`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : { data: null }))
+      .then((b) => { if (!cancelled) setHealth((b?.data as DeliveryHealth) ?? null); })
+      .catch(() => { if (!cancelled) setHealth(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function create() {
     setSaving(true);
@@ -246,6 +274,22 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-danger">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {health?.problem && (
+        <div className="mb-3 space-y-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="font-bold">Delivery confirmation is not working</span>
+          </div>
+          <p className="leading-relaxed">{health.problem}</p>
+          <p className="break-all font-mono opacity-80">{health.webhookUrl}</p>
+          <p className="opacity-80">
+            {health.handedToProvider} message(s) accepted by the provider, {health.eventsApplied} delivery
+            event(s) applied. Until this is fixed, every sent message stays on
+            &ldquo;Sent&rdquo; and a bounce is indistinguishable from a success.
+          </p>
         </div>
       )}
 

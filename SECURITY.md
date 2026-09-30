@@ -381,3 +381,51 @@ credentials are refused (as in `password-reset.ts` and `PATCH /admin/users/:id`)
 an address already signing another account in is refused rather than reassigned, and
 that every write is audited. Anyone holding that grant should be treated as able to
 act as any ordinary member of staff.
+
+### Cascading deletion, and two silent defects it uncovered
+
+`src/deletion/impact.ts` describes what a deletion takes with it and then takes it.
+The security-relevant decisions:
+
+- **Deleting an employee is the only path that deletes a login, and it requires
+  `admin/users` delete ON TOP OF `core/employees` delete.** Without that, the weaker
+  HR-shaped grant becomes the ability to remove accounts. Deleting a *post* never
+  touches a login — that coupling was the bug migration 0047 removed, and
+  reintroducing it on the delete path would have undone the fix.
+- **Three refusals are blockers, not warnings:** a superadmin's record, the actor's
+  own record, and a missing `admin/users` grant. They are reported by the impact
+  endpoint and enforced again at the delete, and the wizard renders no confirm button
+  when any is present. A button that always returns 403 trains people to ignore the
+  message above it.
+- **A mailbox is never deleted, and can never become unreadable.** Received mail is
+  the only thing in a deletion that cannot be rebuilt, so a post's or a person's
+  mailbox is detached and deactivated instead. `canUseMailbox` gained an orphan rule
+  so those boxes resolve to `admin/mailboxes` rather than to nobody — a mailbox
+  holding a leaver's correspondence that no living account can open would be a
+  retention problem disguised as a safety measure.
+- **Personal documents are removed from R2, not just from the database.** A CNIC scan
+  or signed contract left in a bucket after the person is gone is exactly the kind of
+  orphan that turns up in an audit. The impact report therefore carries download links
+  for every file it is about to destroy, and the wizard requires acknowledging them.
+- **`audit_logs` is never touched.** It has no foreign key into `employees` or
+  `users_logins` on purpose, and the record of who deleted what must outlive the thing
+  deleted. The deletion writes its own entry with the full summary.
+
+Two defects surfaced on the way, both silent, neither introduced here:
+
+- **`RESEND_WEBHOOK_SECRET` was never set in production.** The delivery webhook fails
+  closed without it, which is correct — it is the only authorization on the system's
+  one unauthenticated write — but the consequence is that no delivery event has ever
+  been applied. Three messages Resend accepted, zero events recorded, a hard bounce
+  visible in Resend's dashboard and reported as a success in Pleiades. The failure mode
+  of a fail-closed check is invisibility, which is why `GET /api/email/delivery-health`
+  now reports whether the secret exists (never its value) and whether anything has ever
+  arrived, and the Mailboxes tab shows it. **Setting the secret is still an operator
+  action; nothing in the code can do it.**
+- **`task_attachments.task_id` referenced a table that does not exist.** A past
+  hand-run rebuild of `universal_tasks` renamed it, and SQLite rewrites a dependent
+  table's foreign keys on rename, so this one was repointed at the temporary name and
+  left dangling when that table was dropped. SQLite resolves a foreign key target at
+  write time, so every insert failed. Not a security hole, but the same shape as one:
+  a feature that looks implemented, fails closed, and reports nothing anybody reads.
+  Fixed in migration 0049.

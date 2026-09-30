@@ -23,21 +23,50 @@ DELETE FROM mailbox_grants;
 DELETE FROM mailboxes;
 DELETE FROM compliance_config;
 DELETE FROM user_app_permissions;
--- Appointments are referenced by their grants, by any mailbox attached to them
--- (gone above) and by universal_tasks, and they reference committees and
--- employees — so the whole chain comes out from the leaves inwards.
+-- Then everything that references an appointment, an employee or a login, leaves
+-- first. This list is longer than what the file inserts ON PURPOSE: a test that
+-- creates an asset, a payslip or a task attachment and then calls `reseed()` would
+-- otherwise fail the foreign key on `DELETE FROM employees`, and the failure lands
+-- in the NEXT test as an unexplained fixture error rather than where it was caused.
 DELETE FROM appointment_app_permissions;
+DELETE FROM task_attachments;
 DELETE FROM task_assignments;
 DELETE FROM universal_tasks;
+DELETE FROM crm_ticket_notes;
+DELETE FROM crm_documents;
+DELETE FROM crm_planner_events;
+DELETE FROM crm_tickets;
+DELETE FROM attendance;
+DELETE FROM leave_requests;
+DELETE FROM leave_balances;
+DELETE FROM salary_components;
+DELETE FROM salary_structures;
+DELETE FROM salary_revisions;
+DELETE FROM payroll_records;
+DELETE FROM loans;
+DELETE FROM performance_reviews;
+DELETE FROM legal_tracker;
+DELETE FROM employee_documents;
+DELETE FROM employee_lab;
+DELETE FROM assets;
 DELETE FROM committee_members;
 DELETE FROM appointments;
+DELETE FROM monthly_reports;
+DELETE FROM core_docs;
 DELETE FROM committees;
 DELETE FROM company_documents;
+DELETE FROM labs;
+DELETE FROM sectors;
 DELETE FROM employees;
--- Written by routes rather than by this file, and all three reference users_logins.
+-- Written by routes rather than by this file, and every one references users_logins.
 DELETE FROM user_ownership;
 DELETE FROM password_reset_tokens;
 DELETE FROM calendar_feeds;
+DELETE FROM api_keys;
+DELETE FROM app_messages;
+DELETE FROM user_dashboard_state;
+DELETE FROM user_notes;
+DELETE FROM user_notifications;
 DELETE FROM audit_logs;
 DELETE FROM users_logins;
 

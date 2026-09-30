@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (27 files, 641 tests)
+npm test          # vitest — see test/ (28 files, 667 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,24 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0047_appointment_rbac.sql`, which moves authorization from
+The newest two are small and both fix defects that only a deletion could surface:
+
+- `0049_task_attachment_fk.sql` — `task_attachments.task_id` referenced
+  `universal_tasks_old`, the temporary name of a past hand-run rebuild. SQLite
+  rewrites a DEPENDENT table's foreign keys on `ALTER TABLE … RENAME`, so the rename
+  repointed this one and dropping the temporary table left it pointing at nothing.
+  Since SQLite resolves the target at write time, **every insert into
+  `task_attachments` failed** with `no such table: main.universal_tasks_old` —
+  attaching a file to a task had never worked in production, which is why the table
+  had zero rows. Nothing in `migrations/` did it, so there was no file to read it out
+  of; it was found by a test doing the one thing nothing else did, inserting a row.
+- `0048_attribution_nullable.sql` — `crm_ticket_notes.author_id` and
+  `performance_reviews.reviewer_id` were `NOT NULL` while every comparable "who did
+  this" column is nullable. Both rows are somebody ELSE's record (a review is the
+  *reviewee's*), so deleting a leaver meant either destroying them or refusing the
+  deletion. Now the content survives and the name clears.
+
+`0047_appointment_rbac.sql` moves authorization from
 per-appointment logins to one login per person with grants on the appointments —
 see Authorization below for the model. Three things in it are worth knowing before
 the next one like it:
@@ -400,6 +417,55 @@ experiment, dropped in 0025), `user_app_access` (deprecated, empty),
 `role_permissions` / `role_hierarchy` (declared in the schema but never
 deployed, so every query against them failed in production), and
 `appointments.account_id` (the login-per-appointment column, dropped in 0047).
+
+### Deleting a post, or a person (`src/deletion/impact.ts`)
+
+One file, two halves that must agree: `appointmentImpact`/`employeeImpact` describe,
+`deleteAppointment`/`deleteEmployee` act, and both are built from the same queries.
+**A warning that under-reports is worse than no warning**, because somebody confirms
+a deletion believing it is smaller than it is.
+
+```
+GET    /api/hr/appointments/:id/impact        what would go       (hr/appointments delete)
+DELETE /api/hr/appointments/:id              refuses, and says why
+DELETE /api/hr/appointments/:id?cascade=1     does it
+GET    /api/core/employees/:id/impact                             (core/employees delete)
+DELETE /api/core/employees/:id[?cascade=1]
+```
+
+Every dependency has one of four **fates**, and choosing among them is the design:
+
+| fate | means | example |
+|---|---|---|
+| `delete` | the row describes nothing but the relationship | attendance, an appointment's grants |
+| `release` | the row survives, pointed at nobody | a laptop goes back in the pool; a review keeps its content and loses the reviewer |
+| `detach` | survives, switched off, and needs a new reader | a mailbox |
+| `keep` | untouched, and listed anyway | `audit_logs`, and the finance transaction a deleted payslip named |
+
+Three things are load-bearing:
+
+- **A mailbox is never deleted.** Received mail is the only part of any of this that
+  cannot be rebuilt, so deleting a post or a person detaches and deactivates its
+  mailbox instead. `canUseMailbox` therefore has an *orphan* rule: a `personal` box
+  with no owner or an `appointment` box with no post is readable by
+  `admin/mailboxes` — the same reasoning and the same grant as the catch-all and as a
+  vacant post. Without it, keeping the mail would be pointless because nobody could
+  open it.
+- **Deleting an employee is the only thing that deletes a login**, and it needs
+  `admin/users` delete ON TOP OF `core/employees` delete. Otherwise the weaker grant
+  quietly becomes the ability to delete accounts. Deleting a *post* never touches a
+  login — that was the login-per-appointment bug.
+- **Blockers are not warnings.** A superadmin's record, your own record, and a missing
+  `admin/users` grant are reported as `blockers`, and the wizard renders no confirm
+  button at all. A button that always 403s teaches people to ignore the message above
+  it.
+
+Files that are about to be destroyed (personal documents, task attachments, a
+mailbox's mbox export) come back as `downloads` in the report, and
+`components/DeleteWizard.tsx` offers them before the confirm — links carry `?token=`
+because a plain `<a>` cannot set an Authorization header. The cascade is one
+`db.batch()`, so it is all-or-nothing; R2 objects are removed only *after* those
+writes commit, since the reverse leaves rows pointing at files that are gone.
 
 **Migrations that rebuild a table referenced by a foreign key** must
 `PRAGMA defer_foreign_keys = true` at the start and `= false` before the end.
@@ -735,6 +801,22 @@ and the comparison is constant-time. It lives under `/api/webhooks` rather than
 `authMiddleware`, and an exemption buried inside one of them is worse than a separate
 path. Rejections return a bare `ok: false` with no reason; the reason goes to the logs.
 
+**A webhook that is not configured is a silent failure, and `GET /api/email/delivery-health`
+is what makes it visible.** With `RESEND_WEBHOOK_SECRET` unset the handler refuses
+every event — correctly, since it is the only authorization on an unauthenticated
+write — but from a mailbox that is indistinguishable from "no reply yet": messages sit
+on Sent forever and a hard bounce reads as a success. That is exactly what production
+was doing. The endpoint reports whether the secret exists (never its value) and
+whether any event has *ever* been applied, and `components/MailboxAdmin.tsx` renders
+the problem with the URL the webhook should point at.
+
+The other half of that bug was in the UI: the list badge was hidden for any status
+toned `muted`, on the reasoning that a `sent` badge on every row would drown the
+bounce two rows below. The effect was the opposite — a message that went out looked
+exactly like one that never did, and `queued` looked like success. Every delivery
+state now gets a badge and the *tone* does the separating: grey for handed over, green
+for arrived, red for did not.
+
 Two rules in that handler are easy to undo. **Webhooks are unordered and redelivered
 on any non-2xx**, so events are ranked (`STATUS_RANK`) and the row only ever moves
 up — a replayed `delivered` cannot clear a `bounced`, and `complained` outranks
@@ -936,10 +1018,21 @@ and `journal.ts` depend on them, and they exist only on the live index; nothing
 in this repo recreates them. If the index is ever rebuilt, recreate all three or
 filtering silently stops narrowing.
 
-There are exactly **seven secrets**, and the same seven exist both in production
-(`wrangler secret put NAME`) and in local `.dev.vars`. Keep those two sets in
-step — a secret in one and not the other means local and deployed behaviour
-differ silently:
+There are exactly **seven secrets**, and the same seven are *supposed* to exist
+both in production (`wrangler secret put NAME`) and in local `.dev.vars`. Keep those
+two sets in step — a secret in one and not the other means local and deployed
+behaviour differ silently, and that is not hypothetical:
+
+> **`RESEND_WEBHOOK_SECRET` was set in `.dev.vars` and never in production.** The
+> webhook fails closed without it, so every delivery event from Resend was refused
+> for as long as mail has been live: three messages accepted by Resend, zero events
+> ever applied, a hard bounce showing in Resend's dashboard and as a success in
+> Pleiades. Nothing said so, because "no events yet" and "every event refused" look
+> identical from a mailbox. `GET /api/email/delivery-health` now reports the
+> difference and the Mailboxes tab shows it — see Mail below.
+
+Verify the two sets match with `npx wrangler secret list` against this table rather
+than assuming:
 
 | Secret | What it does | Read by |
 |---|---|---|

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { and, asc, desc, eq, inArray, isNotNull, like, lt, ne, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, like, lt, ne, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
@@ -400,6 +400,58 @@ emailRouter.put('/mailboxes/:id/grants', requireFeatureAccess('admin', 'mailboxe
 
     await logAudit(c.env, user.id, 'UPDATE', 'mailbox_grants', id, { address: box.address, grants: wanted });
     return ok(c, { count: wanted.length, governedByAppGrant: wanted.length === 0 });
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * GET /email/delivery-health
+ *
+ * Whether delivery confirmation actually works. Administration, not use.
+ *
+ * This exists because the failure it detects is completely silent. `status='sent'`
+ * is set locally when Resend accepts a message; everything past it — delivered,
+ * bounced, complained — arrives only from the webhook at POST /api/webhooks/resend,
+ * which refuses every request when `RESEND_WEBHOOK_SECRET` is unset. That refusal is
+ * correct (an unauthenticated write must fail closed) but from the mailbox it is
+ * indistinguishable from "nobody has replied yet": messages sit on Sent forever, a
+ * hard bounce never appears, and nothing anywhere says why.
+ *
+ * It happened. Three messages were sent, all accepted, and not one webhook event had
+ * ever been applied, because the secret was never set in production — so a bounce
+ * showed in Resend's dashboard and as a success in Pleiades.
+ */
+emailRouter.get('/delivery-health', requireFeatureAccess('admin', 'mailboxes', 'view'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const [{ sent = 0 } = {}] = await db.select({ sent: count() }).from(schema.emailDelivery)
+      .where(isNotNull(schema.emailDelivery.providerMessageId));
+    const [{ events = 0 } = {}] = await db.select({ events: count() }).from(schema.emailDelivery)
+      .where(isNotNull(schema.emailDelivery.lastEventAt));
+
+    /**
+     * The secret's PRESENCE only — never its value, and no hint of its length. Whether
+     * a fail-closed check is configured is an operational fact somebody has to be able
+     * to see; the key itself is the thing that makes the endpoint safe.
+     */
+    const configured = !!c.env.RESEND_WEBHOOK_SECRET;
+    const receiving = events > 0;
+
+    return ok(c, {
+      configured,
+      receiving,
+      handedToProvider: sent,
+      eventsApplied: events,
+      webhookUrl: `${c.env.WORKER_ORIGIN}/api/webhooks/resend`,
+      /**
+       * Deliberately worded for whoever is looking at a mailbox wondering why nothing
+       * ever says Delivered, rather than for whoever wrote this.
+       */
+      problem: !configured
+        ? 'RESEND_WEBHOOK_SECRET is not set, so every delivery event from Resend is refused. Statuses stop at "Sent" and a bounce never appears. Set the secret with `wrangler secret put RESEND_WEBHOOK_SECRET`, using the signing secret from the Resend webhook, and point that webhook at the URL below.'
+        : !receiving && sent > 0
+          ? `The secret is set but no delivery event has ever been applied, across ${sent} message(s) Resend accepted. Check that a webhook exists in Resend pointing at the URL below, that it is enabled, and that its signing secret matches.`
+          : null,
+    });
   } catch (err) { return serverError(c, err); }
 });
 

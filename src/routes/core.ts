@@ -4,6 +4,7 @@ import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess, checkFeaturePermission } from '../middleware/rbac';
+import { employeeImpact, deleteEmployee } from '../deletion/impact';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -113,19 +114,92 @@ coreRouter.patch('/employees/:id', requireFeatureAccess('core', 'employees', 'ed
   } catch (err) { return serverError(c, err); }
 });
 
+/**
+ * GET /employees/:id/impact
+ *
+ * What removing this person would take with it, and what it would merely let go of.
+ * Read-only; this is what the confirmation wizard renders.
+ *
+ * The distinction the report exists to make is between the three fates. Their
+ * attendance and payslips are deleted because those records describe nothing but
+ * this person. The laptop in their drawer is RELEASED — an asset is not destroyed
+ * because its holder left, it goes back in the pool. The review they wrote of a
+ * colleague is KEPT, with their name cleared off it, because it is the colleague's
+ * history and not theirs.
+ *
+ * Their personal documents are the one irreversible part — a CNIC scan, a signed
+ * contract — so the report carries download links for every one of them, and the
+ * wizard offers them before the confirm button.
+ */
+coreRouter.get('/employees/:id/impact', requireFeatureAccess('core', 'employees', 'delete'), async (c) => {
+  try {
+    const actor = c.get('user');
+    const impact = await employeeImpact(c.env, c.req.param('id'), {
+      id: actor.id,
+      // Checked here rather than inside the report, so the report stays a pure
+      // description and the permission question has one owner.
+      canDeleteLogins: actor.isSuperadmin || (await checkFeaturePermission(c, 'admin', 'users', 'delete')),
+    });
+    if (!impact) return notFound(c, 'Employee not found');
+    return ok(c, impact);
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * DELETE /employees/:id           refuses while anything depends on them
+ * DELETE /employees/:id?cascade=1 removes them and everything in the impact report
+ *
+ * The cascade is the only thing in this system that deletes a login, and that is
+ * deliberate: a login belongs to the PERSON, so it goes when the person does and not
+ * when one of their posts ends. It therefore requires `admin/users` delete ON TOP OF
+ * `core/employees` delete — otherwise the weaker grant would quietly become the
+ * ability to delete accounts. The impact report states that as a blocker rather than
+ * letting the request get as far as a 403.
+ *
+ * Three refusals that are not warnings, all enforced here as well as reported: a
+ * superadmin's account, your own record, and a missing `admin/users` grant.
+ */
 coreRouter.delete('/employees/:id', requireFeatureAccess('core', 'employees', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
-    const user = c.get('user' as any);
+    const actor = c.get('user');
     const id = c.req.param('id');
-    await db.delete(schema.employees).where(eq(schema.employees.id, id));
-    await logAudit(c.env, user.id, 'DELETE', 'employees', id);
-    return ok(c, { id, deleted: true });
-  } catch (err: any) { 
-    if (err.message?.includes('FOREIGN KEY constraint failed')) {
-      return badRequest(c, 'Cannot delete employee: they have active appointments or other dependencies. Please remove those first.');
+    const cascade = c.req.query('cascade') === '1' || c.req.query('cascade') === 'true';
+
+    const canDeleteLogins = actor.isSuperadmin || (await checkFeaturePermission(c, 'admin', 'users', 'delete'));
+    const impact = await employeeImpact(c.env, id, { id: actor.id, canDeleteLogins });
+    if (!impact) return notFound(c);
+
+    if (impact.blockers.length > 0) {
+      return c.json({ success: false, error: impact.blockers.join(' '), data: { impact } }, 403);
     }
-    return serverError(c, err); 
+
+    if (!cascade) {
+      const holding = impact.items.filter((i) => (i.fate === 'delete' || i.fate === 'detach') && i.count > 0);
+      if (holding.length > 0) {
+        return c.json({
+          success: false,
+          error: `${impact.label} still has ${holding.map((i) => `${i.count} ${i.label.toLowerCase()}`).join(', ')}. Review it at GET /api/core/employees/${id}/impact — it includes download links for their documents — then repeat this request with ?cascade=1.`,
+          data: { impact },
+        }, 409);
+      }
+    }
+
+    const result = await deleteEmployee(c.env, id);
+    if (!result) return notFound(c);
+
+    await logAudit(c.env, actor.id, 'DELETE', 'employees', id, {
+      name: impact.label,
+      cascade,
+      ...result.summary,
+      filesRemoved: result.filesRemoved,
+    });
+    return ok(c, { id, deleted: true, ...result });
+  } catch (err: any) {
+    if (err.message?.includes('FOREIGN KEY constraint failed')) {
+      return badRequest(c, 'Cannot delete employee: something still references them that the impact report does not know about. Please report this — the report and the cascade are meant to agree.');
+    }
+    return serverError(c, err);
   }
 });
 

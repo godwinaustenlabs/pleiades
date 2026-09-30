@@ -173,7 +173,9 @@ describe('a handover moves access with the post', () => {
   it('leaves the holder’s login alone when the post is deleted', async () => {
     // This used to deactivate the account named by `appointments.account_id`, so
     // ending one of somebody's posts locked them out of the system entirely.
-    const res = await api('DELETE', '/api/hr/appointments/ap_cmo');
+    // `?cascade=1` because the post owns grants — see test/deletion.test.ts for why
+    // the plain form refuses and what it says.
+    const res = await api('DELETE', '/api/hr/appointments/ap_cmo?cascade=1');
     expect(res.status).toBe(200);
 
     // Still signed in, and still holding everything the OTHER post grants.
@@ -183,7 +185,7 @@ describe('a handover moves access with the post', () => {
   });
 
   it('deleting the post deletes its grants, so a new post reusing nothing inherits nothing', async () => {
-    await api('DELETE', '/api/hr/appointments/ap_cmo');
+    await api('DELETE', '/api/hr/appointments/ap_cmo?cascade=1');
     const left = await env.DB
       .prepare('SELECT COUNT(*) AS n FROM appointment_app_permissions WHERE appointment_id = ?')
       .bind('ap_cmo').first();
@@ -191,10 +193,19 @@ describe('a handover moves access with the post', () => {
     expect(await allowed('dual', '/api/acquisition/campaigns')).toBe(false);
   });
 
-  it('refuses to delete a post whose mailbox would be orphaned, naming the address', async () => {
+  it('will not quietly delete a post that owns a mailbox — it says so first', async () => {
+    // This used to be a flat refusal with nothing to do about it. It now reports what
+    // is in the way and how to proceed; test/deletion.test.ts covers what the cascade
+    // then does with the mailbox, which is keep it rather than delete it.
     const res = await api('DELETE', '/api/hr/appointments/ap_pm');
-    expect(res.status).toBe(400);
-    expect((await res.json() as any).error).toContain('cto@godwinausten.org');
+    expect(res.status).toBe(409);
+    const body = await res.json() as any;
+    expect(body.error).toContain('cascade=1');
+    expect(JSON.stringify(body.data.impact)).toContain('cto@godwinausten.org');
+
+    // Still there, untouched.
+    const still = await env.DB.prepare('SELECT COUNT(*) AS n FROM appointments WHERE appointment_id = ?').bind('ap_pm').first();
+    expect(still?.n).toBe(1);
   });
 
   it('moves the committee seat, because membership is itself access', async () => {

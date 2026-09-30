@@ -4,6 +4,7 @@ import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess, listGrants } from '../middleware/rbac';
+import { appointmentImpact, deleteAppointment } from '../deletion/impact';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
@@ -338,51 +339,86 @@ hrRouter.patch('/appointments/:id', requireFeatureAccess('hr', 'appointments', '
 });
 
 /**
- * DELETE /appointments/:id
+ * GET /appointments/:id/impact
  *
- * Deletes the post and the grants that belonged to it. It does NOT touch the
- * holder's login: this used to deactivate the account named by
- * `appointments.account_id`, which meant ending one of somebody's posts locked
- * them out of the system entirely. With one login per person that would now be
- * unambiguously wrong, and the column it read is gone.
+ * What deleting this post would take with it. Read-only, and the thing the
+ * confirmation screen is built from.
  *
- * Deactivating (`isActive: false`) is usually the better move, and is what keeps
- * the history while withdrawing the access.
+ * It exists because `FOREIGN KEY constraint failed` is not an answer. That is what
+ * this route used to return when a post owned anything, and it left the operator to
+ * guess which of a dozen tables was holding on — so the honest options were to
+ * refuse forever or to cascade blind. This is the third one: say exactly what goes,
+ * what is merely released, and what is kept, then do precisely that.
+ */
+hrRouter.get('/appointments/:id/impact', requireFeatureAccess('hr', 'appointments', 'delete'), async (c) => {
+  try {
+    const impact = await appointmentImpact(c.env, c.req.param('id')!);
+    if (!impact) return notFound(c, 'Appointment not found');
+    return ok(c, impact);
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * DELETE /appointments/:id           refuses while anything depends on the post
+ * DELETE /appointments/:id?cascade=1 deletes it and everything in the impact report
+ *
+ * Two modes rather than one, because the cascade destroys tasks and cannot be
+ * undone. The plain form stays the default and now names what is in the way and
+ * where to go and look at it, instead of reporting a constraint error.
+ *
+ * It does NOT touch the holder's login in either mode. This used to deactivate the
+ * account named by `appointments.account_id`, which meant ending one of somebody's
+ * posts locked them out of the system entirely — with one login per person that is
+ * unambiguously wrong, and the column it read is gone. A person is removed by
+ * deleting the EMPLOYEE (`DELETE /api/core/employees/:id?cascade=1`), which is also
+ * the only thing that removes a login.
  */
 hrRouter.delete('/appointments/:id', requireFeatureAccess('hr', 'appointments', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const id = c.req.param('id')!;
-
-    // A mailbox attached to this post holds stored mail that references it.
-    // Refused with the address rather than surfaced as a constraint error,
-    // because the fix — reassign or deactivate the mailbox — is not guessable
-    // from `FOREIGN KEY constraint failed`.
-    const box = await db.query.mailboxes.findFirst({
-      where: eq(schema.mailboxes.appointmentId, id),
-      columns: { address: true },
-    });
-    if (box) {
-      return badRequest(c, `${box.address} belongs to this appointment. Reassign or deactivate that mailbox first — deleting the post would orphan the mail it holds.`);
-    }
+    const cascade = c.req.query('cascade') === '1' || c.req.query('cascade') === 'true';
 
     const before = await db.query.appointments.findFirst({
       where: eq(schema.appointments.id, id),
-      columns: { employeeId: true, committeeId: true },
+      columns: { employeeId: true, committeeId: true, roleOrTitle: true },
     });
+    if (!before) return notFound(c);
 
-    await db.delete(schema.appointmentAppPermissions)
-      .where(eq(schema.appointmentAppPermissions.appointmentId, id));
-    await db.delete(schema.appointments).where(eq(schema.appointments.id, id));
+    const impact = await appointmentImpact(c.env, id);
+    if (!impact) return notFound(c);
+
+    if (!cascade) {
+      // Everything that is not merely released has to go for the post to go.
+      const holding = impact.items.filter((i) => i.fate === 'delete' || i.fate === 'detach');
+      if (holding.length > 0) {
+        return c.json({
+          success: false,
+          error: `${impact.label} still has ${holding.map((i) => `${i.count} ${i.label.toLowerCase()}`).join(', ')}. Review it at GET /api/hr/appointments/${id}/impact, then repeat this request with ?cascade=1 to delete all of it.`,
+          data: { impact },
+        }, 409);
+      }
+    }
+
+    const result = await deleteAppointment(c.env, id);
+    if (!result) return notFound(c);
+
     // After the delete, so `vacateSeat` cannot see this appointment as a reason to
     // keep the seat.
-    if (before?.committeeId) await vacateSeat(c.env, before.committeeId, before.employeeId ?? null);
-    await logAudit(c.env, user.id, 'DELETE', 'appointments', id);
-    return ok(c, { id, deleted: true });
+    if (before.committeeId) await vacateSeat(c.env, before.committeeId, before.employeeId ?? null);
+
+    await logAudit(c.env, user.id, 'DELETE', 'appointments', id, {
+      roleOrTitle: before.roleOrTitle ?? null,
+      holder: before.employeeId ?? null,
+      cascade,
+      ...result.summary,
+      filesRemoved: result.filesRemoved,
+    });
+    return ok(c, { id, deleted: true, ...result });
   } catch (err: any) {
     if (err.message?.includes('FOREIGN KEY constraint failed')) {
-      return serverError(c, new Error('Cannot delete appointment: tasks or other records still reference it. Deactivate it instead.'));
+      return serverError(c, new Error('Cannot delete appointment: something still references it that the impact report does not know about. Please report this — the report and the cascade are meant to agree.'));
     }
     return serverError(c, err);
   }

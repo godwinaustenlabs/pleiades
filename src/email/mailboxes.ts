@@ -20,6 +20,10 @@ import { actorEmployeeId, checkFeaturePermission } from '../middleware/rbac';
  *      involved; ownership *is* the permission. This is the same reasoning that
  *      makes `dashboard` app-gated rather than feature-gated — every handler
  *      already filters on the caller's own id.
+ *   1a. A storage mailbox whose owner is GONE — a personal box detached by deleting
+ *      its employee, a post box detached by deleting its post — is reachable by
+ *      `admin/mailboxes` and nobody else. The mail it received is kept on purpose;
+ *      a box nobody could open would make keeping it pointless.
  *   1b. An APPOINTMENT mailbox (cto@) is reachable by whoever holds that
  *      appointment right now. Also ownership rather than a grant, and it takes no
  *      `mailbox_grants` rows at all — the entire point is that appointing
@@ -123,6 +127,26 @@ export async function canUseMailbox(
   // automated rather than as somebody typing.
   if (box.kind === 'system') return false;
 
+  /**
+   * A storage mailbox whose owner is GONE is readable by whoever administers
+   * mailboxes, and by nobody else.
+   *
+   * One rule covering both shapes below, because the alternative is a mailbox no
+   * living person can open. Deleting an employee detaches their personal box and
+   * deleting a post detaches its box — in both cases the mail it already received
+   * survives deliberately, since that is the one part of a deletion that cannot be
+   * rebuilt, and a box nobody can reach would make keeping it pointless.
+   *
+   * Same reasoning and same grant as the catch-all, and as a VACANT post: there is
+   * no owner, so somebody has to be able to see what arrived.
+   */
+  const orphaned =
+    (box.kind === 'personal' && !box.ownerUserId) ||
+    (box.kind === 'appointment' && !box.appointmentId);
+  if (orphaned) {
+    return checkFeaturePermission(c, 'admin', 'mailboxes', levelFor(access));
+  }
+
   if (box.kind === 'personal') {
     return box.ownerUserId === user.id;
   }
@@ -142,10 +166,11 @@ export async function canUseMailbox(
    * the same reasoning as the catch-all, and the same grant.
    */
   if (box.kind === 'appointment') {
-    if (!box.appointmentId) return false;
+    // Non-null by the `orphaned` check above; narrowed here for the query builder.
+    const appointmentId = box.appointmentId as string;
     const db = getDb(c.env);
     const appointment = await db.query.appointments.findFirst({
-      where: eq(schema.appointments.id, box.appointmentId),
+      where: eq(schema.appointments.id, appointmentId),
       columns: { employeeId: true, isActive: true },
     });
     if (!appointment) return false;

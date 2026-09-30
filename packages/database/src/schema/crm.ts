@@ -94,7 +94,12 @@ export const userDashboardState = sqliteTable('user_dashboard_state', {
 export const crmTicketNotes = sqliteTable('crm_ticket_notes', {
   id: text('note_id').primaryKey(),
   ticketId: text('ticket_id').notNull().references(() => crmTickets.id),
-  authorId: text('author_id').notNull().references(() => usersLogins.id),
+  /**
+   * Nullable since migration 0048, like every other "who did this" column. A note
+   * is part of a conversation somebody else is still reading; the author leaving
+   * the company clears the name on it and nothing else.
+   */
+  authorId: text('author_id').references(() => usersLogins.id),
   content: text('content').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });

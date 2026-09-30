@@ -84,6 +84,8 @@
     200 ok data=array<{address,assignedOffice,bankDetails,baseSalary,cnic,confirmationDate,contactInfo,contractEndDate,contractStartDate,createdAt,department,designation,dob,efficiencyScore,email,emergencyContact,employmentStatus,employmentType,gender,hireDate,id,name,notes,phone,profilePhoto,reportingManagerId,role,sectorId,slackId,taxInformation,updatedAt}>
 /api/core/employees/:id
     404 err="Record not found"
+/api/core/employees/:id/impact
+    404 err="Employee not found"
 /api/core/labs
     200 ok data=array<empty>
 /api/core/labs/:id
@@ -116,6 +118,8 @@
     200 ok data={}
 /api/email/automations
     200 ok data={events,recentFailures,sender}
+/api/email/delivery-health
+    200 ok data={configured,eventsApplied,handedToProvider,problem,receiving,webhookUrl}
 /api/email/drafts
     200 ok data=array<empty>
 /api/email/export
@@ -210,6 +214,8 @@
     200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employeeId,id,isActive,roleOrTitle,termType}>
 /api/hr/appointments/:id
     404 err="Record not found"
+/api/hr/appointments/:id/impact
+    404 err="Appointment not found"
 /api/hr/assets
     200 ok data=array<empty>
 /api/hr/attendance

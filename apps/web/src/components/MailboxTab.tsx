@@ -719,11 +719,19 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
                         {m.direction === 'outbound' ? `To: ${addressList(m.toAddresses)}` : (m.fromName || m.fromAddress)}
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5">
-                        {/* Only when it is worth interrupting for: a plain `sent` badge on
-                            every row in the Sent folder would be noise that hides the
-                            bounce sitting two rows below it. */}
-                        {m.deliveryStatus && DELIVERY[m.deliveryStatus]?.tone !== 'muted' && (
-                          <DeliveryBadge status={m.deliveryStatus} />
+                        {/**
+                         * EVERY delivery state gets a badge, muted ones included.
+                         *
+                         * This used to hide anything toned `muted`, on the reasoning that a
+                         * `sent` badge on every row would be noise hiding the bounce two rows
+                         * below. The effect was the opposite: a message that went out looked
+                         * exactly like one that never did, and a message stuck at `queued`
+                         * looked like a success. The tone does the separating — grey for
+                         * "handed over", green for "arrived", red for "did not" — which is
+                         * what the colours are for.
+                         */}
+                        {m.deliveryStatus && (
+                          <DeliveryBadge status={m.deliveryStatus} error={m.deliveryError} />
                         )}
                         <span className="text-[10px] text-textSecondary">{when(m.receivedAt ?? m.createdAt)}</span>
                       </span>
@@ -919,14 +927,17 @@ const TONE: Record<string, string> = {
 };
 
 /** The badge in a list row, so a bounce does not need the message opened to be seen. */
-function DeliveryBadge({ status }: { status: string }) {
+function DeliveryBadge({ status, error }: { status: string; error?: string | null }) {
   const d = DELIVERY[status];
   // An unrecognised status is shown verbatim rather than hidden: a provider adding a
   // state should look unfamiliar, not look like nothing happened.
   const label = d?.label ?? status;
   const tone = TONE[d?.tone ?? 'muted'];
+  // The provider's code on a failure. Without it "Bounced" is a dead end — the
+  // difference between a wrong address and a blocked domain is the whole next step.
+  const title = [d?.hint, error ? `(${error})` : null].filter(Boolean).join(' ');
   return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}>
+    <span title={title || undefined} className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}>
       {label}
     </span>
   );

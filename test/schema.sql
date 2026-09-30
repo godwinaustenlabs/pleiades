@@ -375,10 +375,10 @@ CREATE TABLE `crm_planner_events` (
 	FOREIGN KEY (`committee_id`) REFERENCES `committees`(`committee_id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`created_by_id`) REFERENCES `users_logins`(`id`) ON UPDATE no action ON DELETE no action
 );
-CREATE TABLE `crm_ticket_notes` (
+CREATE TABLE "crm_ticket_notes" (
 	`note_id` text PRIMARY KEY NOT NULL,
 	`ticket_id` text NOT NULL,
-	`author_id` text NOT NULL,
+	`author_id` text,
 	`content` text NOT NULL,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`ticket_id`) REFERENCES `crm_tickets`(`ticket_id`) ON UPDATE no action ON DELETE no action,
@@ -801,11 +801,11 @@ CREATE TABLE `payroll_records` (
 	`created_at` integer NOT NULL, `allowances_breakdown` text, `deductions_breakdown` text,
 	FOREIGN KEY (`employee_id`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action
 );
-CREATE TABLE `performance_reviews` (
+CREATE TABLE "performance_reviews" (
 	`id` text PRIMARY KEY NOT NULL,
 	`employee_id` text NOT NULL,
 	`review_period` text NOT NULL,
-	`reviewer_id` text NOT NULL,
+	`reviewer_id` text,
 	`score` real,
 	`feedback` text,
 	`created_at` integer NOT NULL,
@@ -928,7 +928,7 @@ CREATE TABLE `stories` (
 	FOREIGN KEY (`epic_id`) REFERENCES `epics`(`epic_id`) ON UPDATE no action ON DELETE no action
 );
 CREATE TABLE `task_assignments` (`assignment_id` text PRIMARY KEY NOT NULL, `task_id` text NOT NULL, `employee_id` text NOT NULL, `assigned_at` integer NOT NULL, FOREIGN KEY (`task_id`) REFERENCES `universal_tasks`(`task_id`) ON UPDATE no action ON DELETE no action, FOREIGN KEY (`employee_id`) REFERENCES `employees`(`employee_id`) ON UPDATE no action ON DELETE no action);
-CREATE TABLE `task_attachments` (
+CREATE TABLE "task_attachments" (
 	`id` text PRIMARY KEY NOT NULL,
 	`task_id` text NOT NULL,
 	`title` text NOT NULL,
@@ -937,7 +937,7 @@ CREATE TABLE `task_attachments` (
 	`mime_type` text,
 	`uploaded_by_id` text,
 	`created_at` integer NOT NULL,
-	FOREIGN KEY (`task_id`) REFERENCES "universal_tasks_old"(`task_id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`task_id`) REFERENCES `universal_tasks`(`task_id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`uploaded_by_id`) REFERENCES `users_logins`(`id`) ON UPDATE no action ON DELETE no action
 );
 CREATE TABLE "transactions" (

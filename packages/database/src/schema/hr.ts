@@ -223,9 +223,15 @@ export const assets = sqliteTable('assets', {
 
 export const performanceReviews = sqliteTable('performance_reviews', {
   id: text('id').primaryKey(),
+  /** The REVIEWEE. This row is their record, which is why it survives the reviewer leaving. */
   employeeId: text('employee_id').notNull().references(() => employees.id),
   reviewPeriod: text('review_period').notNull(), // Q1 2026
-  reviewerId: text('reviewer_id').notNull().references(() => employees.id),
+  /**
+   * Nullable since migration 0048, like every other "who did this" column. A review
+   * is the reviewee's history; the person who wrote it leaving the company clears
+   * the name on it and nothing else.
+   */
+  reviewerId: text('reviewer_id').references(() => employees.id),
   score: real('score'),
   feedback: text('feedback'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
