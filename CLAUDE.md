@@ -1057,13 +1057,16 @@ both in production (`wrangler secret put NAME`) and in local `.dev.vars`. Keep t
 two sets in step — a secret in one and not the other means local and deployed
 behaviour differ silently, and that is not hypothetical:
 
-> **`RESEND_WEBHOOK_SECRET` was set in `.dev.vars` and never in production.** The
-> webhook fails closed without it, so every delivery event from Resend was refused
-> for as long as mail has been live: three messages accepted by Resend, zero events
-> ever applied, a hard bounce showing in Resend's dashboard and as a success in
-> Pleiades. Nothing said so, because "no events yet" and "every event refused" look
-> identical from a mailbox. `GET /api/email/delivery-health` now reports the
-> difference and the Mailboxes tab shows it — see Mail below.
+> **`RESEND_WEBHOOK_SECRET` was set in NEITHER place** for as long as mail has been
+> live. The webhook fails closed without it, so every delivery event from Resend was
+> refused: three messages accepted by Resend, zero events ever applied, a hard bounce
+> showing in Resend's dashboard and as a success in Pleiades. Nothing said so, because
+> "no events yet" and "every event refused" look identical from a mailbox.
+>
+> Only `vitest.config.mts` pinned a value, which is why the suite passed throughout —
+> a secret present in the tests and nowhere else is the one case `wrangler secret list`
+> does not catch, because nobody thinks to run it. `GET /api/email/delivery-health`
+> now reports the difference and the Mailboxes tab shows it — see Mail below.
 
 Verify the two sets match with `npx wrangler secret list` against this table rather
 than assuming:

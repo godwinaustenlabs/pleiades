@@ -413,10 +413,13 @@ The security-relevant decisions:
 
 Two defects surfaced on the way, both silent, neither introduced here:
 
-- **`RESEND_WEBHOOK_SECRET` was never set in production.** The delivery webhook fails
-  closed without it, which is correct — it is the only authorization on the system's
-  one unauthenticated write — but the consequence is that no delivery event has ever
-  been applied. Three messages Resend accepted, zero events recorded, a hard bounce
+- **`RESEND_WEBHOOK_SECRET` was set in neither production nor `.dev.vars`.** The
+  delivery webhook fails closed without it, which is correct — it is the only
+  authorization on the system's one unauthenticated write — but the consequence is
+  that no delivery event had ever been applied. Only `vitest.config.mts` pinned a
+  value, so the whole signature suite passed while the live endpoint refused
+  everything: a secret present in the tests and nowhere else is the one gap a green
+  build actively hides. Three messages Resend accepted, zero events recorded, a hard bounce
   visible in Resend's dashboard and reported as a success in Pleiades. The failure mode
   of a fail-closed check is invisibility, which is why `GET /api/email/delivery-health`
   now reports whether the secret exists (never its value) and whether anything has ever
