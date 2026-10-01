@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Briefcase, Loader2, Save, Search, ShieldAlert, UserCog, LifeBuoy, Mail, Bot, Users, Inbox } from 'lucide-react';
 import PermissionMatrix from '../components/PermissionMatrix';
-import AppointmentAccess, { type AppointmentRow } from '../components/AppointmentAccess';
+import AppointmentAccess, { type AppointmentRowFull } from '../components/AppointmentAccess';
 import EffectiveAccess from '../components/EffectiveAccess';
 import MailboxAdmin from '../components/MailboxAdmin';
 import AutomationsPanel from '../components/AutomationsPanel';
@@ -14,6 +14,8 @@ import { API, authHeaders, type Grant } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 import { useCurrentUser } from '../lib/useCurrentUser';
 import { errorMessage } from '../lib/errors';
+
+type Section = 'access' | 'posts' | 'mailboxes' | 'unrouted' | 'automations';
 
 interface AdminUser {
 	id: string;
@@ -29,19 +31,25 @@ interface AdminUser {
 const displayName = (u: AdminUser) => u.employee?.name || u.name || u.username || u.email;
 
 /**
- * Access administration.
+ * HQ — access administration.
+ *
+ * "HQ" is the display name; the RBAC app is still `admin`, so its features read
+ * admin/permissions, admin/appointments and so on. Renaming the key would mean a
+ * migration over every grant row and a rewrite of every gate, for no behavioural
+ * change — so the rename is in the UI, and `APP_LABEL` in PermissionMatrix maps the
+ * one to the other wherever a person sees it.
  *
  * Two editors, because access has two sources and they are unioned:
  *
  *   Access — what belongs to a PERSON. Edit it here for access that should not
  *     follow a job: a contractor, somebody standing in, a login with no employee
  *     record at all.
- *   Posts  — what belongs to an APPOINTMENT. Normally where access should go:
- *     replacing the holder is then one edit in HR and both people's access changes
- *     with it, mailbox included.
+ *   Posts  — the post itself, who holds it, and what belongs to it. Normally where
+ *     access should go: replacing the holder is one edit here and both people's
+ *     access changes with it, mailbox and committee seat included.
  *
  * Neither overrides the other, so there is no precedence to reason about. The
- * effective-access panel on the Access tab is what makes the union legible — the
+ * effective-access panel on HQ's Access tab is what makes the union legible — the
  * matrix there shows only the person's own grants, and without that panel a feature
  * they reach through a post looks like access they lack.
  */
@@ -51,7 +59,9 @@ export default function Admin() {
 	const { catalog, loaded: catalogLoaded } = useFeatureCatalog();
 
 	const [users, setUsers] = useState<AdminUser[]>([]);
-	const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
+	const [appointments, setAppointments] = useState<AppointmentRowFull[]>([]);
+	const [employees, setEmployees] = useState<{ id: string; name: string; department?: string | null }[]>([]);
+	const [committees, setCommittees] = useState<{ id: string; committeeName: string }[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [grants, setGrants] = useState<Grant[]>([]);
 	const [baseline, setBaseline] = useState<string>('[]');
@@ -62,13 +72,38 @@ export default function Admin() {
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [showProfile, setShowProfile] = useState(false);
-	/** Four jobs on one page, too much to stack. */
-	const [section, setSection] = useState<'access' | 'posts' | 'mailboxes' | 'unrouted' | 'automations'>('access');
+	/** Five jobs on one page, too much to stack. */
+	const [section, setSection] = useState<Section>('access');
 	const [recovery, setRecovery] = useState('');
 	const [savingRecovery, setSavingRecovery] = useState(false);
 
 	const canEditPerms = can('admin', 'permissions', 'edit');
+	// A different grant from the matrix: creating a post and assigning a holder is one
+	// authority, deciding what the post opens is another. See src/routes/appointments.ts.
+	const canManagePosts = can('admin', 'appointments', 'edit');
 	const canEditMailboxes = can('admin', 'mailboxes', 'edit');
+
+	/**
+	 * Which tabs this person can open, derived once.
+	 *
+	 * The page used to be guarded on `admin/permissions` view alone, with Access and
+	 * Posts assumed always visible because that grant was what both needed. Since
+	 * migration 0050 moved posts to their own feature that is no longer true:
+	 * somebody with `admin/appointments` and nothing else could not open HQ at all.
+	 * Guard and tab row are now the same list, so they cannot drift apart again.
+	 */
+	const tabs = useMemo(() => ([
+		{ id: 'access' as const, label: 'Access', icon: Users, show: can('admin', 'permissions', 'view') },
+		{ id: 'posts' as const, label: 'Posts', icon: Briefcase, show: can('admin', 'appointments', 'view') || can('admin', 'permissions', 'view') },
+		{ id: 'mailboxes' as const, label: 'Mailboxes', icon: Mail, show: can('admin', 'mailboxes', 'view') },
+		{ id: 'unrouted' as const, label: 'Unrouted', icon: Inbox, show: can('admin', 'mailboxes', 'view') },
+		{ id: 'automations' as const, label: 'Automations', icon: Bot, show: can('admin', 'email_config', 'view') },
+	].filter((t) => t.show)), [can]);
+
+	// Land on something they can actually open, rather than on an empty Access tab.
+	useEffect(() => {
+		if (tabs.length > 0 && !tabs.some((t) => t.id === section)) setSection(tabs[0].id);
+	}, [tabs, section]);
 	// Derived from the server's catalogue rather than listed here, so an app that
 	// gains or loses mail does not need this file edited.
 	const mailApps = useMemo(
@@ -83,17 +118,38 @@ export default function Admin() {
 	 * must not require HR access, and asking for both would mean nobody could edit a
 	 * post's permissions without also being able to read the payroll.
 	 */
+	const loadAppointments = useCallback(() => {
+		fetch(`${API}/appointments`, { headers: authHeaders() })
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Could not load posts (${r.status})`))))
+			.then((b) => setAppointments((b?.data as AppointmentRowFull[]) || []))
+			// Not fatal: the person editor and the mailbox list still work without it.
+			.catch(() => setAppointments([]));
+	}, []);
+
+	useEffect(() => {
+		loadAppointments();
+	}, [loadAppointments]);
+
+	/**
+	 * Employees and committees, for the pickers in the post form.
+	 *
+	 * From `/api/core/*`, which every grant that reaches this page already holds —
+	 * `core/employees` is read-only reference data. A failure here leaves the form
+	 * with empty dropdowns rather than breaking the screen, which is why it is not
+	 * surfaced as an error.
+	 */
 	useEffect(() => {
 		let cancelled = false;
-		fetch(`${API}/admin/appointments`, { headers: authHeaders() })
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Could not load appointments (${r.status})`))))
-			.then((b) => {
-				if (!cancelled) setAppointments((b?.data as AppointmentRow[]) || []);
+		Promise.all([
+			fetch(`${API}/core/employees`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : { data: [] })),
+			fetch(`${API}/core/committees`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : { data: [] })),
+		])
+			.then(([emp, cmt]) => {
+				if (cancelled) return;
+				setEmployees(((emp?.data as any[]) || []).map((e) => ({ id: e.id, name: e.name, department: e.department })));
+				setCommittees(((cmt?.data as any[]) || []).map((c) => ({ id: c.id, committeeName: c.committeeName })));
 			})
-			.catch(() => {
-				// Not fatal: the person editor and the mailbox list still work without it.
-				if (!cancelled) setAppointments([]);
-			});
+			.catch(() => {});
 		return () => {
 			cancelled = true;
 		};
@@ -218,13 +274,14 @@ export default function Admin() {
 
 	// The server enforces this too; this only avoids rendering an editor whose
 	// every save would be refused.
-	if (!can('admin', 'permissions', 'view')) {
+	if (tabs.length === 0) {
 		return (
 			<div className="p-8 max-w-lg mx-auto text-center space-y-3">
 				<ShieldAlert className="w-8 h-8 mx-auto text-textSecondary" />
 				<div className="text-sm font-black uppercase tracking-wider">Not available</div>
 				<p className="text-xs text-textSecondary">
-					Administering permissions requires the admin/permissions feature.
+					HQ needs at least one of the admin features: permissions, appointments, mailboxes
+					or email_config.
 				</p>
 				<Link to="/" className="inline-block text-[10px] font-black uppercase tracking-wider text-primary hover:underline">
 					Back to apps
@@ -241,9 +298,9 @@ export default function Admin() {
 				</Link>
 				<UserCog className="w-5 h-5 shrink-0 text-primary" />
 				<div className="min-w-0">
-					<h1 className="text-lg font-black uppercase tracking-wider leading-none">Access</h1>
+					<h1 className="text-lg font-black uppercase tracking-wider leading-none">HQ</h1>
 					<p className="mt-1 text-[10px] uppercase tracking-wider text-textSecondary">
-						Permissions are granted per person, feature by feature
+						Posts, people and what each can reach
 					</p>
 				</div>
 				<button
@@ -268,20 +325,7 @@ export default function Admin() {
 			    width: three items fit on a 390px screen, and hiding them behind a tap
 			    costs a second tap just to discover what is here. */}
 			<div className="scroll-x no-scrollbar mb-4 flex gap-2">
-				{([
-					{ id: 'access', label: 'Access', icon: Users },
-					{ id: 'posts', label: 'Posts', icon: Briefcase },
-					{ id: 'mailboxes', label: 'Mailboxes', icon: Mail },
-					{ id: 'unrouted', label: 'Unrouted', icon: Inbox },
-					{ id: 'automations', label: 'Automations', icon: Bot },
-				] as const)
-					// Access and Posts always show — reaching this page at all required
-					// admin/permissions, which is the grant both editors are gated on.
-					// The rest carry their own.
-					.filter((t) => t.id === 'access' || t.id === 'posts'
-						|| (t.id === 'mailboxes' && can('admin', 'mailboxes', 'view'))
-						|| (t.id === 'unrouted' && can('admin', 'mailboxes', 'view'))
-						|| (t.id === 'automations' && can('admin', 'email_config', 'view')))
+				{tabs
 					.map((t) => (
 						<button
 							key={t.id}
@@ -303,8 +347,12 @@ export default function Admin() {
 			{section === 'posts' && (
 				<AppointmentAccess
 					appointments={appointments}
+					employees={employees}
+					committees={committees}
 					catalog={catalogLoaded ? catalog : undefined}
 					disabled={!canEditPerms}
+					disableManage={!canManagePosts}
+					onChanged={loadAppointments}
 				/>
 			)}
 

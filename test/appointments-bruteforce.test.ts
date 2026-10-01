@@ -194,7 +194,7 @@ async function build(): Promise<void> {
 
 /** Mutates through the API, as the superadmin, so the routes are what moves the state. */
 async function patch(appointmentId: string, body: Record<string, unknown>): Promise<Response> {
-  return SELF.fetch(`https://test.local/api/hr/appointments/${appointmentId}`, {
+  return SELF.fetch(`https://test.local/api/appointments/${appointmentId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${await token('u_ceo')}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

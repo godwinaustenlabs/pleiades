@@ -1,4 +1,4 @@
-import { Context, Hono, type MiddlewareHandler } from 'hono';
+import { Context, Hono } from 'hono';
 import { eq, desc, and, ne, or } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
@@ -69,13 +69,16 @@ adminRouter.delete('/permissions/:id', requireFeatureAccess('admin', 'permission
 // precedence rule to get wrong, and no group that widening could widen by
 // accident: an appointment is held by one person at a time.
 //
-// Both editors are gated on `admin/permissions` edit and NOT on anything in HR.
-// Assigning somebody to a post is an HR authority; deciding what the post may
-// reach is not. `PUT /api/permissions/user/:id` was deleted once for being gated
-// on `hr/appointments` edit, and putting the appointment editor behind that same
-// grant would have reinstated the escalation under a new name.
+// Both editors are gated on `admin/permissions` edit. The post editor lives in
+// src/routes/appointments.ts; this file keeps the per-person one.
+//
+// Neither is gated on anything in HR. `PUT /api/permissions/user/:id` was deleted
+// once for being gated on `hr/appointments` edit, which let anybody able to edit an
+// appointment grant themselves everything — and migration 0050 finished the job by
+// moving the appointment grant out of HR entirely, since assigning a post IS
+// conferring access.
 
-/** Shared by both editors: a grant naming something outside APP_FEATURES can never be satisfied. */
+/** A grant naming something outside APP_FEATURES can never be satisfied by getPerm(). */
 function unknownFeatures(grants: { appName: string; feature: string }[]): string[] {
   return grants
     .filter((p) => !APP_FEATURES[p.appName]?.includes(p.feature))
@@ -141,112 +144,6 @@ adminRouter.put('/users/:id/permissions', requireFeatureAccess('admin', 'permiss
 
     await logAudit(c.env, actor.id, 'UPDATE', 'user_app_permissions', userId, { count: toInsert.length });
     return ok(c, { userId, count: toInsert.length, isSuperadmin: !!target.isSuperadmin });
-  } catch (err) { return serverError(c, err); }
-});
-
-// ── APPOINTMENT GRANTS ────────────────────────────────────────────────────────
-
-/**
- * Either grant opens the appointment list.
- *
- * The Posts editor needs it (admin/permissions) and so does the mailbox editor, to
- * attach an address to a post (admin/mailboxes). Gated on permissions alone, a
- * mailbox administrator got a 403 and the appointment picker rendered empty — which
- * looks like "there are no appointments" rather than "you cannot see them".
- */
-const canListAppointments: MiddlewareHandler = async (rawCtx, next) => {
-  const c = rawCtx as Parameters<typeof checkFeaturePermission>[0];
-  if (await checkFeaturePermission(c, 'admin', 'permissions', 'view')) return await next();
-  if (await checkFeaturePermission(c, 'admin', 'mailboxes', 'view')) return await next();
-  return c.json({ error: 'Forbidden: needs admin/permissions or admin/mailboxes' }, 403);
-};
-
-adminRouter.get('/appointments', canListAppointments, async (c) => {
-  try {
-    /**
-     * Every appointment, with its holder, for the access editor's picker.
-     *
-     * Here rather than reusing `GET /hr/appointments` because the two answer to
-     * different grants: administering access must not require HR access, and
-     * requiring both would mean nobody could edit an appointment's permissions
-     * without also being able to read the payroll.
-     */
-    const rows = await getDb(c.env).query.appointments.findMany({
-      with: { employee: { columns: { id: true, name: true, department: true } } },
-    });
-    return ok(c, rows);
-  } catch (err) { return serverError(c, err); }
-});
-
-adminRouter.get('/appointments/:id/permissions', requireFeatureAccess('admin', 'permissions', 'view'), async (c) => {
-  try {
-    const rows = await getDb(c.env).query.appointmentAppPermissions.findMany({
-      where: eq(schema.appointmentAppPermissions.appointmentId, c.req.param('id')!),
-    });
-    return ok(c, rows);
-  } catch (err) { return serverError(c, err); }
-});
-
-/**
- * PUT /admin/appointments/:id/permissions
- *
- * Replaces one appointment's entire grant set. Body: { permissions: [{ appName,
- * feature, canView, canEdit, canDelete }] }. Delete-then-insert, so unticking a
- * box actually removes the grant.
- *
- * Saving this changes what the CURRENT HOLDER can reach, on their next request —
- * grants are read per request, so there is no token to expire first. It also
- * changes what every future holder can reach, which is the point of editing the
- * post rather than the person.
- */
-adminRouter.put('/appointments/:id/permissions', requireFeatureAccess('admin', 'permissions', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env);
-    const actor = c.get('user');
-    const appointmentId = c.req.param('id')!;
-    const { permissions } = await c.req.json<{ permissions: any[] }>();
-    if (!Array.isArray(permissions)) return badRequest(c, 'permissions array required');
-
-    const appointment = await db.query.appointments.findFirst({
-      where: eq(schema.appointments.id, appointmentId),
-      columns: { id: true, roleOrTitle: true, employeeId: true, isActive: true },
-    });
-    if (!appointment) return notFound(c, 'Appointment not found');
-
-    const unknown = unknownFeatures(permissions);
-    if (unknown.length > 0) return badRequest(c, `Unknown app/feature: ${unknown.join(', ')}`);
-
-    await db.delete(schema.appointmentAppPermissions)
-      .where(eq(schema.appointmentAppPermissions.appointmentId, appointmentId));
-
-    const now = new Date();
-    const toInsert = permissions
-      .filter((p) => p.canView || p.canEdit || p.canDelete)
-      .map((p) => ({
-        id: generateId('aap'),
-        appointmentId,
-        appName: p.appName,
-        feature: p.feature,
-        canView: p.canView ?? false,
-        canEdit: p.canEdit ?? false,
-        canDelete: p.canDelete ?? false,
-        createdAt: now,
-        updatedAt: now,
-      }));
-    for (const batch of chunk(toInsert, 5)) {
-      if (batch.length > 0) await db.insert(schema.appointmentAppPermissions).values(batch as any);
-    }
-
-    await logAudit(c.env, actor.id, 'UPDATE', 'appointment_app_permissions', appointmentId, {
-      count: toInsert.length,
-      roleOrTitle: appointment.roleOrTitle ?? null,
-      // Who this took effect for immediately. An access change that is invisible
-      // in the audit log because it was addressed to a post rather than a person
-      // is the one thing appointment-level grants could have made worse.
-      holder: appointment.employeeId ?? null,
-      appliesNow: appointment.isActive === true,
-    });
-    return ok(c, { appointmentId, count: toInsert.length, holder: appointment.employeeId ?? null });
   } catch (err) { return serverError(c, err); }
 });
 

@@ -505,10 +505,10 @@ export default function MailboxTab({ scope, heading, description }: MailboxTabPr
         <h3 className="mb-2 text-sm font-black uppercase tracking-widest text-textPrimary">No mailbox yet</h3>
         <p className="text-xs leading-relaxed text-textSecondary">
           {scope.kind === 'mine' || scope.kind === 'personal'
-            ? 'You have no mailbox yet — neither your own address nor one attached to a post you hold. An administrator can create either on the Access page.'
+            ? 'You have no mailbox yet — neither your own address nor one attached to a post you hold. An administrator can create either in HQ.'
             : scope.kind === 'catchall'
               ? 'No catch-all mailbox exists, so mail to an address nobody created is refused at the door rather than collected.'
-              : `No mailbox has been created for ${scope.app}. An administrator can add one on the Access page.`}
+              : `No mailbox has been created for ${scope.app}. An administrator can add one in HQ.`}
         </p>
       </div>
     );

@@ -600,7 +600,7 @@ export default function CRM() {
               <MailboxTab
                 scope={{ kind: 'app', app: 'crm' }}
                 heading="CRM mail"
-                description="Mailboxes the CRM holds. Not per-committee — who can read and send is managed on the Access page."
+                description="Mailboxes the CRM holds. Not per-committee — who can read and send is managed in HQ."
               />
             )}
 

@@ -6,7 +6,7 @@ import { errorMessage } from '../lib/errors';
 /**
  * Creating and assigning mailboxes.
  *
- * Lives on the Access page next to the permission matrix on purpose: deciding who
+ * Lives in HQ next to the permission matrix on purpose: deciding who
  * a mailbox belongs to and deciding what somebody can reach are the same job, done
  * by the same person, and splitting them across two screens is how the two drift.
  *

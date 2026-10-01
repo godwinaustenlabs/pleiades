@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Users, Shield, Activity,
-   Settings, BarChart3, Plus, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
+   BarChart3, Loader2, Save, X, Lock, CheckCircle2, Copy, Check, FileText
 , Mail, KeyRound
 } from 'lucide-react';
 import Login from './Login';
@@ -9,7 +10,6 @@ import { profilePhotoUrl } from '../lib/avatar';
 import GAGrid, { type Column } from '../components/GAGrid';
 
 import TaskBoard from '../components/TaskBoard';
-import AppointmentForm from '../components/AppointmentForm';
 import AccountForm from '../components/AccountForm';
 import DeleteWizard from '../components/DeleteWizard';
 import ProfileModal from '../components/ProfileModal';
@@ -30,7 +30,7 @@ import { errorMessage } from '../lib/errors';
 
 
 
-type Tab = 'dashboard' | 'directory' | 'payroll' | 'appointments' | 'committees' | 'tasks' | 'reports' | 'sops' | 'email';
+type Tab = 'dashboard' | 'directory' | 'payroll' | 'committees' | 'tasks' | 'reports' | 'sops' | 'email';
 
 const DEPARTMENT_OPTIONS = [
   { value: '', label: 'None (e.g. CEO)' },
@@ -54,11 +54,10 @@ function HR() {
   const [committees, setCommittees] = useState<any[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<any[]>([]);
 
-  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   /** The employee whose single login is being created or amended, if any. */
   const [accountFor, setAccountFor] = useState<{ id: string; name: string } | null>(null);
   /** What is being deleted, if anything. The wizard fetches its own impact report. */
-  const [deleting, setDeleting] = useState<{ kind: 'appointment' | 'employee'; id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const [showPayrollForm, setShowPayrollForm] = useState(false);
   const [viewingPaySlip, setViewingPaySlip] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -97,6 +96,15 @@ function HR() {
     };
   };
 
+  /**
+   * Posts are an HQ feature since migration 0050, so this is the one thing HR asks
+   * about the `admin` app: whether to show the link through to where they are managed.
+   * `getPerm('appointments')` would now always be false — `hr/appointments` no longer
+   * exists — and the link would be invisible to everybody.
+   */
+  const canManagePosts = !!user.isSuperadmin
+    || userPermissions.some(p => p.appName === 'admin' && p.feature === 'appointments' && p.canEdit);
+
   const fetchEmployees = () => {
     setLoading(true);
     fetch(`${API}/core/employees`, { headers: { Authorization: `Bearer ${token()}` } })
@@ -105,8 +113,15 @@ function HR() {
       .catch(() => setLoading(false));
   };
 
+  /**
+   * Read-only, and the only thing HR still needs from appointments: the directory
+   * shows whose post is whose. Managing them moved to HQ with migration 0050, since
+   * assigning a post confers access. `GET /api/appointments` admits `hr/employees`
+   * view for exactly this, which is why that router sits at the top level rather
+   * than inside `/api/admin`.
+   */
   const fetchAppointments = () => {
-    fetch(`${API}/hr/appointments`, { headers: { Authorization: `Bearer ${token()}` } })
+    fetch(`${API}/appointments`, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => { if (r.status === 401) { handleLogout(); throw new Error(); } return r.json(); })
       .then(d => setAppointments(d.data || [])).catch(() => { });
   };
@@ -130,11 +145,6 @@ function HR() {
         fetchEmployees();
         fetchAppointments(); // Added to show Primary Role in directory
       }
-      if (tab === 'appointments' && getPerm('appointments').canView) {
-        fetchAppointments();
-        fetchEmployees();
-        fetchCommittees();
-      }
       if (tab === 'committees') {
         fetchCommittees();
         fetchEmployees();
@@ -152,7 +162,6 @@ function HR() {
     const all = [
       { id: 'dashboard', label: 'Dashboard', icon: Activity, feature: 'employees' },
       { id: 'directory', label: 'Directory', icon: Users, feature: 'employees' },
-      { id: 'appointments', label: 'Appointments', icon: Shield, feature: 'appointments' },
       { id: 'committees', label: 'Committees', icon: Users, feature: 'employees' }, // shared with employees for HR
       { id: 'payroll', label: 'Payroll', icon: BarChart3, feature: 'payroll' },
       { id: 'tasks', label: 'Tasks', icon: Activity, feature: 'tasks' },
@@ -305,26 +314,8 @@ function HR() {
     }
   };
 
-  const handleAppointmentEdit = async (record: any) => {
-    setEditingRecord(record);
-    setShowAppointmentForm(true);
-  };
-
-  /**
-   * Deleting opens the wizard rather than a `confirm()`.
-   *
-   * The old dialog said "this will PERMANENTLY DELETE this appointment. Are you sure?"
-   * and then the request failed with a foreign-key error whenever anything depended on
-   * it — so the warning was noise and the refusal was unactionable. The wizard shows
-   * the server's own impact report and offers the files first.
-   */
-  const handleAppointmentDelete = async (record: any) => {
-    setDeleting({ kind: 'appointment', id: record.id, name: record.roleOrTitle || 'this post' });
-  };
-
-  /** Same wizard, the other subject — it lists their posts, assets and documents. */
   const handleEmployeeDelete = async (record: any) => {
-    setDeleting({ kind: 'employee', id: record.id, name: record.name });
+    setDeleting({ id: record.id, name: record.name });
   };
 
   const handlePayrollSubmit = async (data: any) => {
@@ -437,32 +428,6 @@ function HR() {
           />
         )}
 
-        {tab === 'appointments' && (
-          <GAGrid
-            title="Appointments"
-            entityName="appointment"
-            columns={[
-              { key: 'roleOrTitle', label: 'Title', type: 'avatar' },
-              {
-                key: 'employeeId', label: 'Held by',
-                render: (v) => v
-                  ? (employees.find(e => e.id === v)?.name || v)
-                  : <span className="text-textSecondary italic text-[10px]">Vacant</span>,
-              },
-              { key: 'committeeId', label: 'Committee', render: (v) => committees.find(c => c.id === v)?.committeeName || 'None' },
-              { key: 'appointmentDate', label: 'Date', type: 'date' },
-              { key: 'isActive', label: 'Status', render: (v) => v ? '✅ Active' : '❌ Ended' },
-            ]}
-            data={appointments}
-            onAdd={() => { setEditingRecord(null); setShowAppointmentForm(true); }}
-            onEdit={handleAppointmentEdit}
-            onDelete={handleAppointmentDelete}
-            canAdd={getPerm('appointments').canEdit}
-            canEdit={getPerm('appointments').canEdit}
-            canDelete={getPerm('appointments').canDelete}
-          />
-        )}
-
         {tab === 'committees' && (
           <GAGrid
             title="Organizational Committees"
@@ -482,7 +447,7 @@ function HR() {
           <MailboxTab
             scope={{ kind: 'app', app: 'hr' }}
             heading="HR mail"
-            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+            description="Mailboxes this department holds. Who can read and send from each is managed in HQ."
           />
         )}
         {tab === 'tasks' && <TaskBoard department="HR" canEdit={getPerm('tasks').canEdit} />}
@@ -505,61 +470,19 @@ function HR() {
           employees={employees}
           onClose={() => { setShowEntityForm(false); setEditingRecord(null); }}
           onSubmit={handleEmployeeSubmit}
-          canEditPermissions={getPerm('appointments').canEdit}
+          canEditPermissions={canManagePosts}
           canManageAccount={getPerm('employees').canEdit}
           onManageAccount={() => {
             if (!editingRecord?.id) return;
             setAccountFor({ id: editingRecord.id, name: editingRecord.name || 'this employee' });
             setShowEntityForm(false);
           }}
-          onAddAppointment={() => {
-            const empId = editingRecord?.id;
-            setEditingRecord({ employeeId: empId });
-            setShowEntityForm(false);
-            setShowAppointmentForm(true);
-          }}
-          onEditAppointment={(appt) => {
-            handleAppointmentEdit(appt);
-            setShowEntityForm(false);
-          }}
-        />
-      )}
-
-      {showAppointmentForm && (
-        <AppointmentForm
-          employees={employees} committees={committees}
-          initialData={editingRecord}
-          onClose={() => { setShowAppointmentForm(false); setEditingRecord(null); }}
-          onSubmit={async (data) => {
-            /**
-             * PATCH when it exists, POST when it does not. The old single
-             * `/appointments/provision` endpoint is gone: it created a login per
-             * posting, which is how one person came to have two accounts.
-             *
-             * A PATCH that changes `employeeId` is a handover — the server moves the
-             * post's grants, mailbox and committee seat with it.
-             */
-            const editing = !!editingRecord?.id;
-            const res = await fetch(
-              editing ? `${API}/hr/appointments/${editingRecord.id}` : `${API}/hr/appointments`,
-              {
-                method: editing ? 'PATCH' : 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-                body: JSON.stringify(data),
-              },
-            );
-            if (res.status === 401) { handleLogout(); return; }
-            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save the appointment');
-            setShowAppointmentForm(false);
-            setEditingRecord(null);
-            fetchAppointments();
-          }}
         />
       )}
 
       {deleting && (
         <DeleteWizard
-          kind={deleting.kind}
+          kind="employee"
           id={deleting.id}
           name={deleting.name}
           onClose={() => setDeleting(null)}
@@ -622,18 +545,17 @@ export default HR;
 /* ── SPECIALIZED EMPLOYEE FORM ── */
 interface EmployeeFormProps {
   initialData: any;
+  /** Read-only. Posts are created and assigned in HQ — see the note in the section below. */
   appointments: any[];
   canManageAccount: boolean;
   onManageAccount: () => void;
   employees: any[];
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
-  onAddAppointment: () => void;
-  onEditAppointment: (appt: any) => void;
   canEditPermissions?: boolean;
 }
 
-function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, onAddAppointment, onEditAppointment, canEditPermissions, canManageAccount, onManageAccount }: EmployeeFormProps) {
+function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, canEditPermissions, canManageAccount, onManageAccount }: EmployeeFormProps) {
   const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, efficiencyScore: 0, sectorId: '', cnic: '', dob: '', gender: 'Male', address: '', emergencyContact: '', contactInfo: '', designation: '', reportingManagerId: '', employmentType: 'Full-time', confirmationDate: '', contractStartDate: '', contractEndDate: '', assignedOffice: '', bankDetails: '', taxInformation: '' });
   const [assets, setAssets] = useState<any[]>([]);
   const [unassignedAssets, setUnassignedAssets] = useState<any[]>([]);
@@ -848,17 +770,18 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                     </button>
                   )}
                   {canEditPermissions && (
-                    <button type="button" onClick={onAddAppointment} className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
-                      <Plus className="w-3 h-3" /> Appoint
-                    </button>
+                    <Link to="/admin" className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-[10px] font-black hover:bg-primary/20 transition-all uppercase tracking-widest border border-primary/20">
+                      <Shield className="w-3 h-3" /> Manage in HQ
+                    </Link>
                   )}
                 </div>
               </div>
 
               <p className="text-[10px] leading-relaxed text-textSecondary">
-                One login per person, however many posts they hold. What each post can reach is set
-                on the Access page under Posts, and reassigning a post moves its access, its mailbox
-                and its committee seat to the new holder.
+                Read-only here. Posts are created, assigned and ended in <span className="font-bold">HQ → Posts</span>,
+                because assigning one confers access: a handover moves the post&rsquo;s permissions,
+                its mailbox and its committee seat to the new holder in a single edit. One login per
+                person, however many posts they hold.
               </p>
 
               {appointments.length === 0 ? (
@@ -881,11 +804,6 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                         <div className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-tighter ${appt.isActive ? 'bg-success/10 text-success border border-success/20' : 'bg-danger/10 text-danger border border-danger/20'}`}>
                           {appt.isActive ? 'ACTIVE' : 'ENDED'}
                         </div>
-                        {canEditPermissions && (
-                          <button type="button" onClick={() => onEditAppointment(appt)} className="p-1.5 hover:bg-white/10 rounded-lg text-textSecondary hover:text-primary transition-all">
-                            <Settings className="w-4 h-4" />
-                          </button>
-                        )}
                       </div>
                     </div>
                   ))}

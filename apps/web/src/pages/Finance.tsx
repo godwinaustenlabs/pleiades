@@ -587,7 +587,7 @@ function Finance() {
           <MailboxTab
             scope={{ kind: 'app', app: 'finance' }}
             heading="Finance mail"
-            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+            description="Mailboxes this department holds. Who can read and send from each is managed in HQ."
           />
         )}
         {tab === 'docs' && (

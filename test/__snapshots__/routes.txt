@@ -54,9 +54,6 @@ GET    /api/acquisition/users
 GET    /api/admin/api-keys
 POST   /api/admin/api-keys
 DELETE /api/admin/api-keys/:id
-GET    /api/admin/appointments
-GET    /api/admin/appointments/:id/permissions
-PUT    /api/admin/appointments/:id/permissions
 GET    /api/admin/audit-logs
 GET    /api/admin/permissions
 POST   /api/admin/permissions
@@ -73,6 +70,14 @@ POST   /api/admin/users/:id/reset-password
 GET    /api/admin/users/my-team
 POST   /api/admin/users/provision
 POST   /api/agents/slack/event
+GET    /api/appointments
+POST   /api/appointments
+DELETE /api/appointments/:id
+GET    /api/appointments/:id
+PATCH  /api/appointments/:id
+GET    /api/appointments/:id/impact
+GET    /api/appointments/:id/permissions
+PUT    /api/appointments/:id/permissions
 GET    /api/assets/*
 PUT    /api/assets/upload/*
 POST   /api/auth/complete-reset
@@ -254,12 +259,6 @@ GET    /api/finance/transactions/:id
 PATCH  /api/finance/transactions/:id
 GET    /api/finance/trial-balance
 GET    /api/health
-GET    /api/hr/appointments
-POST   /api/hr/appointments
-DELETE /api/hr/appointments/:id
-GET    /api/hr/appointments/:id
-PATCH  /api/hr/appointments/:id
-GET    /api/hr/appointments/:id/impact
 GET    /api/hr/assets
 POST   /api/hr/assets
 PATCH  /api/hr/assets/:id

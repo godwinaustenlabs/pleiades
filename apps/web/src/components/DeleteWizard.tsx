@@ -65,7 +65,7 @@ const FATE: Record<Fate, { label: string; icon: typeof Trash2; tone: string }> =
 };
 
 const base = (kind: 'appointment' | 'employee', id: string) =>
-  kind === 'appointment' ? `${API}/hr/appointments/${id}` : `${API}/core/employees/${id}`;
+  kind === 'appointment' ? `${API}/appointments/${id}` : `${API}/core/employees/${id}`;
 
 /**
  * A download URL a browser can follow.

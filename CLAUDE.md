@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (28 files, 667 tests)
+npm test          # vitest — see test/ (28 files, 674 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,14 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest two are small and both fix defects that only a deletion could surface:
+The newest is `0050_appointments_into_admin.sql`, which moves `hr/appointments` to
+`admin/appointments`. Assigning a post *is* conferring access — since 0047 a handover
+moves the post's grants, its mailbox and its committee seat in one edit — so behind an
+HR grant, whoever ran the payroll could confer any access a post carried. It rewrites
+both grant tables, because access has had two sources since 0047 and a migration
+remembering only one would silently narrow whoever held this through a post.
+
+Before that, two small ones that both fix defects only a deletion could surface:
 
 - `0049_task_attachment_fk.sql` — `task_attachments.task_id` referenced
   `universal_tasks_old`, the temporary name of a past hand-run rebuild. SQLite
@@ -220,7 +227,13 @@ table, not `meta/_journal.json`.
 
 ### Request flow
 
-`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
+`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `appointments`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
+
+`appointments` is top level rather than under `/api/admin` for the same reason `email`
+and `assets` are: a post is not one app's concern. HQ manages it, HR reads it for the
+staff directory, the mailbox editor reads it for the post picker — four grants, one of
+which is not an admin feature at all, so `requireAppAccess('admin')` would have locked
+HR out of its own directory column. See `src/routes/appointments.ts`.
 
 Four routers are **not** mounted at the top level — `src/routes/agent.ts`,
 `assets-register.ts`, `statements.ts` and `reports.ts` are sub-routed inside
@@ -343,14 +356,14 @@ role is held by many people at once, an appointment by one, so widening one cann
 widen anyone else's access. Do not reintroduce `roles`, `role_app_permissions` or
 `users_logins.role_id`, and do not reintroduce `appointments.account_id`.
 
-**Editing a post's grants is gated on `admin/permissions` edit, never on
-anything in HR.** `PUT /api/admin/appointments/:id/permissions`. Assigning
-somebody to a post (`hr/appointments` edit) and deciding what the post may open
-are different authorities: `PUT /api/permissions/user/:id` was deleted once for
-being gated on `hr/appointments` edit, and putting the appointment editor behind
-that grant would reinstate the same escalation under a new name.
-`test/appointments-rbac.test.ts` fails if `POST /hr/appointments` ever honours a
-`permissions` key.
+**Editing a post's grants is gated on `admin/permissions` edit; creating and
+assigning the post is `admin/appointments` edit.** Neither opens the other.
+`PUT /api/permissions/user/:id` was deleted once for being gated on
+`hr/appointments` edit, which let anybody able to edit an appointment grant
+themselves everything — and migration 0050 finished that job by moving the
+appointment grant out of HR entirely, since assigning a post confers access.
+`test/appointments-rbac.test.ts` fails if `POST /api/appointments` ever honours a
+`permissions` key, or if either grant ever opens the other's routes.
 
 - `requireAppAccess(module)` — gate a whole router (needs view on any feature of it).
 - `requireFeatureAccess(app, feature, 'view'|'edit'|'delete')` / `checkFeaturePermission(...)` — per-feature. `delete` implies `edit` implies `view`.
@@ -383,8 +396,24 @@ changes).
 Every module router is gated per feature except `dashboard`, which is app-gated
 on purpose: all of its handlers already filter on the calling user's own id.
 
-Manage access on the Access page at `/admin` (`apps/web/src/pages/Admin.tsx`),
-which has two editors matching the two tables:
+**The `admin` app is called HQ in the product.** The RBAC key stays `admin` — it is
+in every gate, every grant row and every audit entry, so renaming it would be a
+migration plus a rewrite for no behavioural change. `APP_LABEL` in
+`components/PermissionMatrix.tsx` and `components/EffectiveAccess.tsx` maps the one to
+the other wherever a person reads an app name; keep those two in step.
+
+HQ carries **two** appointment-related features, and the split is a security property:
+
+- `admin/appointments` — create a post, assign a holder, end it, delete it.
+- `admin/permissions` — decide what a post may *reach*.
+
+Collapsing them would make `admin/appointments` an escalation to everything, by way
+of creating a post, granting it the world and appointing yourself to it. So
+`POST /api/appointments` deliberately ignores a `permissions` key on its body, and
+`test/appointments-rbac.test.ts` fails if either grant ever opens the other's routes.
+
+Manage access in HQ at `/admin` (`apps/web/src/pages/Admin.tsx`), which has two
+editors matching the two tables:
 
 - **Access** — `PUT /api/admin/users/:id/permissions`, one person's own grants.
   Above the matrix sits `components/EffectiveAccess.tsx`, a read-only panel
@@ -393,14 +422,19 @@ which has two editors matching the two tables:
   post is *absent* from it, and without the panel that absence reads as "they do
   not have it" and invites granting it again, directly, to the person — which is
   exactly the per-person sprawl appointment grants exist to prevent.
-- **Posts** — `PUT /api/admin/appointments/:id/permissions`, via
-  `components/AppointmentAccess.tsx`. Saving changes what the current holder can
-  reach on their next request and what every future holder can reach.
+- **Posts** — `components/AppointmentAccess.tsx`, which is the post, its holder and
+  its permissions on one screen. It used to be two places (created in HR, permissions
+  set in HQ) and that split was the bug: assigning a post IS conferring access, so the
+  two halves of one decision sat behind two grants in two apps. Each half is still
+  disabled independently, since somebody may hold `admin/appointments` and not
+  `admin/permissions`.
 
-Both use `components/PermissionMatrix.tsx` and both are gated on
-`admin/permissions` edit. `GET /api/admin/appointments` lists posts for either
-editor and accepts `admin/permissions` **or** `admin/mailboxes` view, since
-attaching a mailbox to a post needs the same list.
+Both use `components/PermissionMatrix.tsx`. `GET /api/appointments` lists posts and
+admits **any one of** `admin/appointments`, `admin/permissions`, `admin/mailboxes` or
+`hr/employees` view — each is a real reason to see who holds what, and requiring the
+union would mean nobody could do their job without everybody else's access. HR keeps
+only that read: the directory shows whose post is whose, and nothing in HR writes an
+appointment any more.
 
 Sign-in details are provisioned once per person at
 `POST /api/hr/employees/:id/account` (`components/AccountForm.tsx`, reachable
@@ -426,10 +460,10 @@ One file, two halves that must agree: `appointmentImpact`/`employeeImpact` descr
 a deletion believing it is smaller than it is.
 
 ```
-GET    /api/hr/appointments/:id/impact        what would go       (hr/appointments delete)
-DELETE /api/hr/appointments/:id              refuses, and says why
-DELETE /api/hr/appointments/:id?cascade=1     does it
-GET    /api/core/employees/:id/impact                             (core/employees delete)
+GET    /api/appointments/:id/impact      what would go    (admin/appointments delete)
+DELETE /api/appointments/:id             refuses, and says why
+DELETE /api/appointments/:id?cascade=1   does it
+GET    /api/core/employees/:id/impact                     (core/employees delete)
 DELETE /api/core/employees/:id[?cascade=1]
 ```
 
@@ -750,7 +784,7 @@ the order of its branches is the security property:**
    narrower than `hr/email`, and it widens as well as narrows. Not an OR with the
    app grant — `test/email-rbac.test.ts` fails if the two are ever combined.
 4. Otherwise an `app` mailbox is reached through `<app>/email`, an ordinary
-   feature on the Access page.
+   feature on HQ.
 
 `<app>/email` is declared for `hr`, `finance`, `legal`, `tech`, `acquisition`,
 `ops` and `crm` (not `core` — shared reference data is not a department anyone
@@ -951,7 +985,7 @@ in the workspace. `mine` (`?app=mine`) is the personal box *plus* every appointm
 box the caller holds, which is the single workspace this whole model exists to
 produce; `personal` stays strict so an administrative screen can still ask the
 narrower question. Mailboxes are created and assigned in
-`components/MailboxAdmin.tsx` on the Access page, which takes the appointment list
+`components/MailboxAdmin.tsx` on HQ, which takes the appointment list
 so an address can be attached to a post.
 
 **Inbound HTML is rendered, and `components/MailHtml.tsx` is the only thing allowed

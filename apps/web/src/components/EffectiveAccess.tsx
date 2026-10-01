@@ -25,7 +25,9 @@ interface Sources {
   effective: Grant[];
 }
 
-const label = (g: Grant) => `${g.appName}/${g.feature}`;
+/** Matches PermissionMatrix, so one grant does not read two ways on one screen. */
+const APP_LABEL: Record<string, string> = { admin: 'HQ' };
+const label = (g: Grant) => `${APP_LABEL[g.appName] ?? g.appName}/${g.feature}`;
 const level = (g: Grant) => (g.canDelete ? 'delete' : g.canEdit ? 'edit' : 'view');
 
 function Chips({ grants }: { grants: Grant[] }) {

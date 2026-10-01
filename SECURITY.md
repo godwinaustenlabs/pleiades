@@ -429,3 +429,38 @@ Two defects surfaced on the way, both silent, neither introduced here:
   write time, so every insert failed. Not a security hole, but the same shape as one:
   a feature that looks implemented, fails closed, and reports nothing anybody reads.
   Fixed in migration 0049.
+
+### Moving the appointment capability out of HR (migration 0050)
+
+`hr/appointments` became `admin/appointments`. The grant that creates a post and
+assigns a holder was sitting in HR, next to payroll — and since migration 0047 that
+grant confers access: a handover moves the post's permissions, its mailbox and its
+committee seat to the new holder in a single edit. So whoever could run the payroll
+could also hand somebody every permission a post carried, without touching a
+permission matrix and without `admin/permissions`.
+
+Two things keep the fix from being cosmetic:
+
+- **The capability is split in two, and neither half opens the other.**
+  `admin/appointments` manages the post; `admin/permissions` decides what it reaches.
+  Together they are an escalation to anything — create a post, grant it everything,
+  appoint yourself to it — so `POST /api/appointments` ignores a `permissions` key on
+  its body, and `test/appointments-rbac.test.ts` asserts each grant is refused the
+  other's routes.
+- **The migration deletes the old rows rather than leaving them.** A grant naming a
+  feature `APP_FEATURES` no longer declares can never satisfy `getPerm()`, so a copy
+  left behind would sit in the table looking like access while doing nothing — the
+  same class of defect as the undeclared `ledgers` and `funnels` features. It rewrites
+  both `user_app_permissions` and `appointment_app_permissions`, because access has
+  had two sources since 0047 and a migration remembering only one would silently
+  narrow whoever held this through a post.
+
+One consequence worth stating. `GET /api/appointments` admits **any one of**
+`admin/appointments`, `admin/permissions`, `admin/mailboxes` or `hr/employees` view.
+That is wider than the write path on purpose: each is a real reason to see who holds
+what — managing posts, editing what one reaches, attaching an address to one, showing
+somebody's job in the staff directory — and requiring the union would mean nobody
+could do their job without everybody else's access. Reading the list reveals titles
+and holders, which the staff directory already shows. Writing is `admin/appointments`
+alone, and the router sits at the top level rather than inside `/api/admin` precisely
+so the read can be opened to HR without opening the admin app to them.

@@ -11,9 +11,10 @@ import { errorMessage } from '../lib/errors';
  *   - the login belongs to the person, not the post. Somebody holding two posts had
  *     two accounts under the old form and could only read one workspace at a time.
  *     Accounts are provisioned once per employee, in the directory.
- *   - the permission matrix is on the Access page, gated on `admin/permissions`.
- *     Editing an appointment takes `hr/appointments`, and anybody with that grant
- *     being able to write grants would be an escalation to anything in the system.
+ *   - the permission matrix is gated on `admin/permissions`, while editing the post
+ *     takes `admin/appointments`. Anybody able to do the second being able to do the
+ *     first would be an escalation to anything: create a post, grant it the world,
+ *     appoint yourself to it.
  *
  * What is left is the thing that actually matters: choosing who holds the post.
  * Changing that on an existing appointment moves its access, its mailbox and its
@@ -198,14 +199,14 @@ export default function AppointmentForm({ onClose, onSubmit, employees, committe
                   <span className="font-bold text-textPrimary">Active.</span> This is the switch on
                   whether the post grants anything — not the end date, which is a record rather than
                   a rule. Untick it and the holder loses its access on their next request, while
-                  everything ticked on the Access page is kept for when it resumes.
+                  everything ticked in HQ is kept for when it resumes.
                 </span>
               </label>
             </div>
 
             <div className="rounded-xl border border-primary/10 bg-primary/5 p-3">
               <p className="text-[10px] italic leading-relaxed text-primary/80">
-                What this post can reach is set on the Access page, under Posts — a different
+                What this post can reach is set in HQ, under Posts — a different
                 permission from this one, because assigning somebody to a job and deciding what the
                 job may open are different decisions. Sign-in details are set once per person, in the
                 directory, not here.

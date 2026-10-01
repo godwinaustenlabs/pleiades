@@ -90,8 +90,11 @@ const ALL_APPS = [
   },
   {
     id: 'admin',
-    name: 'Access',
-    description: 'Grant each person the features they need, one by one.',
+    // Display name only. The RBAC app is `admin` and its features are still
+    // admin/permissions, admin/appointments and so on — renaming the key would mean
+    // rewriting every gate and every grant row for no change in behaviour.
+    name: 'HQ',
+    description: 'Posts, people, permissions and mailboxes.',
     kicker: 'Administration',
     icon: UserCog,
     hue: 'var(--app-admin)',

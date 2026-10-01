@@ -369,7 +369,7 @@ function Tech() {
           <MailboxTab
             scope={{ kind: 'app', app: 'tech' }}
             heading="Tech mail"
-            description="Mailboxes this department holds. Who can read and send from each is managed on the Access page."
+            description="Mailboxes this department holds. Who can read and send from each is managed in HQ."
           />
         )}
         {tab === 'tasks' && <TaskBoard department="Tech" canEdit={getPerm('tasks').canEdit} />}

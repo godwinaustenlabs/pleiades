@@ -70,7 +70,7 @@ describe('the impact report for a post', () => {
   });
 
   it('names what goes, what is let go of, and what is kept', async () => {
-    const { data } = await json(await api('GET', '/api/hr/appointments/ap_pm/impact'));
+    const { data } = await json(await api('GET', '/api/appointments/ap_pm/impact'));
     expect(data.label).toBe('PM Aureline');
     expect(data.blockers).toEqual([]);
 
@@ -83,7 +83,7 @@ describe('the impact report for a post', () => {
   });
 
   it('offers every file it is about to destroy as a download', async () => {
-    const { data } = await json(await api('GET', '/api/hr/appointments/ap_pm/impact'));
+    const { data } = await json(await api('GET', '/api/appointments/ap_pm/impact'));
     const urls = data.downloads.map((d: any) => d.url);
     expect(urls).toContain('/api/assets/download/company-docs/spec.pdf');
     // And an mbox export of the mailbox, since it is about to be switched off.
@@ -91,7 +91,7 @@ describe('the impact report for a post', () => {
   });
 
   it('is refused to somebody who cannot delete the post', async () => {
-    expect((await api('GET', '/api/hr/appointments/ap_pm/impact', 'dual')).status).toBe(403);
+    expect((await api('GET', '/api/appointments/ap_pm/impact', 'dual')).status).toBe(403);
   });
 });
 
@@ -102,7 +102,7 @@ describe('deleting a post', () => {
   });
 
   it('refuses without ?cascade=1, and says what is in the way', async () => {
-    const res = await api('DELETE', '/api/hr/appointments/ap_pm');
+    const res = await api('DELETE', '/api/appointments/ap_pm');
     expect(res.status).toBe(409);
     const body = await json(res);
     expect(body.error).toContain('1 tasks addressed to this post');
@@ -112,7 +112,7 @@ describe('deleting a post', () => {
   });
 
   it('with ?cascade=1 removes the post and exactly what the report listed', async () => {
-    const res = await api('DELETE', '/api/hr/appointments/ap_pm?cascade=1');
+    const res = await api('DELETE', '/api/appointments/ap_pm?cascade=1');
     expect(res.status).toBe(200);
     expect((await json(res)).data.summary).toMatchObject({ tasks: 1, taskAttachments: 1, mailboxesDetached: 1 });
 
@@ -124,13 +124,13 @@ describe('deleting a post', () => {
   });
 
   it('leaves the department’s own task alone', async () => {
-    await api('DELETE', '/api/hr/appointments/ap_pm?cascade=1');
+    await api('DELETE', '/api/appointments/ap_pm?cascade=1');
     expect(await count('SELECT COUNT(*) n FROM universal_tasks WHERE task_id = ?', 't_dept')).toBe(1);
     expect(await count('SELECT COUNT(*) n FROM task_assignments WHERE task_id = ?', 't_dept')).toBe(1);
   });
 
   it('keeps the mailbox and its mail, switched off and readable by an administrator', async () => {
-    await api('DELETE', '/api/hr/appointments/ap_pm?cascade=1');
+    await api('DELETE', '/api/appointments/ap_pm?cascade=1');
     const box = await env.DB.prepare('SELECT is_active, appointment_id FROM mailboxes WHERE mailbox_id = ?').bind('mbx_cto').first();
     expect(box).toBeTruthy();
     expect(box?.is_active).toBe(0);
@@ -145,7 +145,7 @@ describe('deleting a post', () => {
   });
 
   it('never touches the holder’s login', async () => {
-    await api('DELETE', '/api/hr/appointments/ap_pm?cascade=1');
+    await api('DELETE', '/api/appointments/ap_pm?cascade=1');
     const login = await env.DB.prepare('SELECT is_active FROM users_logins WHERE id = ?').bind('u_dual').first();
     expect(login?.is_active).toBe(1);
     // And their OTHER post still grants what it granted.

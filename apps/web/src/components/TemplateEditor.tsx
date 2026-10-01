@@ -377,7 +377,7 @@ export default function TemplateEditor({ app }: { app: string }) {
           </h4>
           <p className="mb-2 text-[11px] leading-relaxed text-textSecondary">
             These back things the system sends by itself and reach everybody, so they are edited on the
-            Access page under Automations rather than here — and cannot be deleted, because deleting one
+            HQ under Automations rather than here — and cannot be deleted, because deleting one
             stops the mail it carries without anything saying so.
           </p>
           <div className="overflow-hidden rounded-xl border border-border bg-surface opacity-70">

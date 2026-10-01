@@ -24,6 +24,16 @@ const LEVEL_LABEL: Record<Level, string> = {
 const keyOf = (appName: string, feature: string) => `${appName}/${feature}`;
 
 /**
+ * Display names for apps whose RBAC key differs from what people call them.
+ *
+ * `admin` is called HQ in the product. The key stays `admin` — it is in every gate,
+ * every grant row and every audit entry, and renaming it would be a migration plus a
+ * rewrite for no change in behaviour — so the two are reconciled here, in the one
+ * place a person reads an app name.
+ */
+const APP_LABEL: Record<string, string> = { admin: 'HQ' };
+
+/**
  * The permission editor: every app/feature the server declares, with view, edit
  * and delete per row.
  *
@@ -104,7 +114,7 @@ export default function PermissionMatrix({ value, onChange, disabled = false, ca
 				return (
 					<div key={appName} className="border border-border rounded-lg overflow-hidden">
 						<div className="flex items-center justify-between px-3 py-2 bg-surfaceAlt">
-							<div className="text-[11px] font-black uppercase tracking-wider">{appName}</div>
+							<div className="text-[11px] font-black uppercase tracking-wider">{APP_LABEL[appName] ?? appName}</div>
 							<button
 								type="button"
 								disabled={disabled}

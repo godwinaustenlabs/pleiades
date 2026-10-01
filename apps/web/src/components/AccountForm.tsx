@@ -12,7 +12,7 @@ import { errorMessage } from '../lib/errors';
  * enforces it — and this is where it is created or amended.
  *
  * It grants nothing. What the person can reach comes from the posts they hold
- * (Access → Posts) plus anything granted to them individually (Access), so a new
+ * (HQ → Posts) plus anything granted to them individually (HQ → Access), so a new
  * account can sign in and reach no module at all until one of those says otherwise.
  * That is the right default: the old form's failure mode was an account quietly
  * carrying whatever a job title happened to imply.
@@ -209,7 +209,7 @@ export default function AccountForm({ employeeId, employeeName, onClose, onSaved
                   <p className="text-[10px] italic leading-relaxed text-primary/80">
                     This account grants nothing on its own. What the person can reach comes from the
                     posts they hold and from anything granted to them individually, both on the
-                    Access page.
+                    HQ.
                   </p>
                 </div>
               </form>

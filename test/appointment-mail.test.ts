@@ -133,20 +133,20 @@ describe('a handover moves the mailbox with the post', () => {
     expect(await readMessages('hold', 'mbx_cto')).toBe(403);
 
     // One edit, to the appointment. The mailbox is not touched.
-    await api('PATCH', '/api/hr/appointments/ap_pm', { employeeId: 'emp_hold' });
+    await api('PATCH', '/api/appointments/ap_pm', { employeeId: 'emp_hold' });
 
     expect(await readMessages('hold', 'mbx_cto')).toBe(200);
     expect(await readMessages('dual', 'mbx_cto')).toBe(403);
   });
 
   it('the successor keeps the stored correspondence', async () => {
-    await api('PATCH', '/api/hr/appointments/ap_pm', { employeeId: 'emp_hold' });
+    await api('PATCH', '/api/appointments/ap_pm', { employeeId: 'emp_hold' });
     const ids = (await mine('hold', '?app=mine')).map((b) => b.id);
     expect(ids).toContain('mbx_cto');
   });
 
   it('ending the post makes its mail administrative rather than nobody’s', async () => {
-    await api('PATCH', '/api/hr/appointments/ap_pm', { isActive: false });
+    await api('PATCH', '/api/appointments/ap_pm', { isActive: false });
     expect(await readMessages('dual', 'mbx_cto')).toBe(403);
     expect(await readMessages('mailAdmin', 'mbx_cto')).toBe(200);
   });

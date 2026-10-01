@@ -14,6 +14,7 @@ import techRouter from './routes/tech';
 import acquisitionRouter from './routes/acquisition';
 import opsRouter from './routes/ops';
 import adminRouter from './routes/admin';
+import appointmentsRouter from './routes/appointments';
 import crmRouter from './routes/crm';
 import portalRouter from './routes/portal';
 import dashboardRouter from './routes/dashboard';
@@ -216,6 +217,12 @@ app.route('/api/ops', opsRouter);
 
 // Admin — roles, permissions, users, API keys, audit logs (ops gate)
 app.route('/api/admin', adminRouter);
+/**
+ * Posts. Top level rather than inside `/api/admin`, because four different grants
+ * legitimately read the list and only one of them is an admin feature — see the note
+ * in routes/appointments.ts.
+ */
+app.route('/api/appointments', appointmentsRouter);
 
 // Agents
 app.route('/api/agents/slack', slackAgentRouter(app));

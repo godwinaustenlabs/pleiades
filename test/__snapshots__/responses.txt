@@ -40,10 +40,6 @@
     200 ok data=array<{email,id,name}>
 /api/admin/api-keys
     200 ok data=array<empty>
-/api/admin/appointments
-    200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employee,employeeId,id,isActive,roleOrTitle,termType}>
-/api/admin/appointments/:id/permissions
-    200 ok data=array<empty>
 /api/admin/audit-logs
     200 ok data=array<empty>
 /api/admin/permissions
@@ -58,6 +54,14 @@
     200 ok data=array<empty>
 /api/admin/users/my-team
     404 err="Record not found"
+/api/appointments
+    200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employee,employeeId,id,isActive,roleOrTitle,termType}>
+/api/appointments/:id
+    404 err="Record not found"
+/api/appointments/:id/impact
+    404 err="Appointment not found"
+/api/appointments/:id/permissions
+    200 ok data=array<empty>
 /api/auth/profile
     200 ok data={createdAt,createdByUserId,email,employee,employeeId,failedAttempts,id,isActive,isSuperadmin,lastLoginAt,lockedUntil,name,passwordUpdatedAt,phone,profilePhoto,recoveryEmail,username}
 /api/auth/whoami
@@ -210,12 +214,6 @@
     200 ok data={balances,isBalanced,totalCredit,totalDebit}
 /api/health
     200 raw={endpoints,service,status,timestamp,version}
-/api/hr/appointments
-    200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employeeId,id,isActive,roleOrTitle,termType}>
-/api/hr/appointments/:id
-    404 err="Record not found"
-/api/hr/appointments/:id/impact
-    404 err="Appointment not found"
 /api/hr/assets
     200 ok data=array<empty>
 /api/hr/attendance

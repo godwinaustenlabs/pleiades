@@ -35,7 +35,11 @@ export type PermissionLevel = 'view' | 'edit' | 'delete';
 export const APP_FEATURES: Record<string, string[]> = {
   // `resets` was here for the manual approval queue, which is gone — reset is
   // self-service now and gated on nothing, being for people who cannot log in.
-  hr: ['employees', 'appointments', 'payroll', 'tasks', 'email', 'email_templates'],
+  // `appointments` moved to the `admin` app. Creating a post and deciding who holds
+  // it is the act that confers access — a handover moves grants, a mailbox and a
+  // committee seat — so it belongs with the other access controls and not with
+  // payroll. HR still READS the list, to show somebody's post in the directory.
+  hr: ['employees', 'payroll', 'tasks', 'email', 'email_templates'],
   // `ledgers`, `journals` and `trial_balance` are gated by the Finance UI but
   // were missing here, so getPerm() always returned false and those tabs were
   // superadmin-only by accident. They are real features; declare them.
@@ -77,7 +81,11 @@ export const APP_FEATURES: Record<string, string[]> = {
   // templates every department's automated mail renders through. Split for the
   // same reason finance/agent and finance/agent_config are: whoever can send a
   // message should not thereby be able to change the address it comes from.
-  admin: ['permissions', 'users', 'api_keys', 'audit_logs', 'mailboxes', 'email_config'],
+  // `appointments` creates posts, assigns holders and deletes them; `permissions`
+  // decides what a post may reach. Two features rather than one, for the same reason
+  // finance/agent and finance/agent_config are split: being able to appoint somebody
+  // to a job should not by itself be able to redefine what the job opens.
+  admin: ['permissions', 'appointments', 'users', 'api_keys', 'audit_logs', 'mailboxes', 'email_config'],
 };
 
 /** The role whose grants a committee member inherits for CRM. */

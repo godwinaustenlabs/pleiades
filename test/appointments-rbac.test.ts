@@ -136,7 +136,7 @@ describe('a handover moves access with the post', () => {
     expect(await allowed('dual', '/api/tech/projects')).toBe(true);
     expect(await allowed('hold', '/api/tech/projects')).toBe(false);
 
-    const res = await api('PATCH', '/api/hr/appointments/ap_pm', { employeeId: 'emp_hold' });
+    const res = await api('PATCH', '/api/appointments/ap_pm', { employeeId: 'emp_hold' });
     expect(res.status).toBe(200);
     expect((await res.json() as any).data.handover).toBe(true);
 
@@ -154,19 +154,19 @@ describe('a handover moves access with the post', () => {
     // handover is the same token that is refused after it.
     const token = await tokenFor('dual');
     expect((await getWithToken(token, '/api/tech/projects')).status).not.toBe(403);
-    await api('PATCH', '/api/hr/appointments/ap_pm', { employeeId: 'emp_hold' });
+    await api('PATCH', '/api/appointments/ap_pm', { employeeId: 'emp_hold' });
     expect((await getWithToken(token, '/api/tech/projects')).status).toBe(403);
   });
 
   it('deactivating the appointment withdraws its access without deleting anything', async () => {
-    await api('PATCH', '/api/hr/appointments/ap_pm', { isActive: false });
+    await api('PATCH', '/api/appointments/ap_pm', { isActive: false });
     expect(await allowed('dual', '/api/tech/projects')).toBe(false);
 
     // The grants are still there, so reactivating restores them as they were.
-    const rows = await api('GET', '/api/admin/appointments/ap_pm/permissions');
+    const rows = await api('GET', '/api/appointments/ap_pm/permissions');
     expect((await rows.json() as any).data.length).toBeGreaterThan(0);
 
-    await api('PATCH', '/api/hr/appointments/ap_pm', { isActive: true });
+    await api('PATCH', '/api/appointments/ap_pm', { isActive: true });
     expect(await allowed('dual', '/api/tech/projects')).toBe(true);
   });
 
@@ -175,7 +175,7 @@ describe('a handover moves access with the post', () => {
     // ending one of somebody's posts locked them out of the system entirely.
     // `?cascade=1` because the post owns grants — see test/deletion.test.ts for why
     // the plain form refuses and what it says.
-    const res = await api('DELETE', '/api/hr/appointments/ap_cmo?cascade=1');
+    const res = await api('DELETE', '/api/appointments/ap_cmo?cascade=1');
     expect(res.status).toBe(200);
 
     // Still signed in, and still holding everything the OTHER post grants.
@@ -185,7 +185,7 @@ describe('a handover moves access with the post', () => {
   });
 
   it('deleting the post deletes its grants, so a new post reusing nothing inherits nothing', async () => {
-    await api('DELETE', '/api/hr/appointments/ap_cmo?cascade=1');
+    await api('DELETE', '/api/appointments/ap_cmo?cascade=1');
     const left = await env.DB
       .prepare('SELECT COUNT(*) AS n FROM appointment_app_permissions WHERE appointment_id = ?')
       .bind('ap_cmo').first();
@@ -197,7 +197,7 @@ describe('a handover moves access with the post', () => {
     // This used to be a flat refusal with nothing to do about it. It now reports what
     // is in the way and how to proceed; test/deletion.test.ts covers what the cascade
     // then does with the mailbox, which is keep it rather than delete it.
-    const res = await api('DELETE', '/api/hr/appointments/ap_pm');
+    const res = await api('DELETE', '/api/appointments/ap_pm');
     expect(res.status).toBe(409);
     const body = await res.json() as any;
     expect(body.error).toContain('cascade=1');
@@ -211,7 +211,7 @@ describe('a handover moves access with the post', () => {
   it('moves the committee seat, because membership is itself access', async () => {
     // Committee membership implies the crm grants in rbac.ts, so a seat left behind
     // on a handover is access left behind.
-    await api('PATCH', '/api/hr/appointments/ap_chair', { employeeId: 'emp_hold' });
+    await api('PATCH', '/api/appointments/ap_chair', { employeeId: 'emp_hold' });
 
     const seats = await env.DB
       .prepare('SELECT employee_id FROM committee_members WHERE committee_id = ?')
@@ -226,7 +226,7 @@ describe('editing what a post grants is an admin authority, not an HR one', () =
   });
 
   it('is gated on admin/permissions edit', async () => {
-    const res = await SELF.fetch('https://test.local/api/admin/appointments/ap_pm/permissions', {
+    const res = await SELF.fetch('https://test.local/api/appointments/ap_pm/permissions', {
       method: 'PUT',
       headers: { Authorization: `Bearer ${await tokenFor('dual')}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ permissions: [{ appName: 'finance', feature: 'transactions', canView: true }] }),
@@ -236,11 +236,12 @@ describe('editing what a post grants is an admin authority, not an HR one', () =
   });
 
   it('cannot be reached through the HR appointment routes', async () => {
-    // `POST /hr/appointments` takes hr/appointments edit. If it also wrote grants,
-    // that grant would be an escalation to anything — which is why `PUT
-    // /api/permissions/user/:id` was deleted in the first place. A `permissions`
-    // key on the body must be ignored, not honoured.
-    const res = await api('POST', '/api/hr/appointments', {
+    // `POST /admin/appointments` takes admin/appointments edit. If it also wrote
+    // grants, that grant would be an escalation to anything — create a post, grant
+    // it the world, appoint yourself — which is why `PUT /api/permissions/user/:id`
+    // was deleted in the first place. A `permissions` key on the body must be
+    // ignored, not honoured.
+    const res = await api('POST', '/api/appointments', {
       roleOrTitle: 'Invented Post',
       employeeId: 'emp_hold',
       permissions: [{ appName: 'finance', feature: 'transactions', canView: true, canEdit: true }],
@@ -248,7 +249,7 @@ describe('editing what a post grants is an admin authority, not an HR one', () =
     expect(res.status).toBe(201);
     const id = (await res.json() as any).data.id;
 
-    const rows = await api('GET', `/api/admin/appointments/${id}/permissions`);
+    const rows = await api('GET', `/api/appointments/${id}/permissions`);
     expect((await rows.json() as any).data).toEqual([]);
     expect(await allowed('hold', '/api/finance/transactions')).toBe(false);
   });
@@ -256,7 +257,7 @@ describe('editing what a post grants is an admin authority, not an HR one', () =
   it('refuses a grant naming a feature APP_FEATURES does not declare', async () => {
     // Such a row can never satisfy getPerm(), so it would sit in the table looking
     // like access while doing nothing at all.
-    const res = await api('PUT', '/api/admin/appointments/ap_pm/permissions', {
+    const res = await api('PUT', '/api/appointments/ap_pm/permissions', {
       permissions: [{ appName: 'tech', feature: 'not_a_feature', canView: true }],
     });
     expect(res.status).toBe(400);
@@ -264,13 +265,13 @@ describe('editing what a post grants is an admin authority, not an HR one', () =
   });
 
   it('replaces the whole set, so unticking actually removes access', async () => {
-    await api('PUT', '/api/admin/appointments/ap_pm/permissions', { permissions: [] });
+    await api('PUT', '/api/appointments/ap_pm/permissions', { permissions: [] });
     expect(await allowed('dual', '/api/tech/projects')).toBe(false);
   });
 
   it('applies immediately to whoever holds the post', async () => {
     expect(await allowed('dual', '/api/legal/agreements')).toBe(false);
-    await api('PUT', '/api/admin/appointments/ap_pm/permissions', {
+    await api('PUT', '/api/appointments/ap_pm/permissions', {
       permissions: [{ appName: 'legal', feature: 'agreements', canView: true, canEdit: true }],
     });
     expect(await allowed('dual', '/api/legal/agreements')).toBe(true);
@@ -361,5 +362,105 @@ describe('one login per person', () => {
     // Reported, never resolved by reassignment: provisioning a new starter with a
     // colleague's address must not hand over the colleague's account.
     expect((await res.json() as any).error).toContain('another account');
+  });
+});
+
+/**
+ * Where the capability lives, after migration 0050 moved it out of HR.
+ *
+ * Creating a post and assigning a holder IS conferring access — a handover moves the
+ * post's grants, its mailbox and its committee seat in one edit — so it sits behind
+ * `admin/appointments`, not behind an HR grant next to the payroll. The two halves
+ * stay split: `admin/appointments` manages the post, `admin/permissions` decides what
+ * it reaches. Together they would be an escalation to everything, by way of creating
+ * a post, granting it the world and appointing yourself to it.
+ */
+describe('managing a post is an HQ capability, not an HR one', () => {
+  beforeEach(async () => {
+    await reseed();
+  });
+
+  /** Replaces one fixture user's whole grant set, so each case names exactly what it tests. */
+  async function onlyGrants(userId: string, grants: [string, string, 'view' | 'edit'][]): Promise<void> {
+    await env.DB.prepare('DELETE FROM user_app_permissions WHERE user_id = ?').bind(userId).run();
+    let n = 0;
+    for (const [app, feature, level] of grants) {
+      await env.DB.prepare(
+        'INSERT INTO user_app_permissions (id,user_id,app_name,feature,can_view,can_edit,can_delete,created_at,updated_at) VALUES (?,?,?,?,?,?,0,0,0)',
+      ).bind(`g_${userId}_${n++}`, userId, app, feature, 1, level === 'edit' ? 1 : 0).run();
+    }
+  }
+
+  const post = (user: FixtureUser, method: string, path = '', body?: unknown) =>
+    SELF.fetch(`https://test.local/api/appointments${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${tokenFor(user) }`, 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  async function call(user: FixtureUser, method: string, path = '', body?: unknown): Promise<number> {
+    const res = await SELF.fetch(`https://test.local/api/appointments${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${await tokenFor(user)}`, 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return res.status;
+  }
+
+  it('hr/appointments no longer exists, so it grants nothing', async () => {
+    // A grant naming a feature APP_FEATURES does not declare can never satisfy
+    // getPerm(). Migration 0050 deletes these rows for that reason; one left behind
+    // would look like access while doing nothing.
+    await onlyGrants('u_dual', [['hr', 'appointments', 'edit']]);
+    expect(await call('dual', 'POST', '', { roleOrTitle: 'Snuck In' })).toBe(403);
+
+    const res = await SELF.fetch('https://test.local/api/admin/users/u_dual/permissions', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${await tokenFor('ceo')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: [{ appName: 'hr', feature: 'appointments', canView: true }] }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as any).error).toContain('hr/appointments');
+  });
+
+  it('admin/appointments edit creates, assigns and deletes a post', async () => {
+    await onlyGrants('u_dual', [['admin', 'appointments', 'edit']]);
+    expect(await call('dual', 'POST', '', { roleOrTitle: 'Head of Nothing' })).toBe(201);
+    expect(await call('dual', 'PATCH', '/ap_cmo', { roleOrTitle: 'Renamed' })).toBe(200);
+  });
+
+  it('admin/appointments does NOT let you decide what a post reaches', async () => {
+    // The whole point of the split. With both, creating a post, granting it
+    // everything and appointing yourself to it is an escalation to anything.
+    await onlyGrants('u_dual', [['admin', 'appointments', 'edit']]);
+    expect(await call('dual', 'GET', '/ap_cmo/permissions')).toBe(403);
+    expect(await call('dual', 'PUT', '/ap_cmo/permissions', { permissions: [] })).toBe(403);
+  });
+
+  it('admin/permissions does NOT let you create or reassign a post', async () => {
+    await onlyGrants('u_dual', [['admin', 'permissions', 'edit']]);
+    expect(await call('dual', 'POST', '', { roleOrTitle: 'Invented' })).toBe(403);
+    expect(await call('dual', 'PATCH', '/ap_cmo', { employeeId: 'emp_hold' })).toBe(403);
+    // But it does open the editor it is for.
+    expect(await call('dual', 'PUT', '/ap_cmo/permissions', { permissions: [] })).toBe(200);
+  });
+
+  it('hr/employees view still READS the list, for the staff directory', async () => {
+    // The only thing HR kept. The directory shows whose post is whose, and gating the
+    // list on admin/appointments alone would blank that column for every HR user.
+    await onlyGrants('u_dual', [['hr', 'employees', 'view']]);
+    expect(await call('dual', 'GET')).toBe(200);
+    // Reading is not managing.
+    expect(await call('dual', 'POST', '', { roleOrTitle: 'Nope' })).toBe(403);
+    expect(await call('dual', 'DELETE', '/ap_cmo?cascade=1')).toBe(403);
+  });
+
+  it('a mailbox administrator reads the list, for the post picker', async () => {
+    expect(await call('mailAdmin', 'GET')).toBe(200);
+  });
+
+  it('somebody with none of the four cannot read it at all', async () => {
+    await onlyGrants('u_dual', [['dashboard', 'overview', 'view']]);
+    expect(await call('dual', 'GET')).toBe(403);
   });
 });
