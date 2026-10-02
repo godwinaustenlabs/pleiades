@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { resetDatabase, tokenFor, type FixtureUser } from './helpers';
 
 /**
@@ -834,5 +834,131 @@ describe('export', () => {
       headers: { Authorization: `Bearer ${await tokenFor('tech')}` },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * Editing and permanently removing a mailbox.
+ *
+ * Deactivating stays the default DELETE, and that is the important part: a mailbox
+ * owns received mail, Cloudflare Email Routing keeps no copy of it, so `is_active = 0`
+ * — stops sending, stays readable, reversible — is what turning one off should mean.
+ * The purge is the separate, irreversible thing, and it has to be asked for.
+ */
+describe('editing a mailbox after it exists', () => {
+  beforeEach(async () => {
+    const { reseed } = await import('./helpers');
+    await reseed();
+  });
+
+  const patch = async (user: FixtureUser, id: string, body: unknown) => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch(`https://test.local/api/email/mailboxes/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${await tokenFor(user)}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  };
+
+  it('changes the display name and the send cap', async () => {
+    const res = await patch('mailAdmin', 'mbx_hr', { displayName: 'People Team', dailySendCap: 40 });
+    expect(res.status).toBe(200);
+
+    const { env } = await import('cloudflare:test');
+    const row = await env.DB.prepare('SELECT display_name, daily_send_cap FROM mailboxes WHERE mailbox_id = ?')
+      .bind('mbx_hr').first();
+    expect(row?.display_name).toBe('People Team');
+    expect(row?.daily_send_cap).toBe(40);
+  });
+
+  it('refuses the address and the kind, which would re-point stored history', async () => {
+    const res = await patch('mailAdmin', 'mbx_hr', { address: 'something-else@godwinausten.org', kind: 'personal' });
+    // An allowlist, so both are reported as ignored rather than silently dropped.
+    expect(res.status).toBe(400);
+
+    const { env } = await import('cloudflare:test');
+    const row = await env.DB.prepare('SELECT address, kind FROM mailboxes WHERE mailbox_id = ?').bind('mbx_hr').first();
+    expect(row?.address).toBe('hr@godwinausten.org');
+    expect(row?.kind).toBe('app');
+  });
+
+  it('needs admin/mailboxes edit', async () => {
+    expect((await patch('tech', 'mbx_hr', { displayName: 'Mine now' })).status).toBe(403);
+  });
+});
+
+describe('permanently deleting a mailbox', () => {
+  beforeEach(async () => {
+    const { reseed } = await import('./helpers');
+    await reseed();
+  });
+
+  const del = async (user: FixtureUser, id: string, query = '') => {
+    const { SELF } = await import('cloudflare:test');
+    return SELF.fetch(`https://test.local/api/email/mailboxes/${id}${query}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await tokenFor(user)}` },
+    });
+  };
+
+  const exists = async (id: string): Promise<boolean> => {
+    const { env } = await import('cloudflare:test');
+    const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM mailboxes WHERE mailbox_id = ?').bind(id).first<{ n: number }>();
+    return (row?.n ?? 0) > 0;
+  };
+
+  it('deactivates by default, keeping the mailbox and its mail', async () => {
+    const res = await del('mailAdmin', 'mbx_hr');
+    expect(res.status).toBe(200);
+    expect((await res.json() as any).data.deactivated).toBe(true);
+    expect(await exists('mbx_hr')).toBe(true);
+  });
+
+  it('removes it only when ?purge=1 is asked for', async () => {
+    const res = await del('mailAdmin', 'mbx_hr', '?purge=1');
+    expect(res.status).toBe(200);
+    expect(await exists('mbx_hr')).toBe(false);
+  });
+
+  it('takes the alias that delivered into it, which would otherwise drop mail', async () => {
+    // An alias has no storage of its own, so one pointing at a mailbox that is gone
+    // would accept mail and discard it.
+    expect(await exists('mbx_alias')).toBe(true);
+    await del('mailAdmin', 'mbx_hr', '?purge=1');
+    expect(await exists('mbx_alias')).toBe(false);
+  });
+
+  it('refuses the system mailbox, in both modes', async () => {
+    expect((await del('mailAdmin', 'mbx_system')).status).toBe(400);
+    expect((await del('mailAdmin', 'mbx_system', '?purge=1')).status).toBe(400);
+    expect(await exists('mbx_system')).toBe(true);
+  });
+
+  it('reports what a purge would destroy, and offers the mbox export first', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/mailboxes/mbx_hr/impact', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    expect(res.status).toBe(200);
+    const { data } = await res.json() as any;
+    expect(data.label).toBe('hr@godwinausten.org');
+    // The alias is named rather than quietly taken.
+    const aliasItem = data.items.find((i: any) => i.label === 'Aliases delivering into it');
+    expect(aliasItem.examples).toContain('info@godwinausten.org');
+    // And it says where later mail goes, which is the question an operator has next.
+    expect(JSON.stringify(data.items)).toContain('catch-all');
+  });
+
+  it('names the system mailbox as a blocker rather than a warning', async () => {
+    const { SELF } = await import('cloudflare:test');
+    const res = await SELF.fetch('https://test.local/api/email/mailboxes/mbx_system/impact', {
+      headers: { Authorization: `Bearer ${await tokenFor('mailAdmin')}` },
+    });
+    expect((await res.json() as any).data.blockers.join(' ')).toContain('system mailbox');
+  });
+
+  it('needs admin/mailboxes delete', async () => {
+    expect((await del('tech', 'mbx_hr', '?purge=1')).status).toBe(403);
+    expect(await exists('mbx_hr')).toBe(true);
   });
 });

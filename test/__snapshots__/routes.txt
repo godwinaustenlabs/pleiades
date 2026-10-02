@@ -175,6 +175,7 @@ DELETE /api/email/mailboxes/:id
 PATCH  /api/email/mailboxes/:id
 GET    /api/email/mailboxes/:id/grants
 PUT    /api/email/mailboxes/:id/grants
+GET    /api/email/mailboxes/:id/impact
 GET    /api/email/mailboxes/:id/messages
 GET    /api/email/messages/:id
 PATCH  /api/email/messages/:id

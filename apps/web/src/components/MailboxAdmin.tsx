@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Mail, Plus, Power, AlertCircle, Users, Building2, Briefcase, CornerDownRight, Inbox, KeyRound, X, Check } from 'lucide-react';
+import { Loader2, Mail, Plus, Power, AlertCircle, Users, Building2, Briefcase, CornerDownRight, Inbox, KeyRound, Pencil, Trash2, X, Check } from 'lucide-react';
 import { API, authHeaders } from '../lib/auth';
+import DeleteWizard from './DeleteWizard';
 import { errorMessage } from '../lib/errors';
 
 /**
@@ -111,6 +112,10 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
   /** The mailbox whose per-user access is open, if any. */
   const [editingAccess, setEditingAccess] = useState<Mailbox | null>(null);
   const [health, setHealth] = useState<DeliveryHealth | null>(null);
+  /** The mailbox whose own details are being edited, if any. */
+  const [editing, setEditing] = useState<Mailbox | null>(null);
+  /** The mailbox being permanently removed, if any. Deactivating is the Power button. */
+  const [purging, setPurging] = useState<Mailbox | null>(null);
 
   const [form, setForm] = useState({
     localPart: '',
@@ -523,11 +528,33 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
                         )}
                         {!disabled && b.kind !== 'system' && (
                           <button
+                            onClick={() => setEditing(b)}
+                            title="Edit the display name and send cap"
+                            className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {!disabled && b.kind !== 'system' && (
+                          <button
                             onClick={() => toggle(b)}
                             title={b.isActive ? 'Deactivate — stops sending, keeps the mail readable' : 'Reactivate'}
                             className={`rounded-lg p-1.5 transition-colors hover:bg-surfaceAlt ${b.isActive ? 'text-textSecondary' : 'text-success'}`}
                           >
                             <Power className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {/* Permanent, and separate from the Power toggle on purpose:
+                            deactivating is reversible and keeps the mail readable,
+                            this destroys it. The wizard lists what goes and offers
+                            the mbox export first. */}
+                        {!disabled && b.kind !== 'system' && (
+                          <button
+                            onClick={() => setPurging(b)}
+                            title="Delete permanently — destroys every message it holds"
+                            className="rounded-lg p-1.5 text-textSecondary transition-colors hover:bg-surfaceAlt hover:text-danger"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
@@ -538,6 +565,24 @@ export default function MailboxAdmin({ apps, people, appointments = [], disabled
             </div>
           ))}
         </div>
+      )}
+
+      {editing && (
+        <MailboxEdit
+          mailbox={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      {purging && (
+        <DeleteWizard
+          kind="mailbox"
+          id={purging.id}
+          name={purging.address}
+          onClose={() => setPurging(null)}
+          onDeleted={load}
+        />
       )}
 
       {editingAccess && (
@@ -696,6 +741,126 @@ function MailboxAccess({
             className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim disabled:opacity-40"
           >
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Editing a mailbox after it exists.
+ *
+ * Only what is safe to change in place. `address` and `kind` are absent for the same
+ * reason the PATCH route refuses them: every message already stored points at this
+ * row, so changing either leaves history claiming it arrived somewhere it did not.
+ * Moving a mailbox between departments has its own control on the row, because that
+ * one hands everything already received to a different set of people and should not
+ * be buried in a form with a Save button.
+ */
+function MailboxEdit({
+  mailbox,
+  onClose,
+  onSaved,
+}: {
+  mailbox: Mailbox;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(mailbox.displayName ?? '');
+  const [dailySendCap, setDailySendCap] = useState(String(mailbox.dailySendCap ?? 200));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/email/mailboxes/${mailbox.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          displayName: displayName.trim() || null,
+          dailySendCap: Number(dailySendCap) || 0,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `Could not save (${res.status})`);
+      onSaved();
+    } catch (e) {
+      setError(errorMessage(e));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="scrim animate-in fade-in fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="sheet w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/10 bg-white/5 p-5">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-black uppercase tracking-widest">Edit mailbox</h3>
+            <p className="truncate text-[11px] text-textSecondary">{mailbox.address}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-textSecondary transition-colors hover:bg-white/10">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-danger">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-textSecondary">Display name</span>
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={mailbox.address.split('@')[0]}
+              className="w-full rounded border border-border bg-surfaceAlt px-2 py-1.5 outline-none focus:border-primary"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-textSecondary">
+              The name recipients see beside the address on outbound mail.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-textSecondary">Daily send cap</span>
+            <input
+              type="number"
+              min={0}
+              value={dailySendCap}
+              onChange={(e) => setDailySendCap(e.target.value)}
+              className="w-full rounded border border-border bg-surfaceAlt px-2 py-1.5 outline-none focus:border-primary"
+            />
+            <span className="mt-1 block text-[10px] leading-relaxed text-textSecondary">
+              Messages per UTC day from this mailbox. Exceeding it refuses the send loudly
+              rather than dropping it. Resend also caps the whole account at 90 a day, which
+              no per-mailbox number can raise.
+            </span>
+          </label>
+
+          <div className="rounded-lg border border-border bg-surfaceAlt px-3 py-2 text-[10px] leading-relaxed text-textSecondary">
+            The address and the kind are fixed. Every message stored here points at this
+            row, so changing either would leave history claiming it arrived somewhere it
+            did not — create a new mailbox instead.
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-white/10 bg-white/5 p-5">
+          <button onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-textSecondary">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[11px] font-black uppercase tracking-wider text-onScrim disabled:opacity-40"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            Save
           </button>
         </div>
       </div>

@@ -134,6 +134,8 @@
     200 ok data=array<{address,appName,appointmentId,createdAt,createdBy,dailySendCap,displayName,forwardsToMailboxId,id,isActive,kind,ownerUserId,updatedAt}>
 /api/email/mailboxes/:id/grants
     200 ok data=array<empty>
+/api/email/mailboxes/:id/impact
+    404 err="Mailbox not found"
 /api/email/mailboxes/:id/messages
     403 err="You cannot read that mailbox."
 /api/email/messages/:id

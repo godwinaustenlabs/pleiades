@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (29 files, 689 tests)
+npm test          # vitest — see test/ (29 files, 699 tests)
 npm run test:watch
 ```
 
@@ -800,7 +800,7 @@ writes to). `view` reads, `edit` sends, `delete` archives and permits a bulk sen
 rather than a fourth feature). `<app>/email_templates` is separate because
 writing the message everybody receives is not the same act as sending one, and
 migration `0039` grants it **view-only**, so authoring is deliberate.
-`admin/mailboxes` creates and assigns mailboxes and confers **no** ability to
+`admin/mailboxes` creates, edits and assigns mailboxes and confers **no** ability to
 read one; `admin/email_config` edits the `scope='system'` templates.
 
 **The outbox is a row before it is an attempt.** `enqueue()` writes
@@ -883,6 +883,22 @@ Templates are edited in place, unlike `compliance_config`, and the asymmetry is
 deliberate: a rate must not be rewritten because past payroll used the old one,
 whereas a rendered subject and body are snapshotted onto the message at send
 time, so an email's history is already immutable.
+
+**A mailbox is deactivated by default and purged only on request.** `DELETE
+/api/email/mailboxes/:id` sets `is_active = 0` — it stops sending, what it received
+stays readable, and it is reversible, which is what "turn this mailbox off" should
+mean. `?purge=1` is the irreversible form: it deletes the messages, threads,
+attachments, grants, the raw MIME and attachments in R2, and any alias that delivered
+into it (an alias has no storage, so one pointing at a mailbox that is gone would
+accept mail and drop it). `GET /api/email/mailboxes/:id/impact` is what the
+confirmation renders, and it offers the mbox export first — Email Routing keeps no
+copy, so what is in the mailbox IS the only record of that correspondence. The system
+mailbox is a blocker in both modes.
+
+`PATCH` edits `displayName`, `dailySendCap`, `isActive`, `appName` and
+`appointmentId` — an allowlist, so a new column is not writable by accident.
+`address` and `kind` are deliberately absent: every stored message points at the row,
+so changing either leaves history claiming it arrived somewhere it did not.
 
 `transport.ts` is the only place a message leaves the Worker, and **there are two
 providers, because this account is on the Workers Free plan.** Cloudflare Email

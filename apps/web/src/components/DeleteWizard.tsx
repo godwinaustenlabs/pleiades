@@ -39,7 +39,7 @@ interface ImpactItem {
 }
 
 interface Impact {
-  kind: 'appointment' | 'employee';
+  kind: 'appointment' | 'employee' | 'mailbox';
   id: string;
   label: string;
   blockers: string[];
@@ -49,7 +49,7 @@ interface Impact {
 }
 
 interface DeleteWizardProps {
-  kind: 'appointment' | 'employee';
+  kind: 'appointment' | 'employee' | 'mailbox';
   id: string;
   /** Shown while the report loads, so the dialog is never anonymous. */
   name?: string;
@@ -64,8 +64,23 @@ const FATE: Record<Fate, { label: string; icon: typeof Trash2; tone: string }> =
   keep: { label: 'Untouched', icon: ShieldCheck, tone: 'text-textSecondary bg-white/5 border-white/10' },
 };
 
-const base = (kind: 'appointment' | 'employee', id: string) =>
-  kind === 'appointment' ? `${API}/appointments/${id}` : `${API}/core/employees/${id}`;
+const base = (kind: DeleteWizardProps['kind'], id: string) =>
+  kind === 'appointment' ? `${API}/appointments/${id}`
+    : kind === 'mailbox' ? `${API}/email/mailboxes/${id}`
+      : `${API}/core/employees/${id}`;
+
+/**
+ * The flag each route wants for "do it for real".
+ *
+ * A mailbox's plain DELETE already means something — deactivate, which is reversible
+ * and keeps the mail readable — so its destructive form is `?purge=1` rather than
+ * `?cascade=1`. Spelling that difference out here keeps it out of the markup.
+ */
+const CONFIRM_QUERY: Record<DeleteWizardProps['kind'], string> = {
+  appointment: '?cascade=1',
+  employee: '?cascade=1',
+  mailbox: '?purge=1',
+};
 
 /**
  * A download URL a browser can follow.
@@ -106,7 +121,7 @@ export default function DeleteWizard({ kind, id, name, onClose, onDeleted }: Del
     setDeleting(true);
     setError('');
     try {
-      const res = await fetch(`${base(kind, id)}?cascade=1`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`${base(kind, id)}${CONFIRM_QUERY[kind]}`, { method: 'DELETE', headers: authHeaders() });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || `Delete failed (${res.status})`);
       onDeleted();
@@ -124,7 +139,7 @@ export default function DeleteWizard({ kind, id, name, onClose, onDeleted }: Del
   // they are gone from storage with nowhere to get them back from.
   const mustAcknowledge = files.length > 0;
   const canConfirm = !!impact && !blocked && !deleting && (!mustAcknowledge || acknowledged);
-  const noun = kind === 'appointment' ? 'post' : 'person';
+  const noun = kind === 'appointment' ? 'post' : kind === 'mailbox' ? 'mailbox' : 'person';
 
   return (
     <div className="scrim animate-in fade-in fixed inset-0 z-50 flex items-center justify-center p-4">

@@ -54,7 +54,7 @@ export type ImpactItem = {
 };
 
 export type Impact = {
-  kind: 'appointment' | 'employee';
+  kind: 'appointment' | 'employee' | 'mailbox';
   id: string;
   /** "Acquisition Manager" / "Zaid Burhan" — what the confirmation should name. */
   label: string;
@@ -699,4 +699,204 @@ export async function deleteEmployee(env: Env, employeeId: string): Promise<Casc
   summary.documentsDeleted = r.employeeDocs.length;
   summary.payrollRecords = r.payroll.length;
   return { summary, filesRemoved };
+}
+
+// ── Mailbox ──────────────────────────────────────────────────────────────────
+
+/**
+ * Everything a mailbox owns. Read once and shared by the report and the purge.
+ *
+ * Deleting a mailbox is the most destructive thing in this module, and the only one
+ * where "keep it, switched off" is usually the right answer: `is_active = 0` stops it
+ * sending while leaving what it received readable, which is what turning a mailbox
+ * off should mean. The purge exists because "off forever" is not the same as "gone",
+ * and an operator who has finished with an address should not have to keep its mail
+ * in the list to be sure it stays unreachable.
+ */
+async function mailboxRows(db: Db, mailboxId: string) {
+  const mailbox = await db.query.mailboxes.findFirst({
+    where: eq(schema.mailboxes.id, mailboxId),
+  });
+  if (!mailbox) return null;
+
+  const messages = await db.query.emailMessages.findMany({
+    where: eq(schema.emailMessages.mailboxId, mailboxId),
+    columns: { id: true, subject: true, direction: true, folder: true, rawKey: true, createdAt: true },
+  });
+  const messageIds = messages.map((m) => m.id);
+
+  const attachments = messageIds.length > 0
+    ? (await Promise.all(
+        chunk(messageIds, 20).map((ids) =>
+          db.query.emailAttachments.findMany({ where: inArray(schema.emailAttachments.messageId, ids) }),
+        ),
+      )).flat()
+    : [];
+
+  const threads = await db.query.emailThreads.findMany({
+    where: eq(schema.emailThreads.mailboxId, mailboxId),
+    columns: { id: true, subject: true },
+  });
+
+  const grants = await db.query.mailboxGrants.findMany({
+    where: eq(schema.mailboxGrants.mailboxId, mailboxId),
+  });
+
+  // An alias has no storage of its own, so one pointing here is meaningless
+  // afterwards — but it is still a live address that mail arrives at, so it has to
+  // be named rather than silently dropped.
+  const aliases = await db.query.mailboxes.findMany({
+    where: eq(schema.mailboxes.forwardsToMailboxId, mailboxId),
+    columns: { id: true, address: true },
+  });
+
+  return { mailbox, messages, messageIds, attachments, threads, grants, aliases };
+}
+
+export async function mailboxImpact(env: Env, mailboxId: string): Promise<Impact | null> {
+  const db = getDb(env);
+  const rows = await mailboxRows(db, mailboxId);
+  if (!rows) return null;
+  const { mailbox, messages, attachments, threads, grants, aliases } = rows;
+
+  const items: ImpactItem[] = [];
+  const downloads: DownloadLink[] = [];
+  const blockers: string[] = [];
+
+  /**
+   * The machine identity every automated message sends as. Deleting it would break
+   * password resets and task notifications, which fail by not arriving.
+   */
+  if (mailbox.kind === 'system') {
+    blockers.push(`${mailbox.address} is the system mailbox. Every automated message sends as it — a password reset, a task notification — and those fail silently if it is gone.`);
+  }
+
+  if (messages.length > 0) {
+    // Offered before the confirm, because this is the one part of any deletion in
+    // this system that cannot be reconstructed from anywhere else: Email Routing
+    // keeps no copy, so what is here IS the company's record of this correspondence.
+    downloads.push({
+      name: `${mailbox.address} — everything, as mbox`,
+      url: `/api/email/export?mailboxId=${encodeURIComponent(mailbox.id)}`,
+    });
+    items.push({
+      label: 'Stored messages',
+      count: messages.length,
+      fate: 'delete',
+      note: 'Deleted outright, both directions, every folder — and Cloudflare Email Routing keeps no copy, so this is the only record of them that exists. Export the mbox below first unless you are certain.',
+      examples: some(messages.slice(0, 5).map((m) => `${m.direction === 'inbound' ? 'from' : 'to'} · ${m.subject || '(no subject)'}`)),
+      downloads: [{ name: `${mailbox.address} — mbox export`, url: `/api/email/export?mailboxId=${encodeURIComponent(mailbox.id)}` }],
+    });
+  }
+
+  if (attachments.length > 0) {
+    const links = attachments
+      .map((a) => toLink(a.filename, a.r2Key))
+      .filter((l): l is DownloadLink => !!l);
+    downloads.push(...links);
+    items.push({
+      label: 'Attachments',
+      count: attachments.length,
+      fate: 'delete',
+      note: 'The files themselves are removed from storage, along with the raw copy of every message. Download anything that has to be retained.',
+      examples: some(attachments.map((a) => a.filename)),
+      downloads: links,
+    });
+  }
+
+  if (threads.length > 0) {
+    items.push({
+      label: 'Conversations',
+      count: threads.length,
+      fate: 'delete',
+      note: 'The threads these messages were grouped into. Nothing outside this mailbox references them.',
+    });
+  }
+
+  if (grants.length > 0) {
+    items.push({
+      label: 'Per-person access rows',
+      count: grants.length,
+      fate: 'delete',
+      note: 'The list that narrowed who could open this mailbox. It describes nothing else.',
+    });
+  }
+
+  if (aliases.length > 0) {
+    items.push({
+      label: 'Aliases delivering into it',
+      count: aliases.length,
+      fate: 'delete',
+      note: 'An alias has no storage of its own, so one pointing at a mailbox that is gone would accept mail and drop it. These are deleted too — recreate them against another mailbox if the addresses are still wanted.',
+      examples: aliases.map((a) => a.address),
+    });
+  }
+
+  items.push({
+    label: 'Mail that arrives later',
+    count: 0,
+    fate: 'keep',
+    note: `Nothing is routed away. Once ${mailbox.address} has no mailbox, mail to it lands in the catch-all and shows under HQ → Unrouted, the same as any address nobody created.`,
+  });
+
+  return {
+    kind: 'mailbox',
+    id: mailboxId,
+    label: mailbox.address,
+    blockers,
+    items,
+    downloads,
+  };
+}
+
+/** Permanently removes a mailbox and everything stored against it. */
+export async function deleteMailbox(env: Env, mailboxId: string): Promise<CascadeResult | null> {
+  const db = getDb(env);
+  const rows = await mailboxRows(db, mailboxId);
+  if (!rows) return null;
+  const { mailbox, messages, messageIds, attachments, threads, grants, aliases } = rows;
+  if (mailbox.kind === 'system') return null;
+
+  const writes: unknown[] = [];
+  const r2Keys: string[] = [];
+
+  for (const ids of chunk(messageIds, 20)) {
+    writes.push(db.delete(schema.emailDelivery).where(inArray(schema.emailDelivery.messageId, ids)));
+    writes.push(db.delete(schema.emailAttachments).where(inArray(schema.emailAttachments.messageId, ids)));
+  }
+  // The raw MIME and every attachment. Both live under prefixes that `/api/assets`
+  // refuses to upload into, so nothing else can be pointing at them.
+  for (const a of attachments) {
+    const k = keyFromUrl(a.r2Key);
+    if (k) r2Keys.push(k);
+  }
+  for (const m of messages) {
+    const k = keyFromUrl(m.rawKey);
+    if (k) r2Keys.push(k);
+  }
+
+  writes.push(db.delete(schema.emailMessages).where(eq(schema.emailMessages.mailboxId, mailboxId)));
+  writes.push(db.delete(schema.emailThreads).where(eq(schema.emailThreads.mailboxId, mailboxId)));
+  writes.push(db.delete(schema.mailboxGrants).where(eq(schema.mailboxGrants.mailboxId, mailboxId)));
+
+  // Aliases first: they hold a foreign key into the row about to go.
+  for (const alias of aliases) {
+    writes.push(db.delete(schema.mailboxGrants).where(eq(schema.mailboxGrants.mailboxId, alias.id)));
+    writes.push(db.delete(schema.mailboxes).where(eq(schema.mailboxes.id, alias.id)));
+  }
+  writes.push(db.delete(schema.mailboxes).where(eq(schema.mailboxes.id, mailboxId)));
+
+  await commit(db, writes);
+  const filesRemoved = await removeObjects(env, r2Keys);
+
+  return {
+    summary: {
+      messages: messages.length,
+      threads: threads.length,
+      attachments: attachments.length,
+      grants: grants.length,
+      aliases: aliases.length,
+    },
+    filesRemoved,
+  };
 }

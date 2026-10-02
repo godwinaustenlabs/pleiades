@@ -17,6 +17,7 @@ import { enqueue, drainOne, promoteDraft } from '../email/outbox';
 import { parseVariables, render, validateTemplate } from '../email/render';
 import { Addr, LIMITS } from '../email/transport';
 import { EMAIL_EVENTS, SYSTEM_MAILBOX_ID } from '../email/events';
+import { mailboxImpact, deleteMailbox } from '../deletion/impact';
 
 /**
  * The mail API.
@@ -314,18 +315,70 @@ emailRouter.patch('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', '
  * correspondence. `is_active = 0` stops it sending while leaving what it received
  * readable, which is what "turn this mailbox off" should mean.
  */
+/**
+ * GET /mailboxes/:id/impact — what a permanent delete would destroy.
+ *
+ * Its own endpoint for the same reason the appointment and employee ones are: a
+ * mailbox holds the only copy of its correspondence, so the confirmation has to list
+ * it and offer the mbox export before anybody presses the button. Read-only.
+ */
+emailRouter.get('/mailboxes/:id/impact', requireFeatureAccess('admin', 'mailboxes', 'delete'), async (c) => {
+  try {
+    const impact = await mailboxImpact(c.env, c.req.param('id'));
+    if (!impact) return notFound(c, 'Mailbox not found');
+    return ok(c, impact);
+  } catch (err) { return serverError(c, err); }
+});
+
+/**
+ * DELETE /mailboxes/:id          deactivates — the default, and usually what is meant
+ * DELETE /mailboxes/:id?purge=1  permanently deletes it and everything it stored
+ *
+ * Deactivating stays the default deliberately. A mailbox owns received mail, which
+ * Cloudflare Email Routing keeps no copy of, so `is_active = 0` — it stops sending,
+ * what it received stays readable — is what "turn this mailbox off" should mean, and
+ * it is reversible.
+ *
+ * The purge exists because "off forever" is not the same as "gone": an operator who
+ * has finished with an address should not have to keep its mail in the list in order
+ * to be sure it stays unreachable. It is irreversible, it takes the raw MIME and the
+ * attachments out of R2 with it, and `?purge=1` has to be asked for explicitly.
+ */
 emailRouter.delete('/mailboxes/:id', requireFeatureAccess('admin', 'mailboxes', 'delete'), async (c) => {
   try {
     const db = getDb(c.env);
     const user = c.get('user');
     const id = c.req.param('id');
+    const purge = c.req.query('purge') === '1' || c.req.query('purge') === 'true';
     const box = await loadMailbox(c.env, id);
     if (!box) return notFound(c, 'Mailbox not found');
-    if (box.kind === 'system') return badRequest(c, 'The system mailbox cannot be deactivated — every automated message sends as it.');
+    if (box.kind === 'system') {
+      return badRequest(c, 'The system mailbox cannot be removed — every automated message sends as it, and those fail by not arriving.');
+    }
 
-    await db.update(schema.mailboxes).set({ isActive: false, updatedAt: new Date() }).where(eq(schema.mailboxes.id, id));
-    await logAudit(c.env, user.id, 'UPDATE', 'mailboxes', id, { deactivated: true, address: box.address });
-    return ok(c, { deactivated: true });
+    if (!purge) {
+      await db.update(schema.mailboxes).set({ isActive: false, updatedAt: new Date() }).where(eq(schema.mailboxes.id, id));
+      await logAudit(c.env, user.id, 'UPDATE', 'mailboxes', id, { deactivated: true, address: box.address });
+      return ok(c, { deactivated: true });
+    }
+
+    const impact = await mailboxImpact(c.env, id);
+    if (impact && impact.blockers.length > 0) {
+      return c.json({ success: false, error: impact.blockers.join(' '), data: { impact } }, 403);
+    }
+
+    const result = await deleteMailbox(c.env, id);
+    if (!result) return notFound(c, 'Mailbox not found');
+
+    // Logged with the counts, because after this there is nothing left to count.
+    await logAudit(c.env, user.id, 'DELETE', 'mailboxes', id, {
+      address: box.address,
+      kind: box.kind,
+      purged: true,
+      ...result.summary,
+      filesRemoved: result.filesRemoved,
+    });
+    return ok(c, { id, deleted: true, ...result });
   } catch (err) { return serverError(c, err); }
 });
 
