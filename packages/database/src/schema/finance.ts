@@ -115,6 +115,16 @@ export const currencies = sqliteTable('currencies', {
   name: text('name'),
   symbol: text('symbol'),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  /**
+   * The company's own currency, since migration 0051. Exactly one row holds it,
+   * enforced by a partial unique index rather than assumed.
+   *
+   * It is what every amount that does NOT name a currency is shown in — a
+   * transaction, an invoice, a payslip, a line in the asset register. Before it
+   * existed those all rendered a hardcoded `$`, which was wrong on every screen in
+   * a database whose accounts are all PKR.
+   */
+  isBase: integer('is_base', { mode: 'boolean' }).notNull().default(false),
   createdByUserId: text('created_by_user_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });

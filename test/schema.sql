@@ -321,7 +321,7 @@ CREATE TABLE currencies (
   is_active          INTEGER NOT NULL DEFAULT 1,
   created_by_user_id TEXT,
   created_at         INTEGER NOT NULL
-);
+, is_base INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE conversation_turns (
 	id TEXT PRIMARY KEY,
 	conversation_id TEXT NOT NULL REFERENCES agent_conversations(id),
@@ -1199,6 +1199,7 @@ CREATE INDEX idx_email_messages_event ON email_messages (event_key, created_at);
 -- to be verbatim, and an index missing from it is exactly the drift the file exists
 -- to make visible.
 CREATE INDEX idx_currencies_active ON currencies (is_active);
+CREATE UNIQUE INDEX currencies_one_base ON currencies (is_base) WHERE is_base = 1;
 CREATE UNIQUE INDEX appointment_app_permissions_unique
 	ON appointment_app_permissions (appointment_id, app_name, feature);
 CREATE INDEX idx_appointment_app_permissions_appt

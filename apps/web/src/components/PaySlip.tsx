@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { useCurrencies } from '../lib/currency';
 import { X, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface PaySlipProps {
@@ -24,9 +25,16 @@ interface PaySlipProps {
   onClose: () => void;
 }
 
-const fmt = (n: number) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
 export default function PaySlip({ record, employee, onClose }: PaySlipProps) {
+  /**
+   * Payroll is in the company's own currency — there is no per-payslip currency
+   * column — so this reads the base from the catalogue rather than printing the `$`
+   * it used to.
+   */
+  const { money } = useCurrencies();
+  const fmt = (n: number) => money(n, null, { decimals: 2 });
+
   const printRef = useRef<HTMLDivElement>(null);
 
   const earnings: { name: string; amount: number }[] = (() => {

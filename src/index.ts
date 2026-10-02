@@ -15,6 +15,7 @@ import acquisitionRouter from './routes/acquisition';
 import opsRouter from './routes/ops';
 import adminRouter from './routes/admin';
 import appointmentsRouter from './routes/appointments';
+import currenciesRouter from './routes/currencies';
 import crmRouter from './routes/crm';
 import portalRouter from './routes/portal';
 import dashboardRouter from './routes/dashboard';
@@ -223,6 +224,11 @@ app.route('/api/admin', adminRouter);
  * in routes/appointments.ts.
  */
 app.route('/api/appointments', appointmentsRouter);
+/**
+ * Currencies. Top level, because a payslip and a deal need to know what a symbol is
+ * and neither can reach `/api/finance/*` — see routes/currencies.ts.
+ */
+app.route('/api/currencies', currenciesRouter);
 
 // Agents
 app.route('/api/agents/slack', slackAgentRouter(app));

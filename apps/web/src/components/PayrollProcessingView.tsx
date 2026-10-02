@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Play, Download, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { API, token } from '../lib/auth';
+import { useCurrencies } from '../lib/currency';
 import { errorMessage } from '../lib/errors';
 
-const fmt = (n: number) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
 interface PayrollProcessingViewProps {
   employees: any[];
@@ -18,6 +18,14 @@ interface PayrollResult {
 }
 
 export default function PayrollProcessingView({ employees, onPayrollGenerated }: PayrollProcessingViewProps) {
+  /**
+   * Payroll is in the company's own currency — there is no per-payslip currency
+   * column — so this reads the base from the catalogue rather than printing the `$`
+   * it used to.
+   */
+  const { money } = useCurrencies();
+  const fmt = (n: number) => money(n, null, { decimals: 2 });
+
   const [step, setStep] = useState(1);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');

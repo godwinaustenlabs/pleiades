@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, X, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Save, AlertCircle, Loader2 } from 'lucide-react';
 import { API, token } from '../lib/auth';
+import { useCurrencies } from '../lib/currency';
 import { errorMessage } from '../lib/errors';
 
 
@@ -106,7 +107,13 @@ export default function SalarySchemaWizard({ employee, onClose, onSaved }: Salar
     }
   };
 
-  const fmt = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  /**
+   * Payroll is in the company's own currency — there is no per-payslip currency
+   * column — so this reads the base from the catalogue rather than printing the `$`
+   * it used to.
+   */
+  const { money } = useCurrencies();
+  const fmt = (n: number) => money(n, null, { decimals: 2 });
 
   if (loading) return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center scrim ">

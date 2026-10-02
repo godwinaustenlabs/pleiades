@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (28 files, 674 tests)
+npm test          # vitest — see test/ (29 files, 689 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,14 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0050_appointments_into_admin.sql`, which moves `hr/appointments` to
+The newest is `0051_base_currency.sql`, which adds `currencies.is_base`. See
+Currencies below for why: `accounts.currency` was stored and never read, so every
+amount in the app printed a hardcoded `$` on a database denominated entirely in PKR.
+Reading the column fixes accounts; the base fixes everything with no currency column
+at all. One row holds it, enforced by a partial unique index — two bases is a state
+where which symbol you get depends on row order.
+
+Before that, `0050_appointments_into_admin.sql`, which moves `hr/appointments` to
 `admin/appointments`. Assigning a post *is* conferring access — since 0047 a handover
 moves the post's grants, its mailbox and its committee seat in one edit — so behind an
 HR grant, whoever ran the payroll could confer any access a post carried. It rewrites
@@ -227,7 +234,7 @@ table, not `meta/_journal.json`.
 
 ### Request flow
 
-`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `appointments`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
+`src/index.ts` is the only Worker entrypoint. It mounts one Hono sub-router per domain under `/api/<module>`: `auth`, `core`, `hr`, `tasks`, `finance`, `legal`, `tech`, `acquisition`, `ops`, `admin`, `appointments`, `currencies`, `crm`, `portal`, `dashboard`, `permissions`, `assets`, `notifications`, `public/calendar`, `messages`, plus `agents/slack` and a bare `health`.
 
 `appointments` is top level rather than under `/api/admin` for the same reason `email`
 and `assets` are: a post is not one app's concern. HQ manages it, HR reads it for the
@@ -1027,6 +1034,46 @@ selection-aware DOM surgery — and **paste goes through the same sanitiser**, s
 copying out of a web page brings that page's markup with it. `body_text` is always
 maintained alongside the HTML rather than derived at send time, so a rich message is
 never sent as HTML alone.
+
+### Currencies (`src/routes/currencies.ts`)
+
+`accounts.currency` has been stored since the beginning and was **never read**. Every
+amount in the app rendered a hardcoded `$` — so on this database, where all five
+accounts are PKR, the Accounts table printed `$` in the balance column and `PKR` in
+the column beside it, and payslips, invoices and the asset register were all labelled
+in the wrong currency.
+
+Two questions, kept apart because they have different answers:
+
+- **A record that names a currency** — an account. Use its own code.
+- **A record that does not** — a transaction, an invoice, a payslip, a line in the
+  asset register, which is nearly everything. Use `currencies.is_base`, the company's
+  own currency. Exactly one row holds it, enforced by a partial unique index, and it
+  is operator-settable from Finance → Accounts (`PUT /api/currencies/base`) rather
+  than being a constant somebody has to come back and edit. It cannot be retired or
+  deleted while it is the base, since that would leave most of the app's figures with
+  no symbol at all.
+
+**The router is top level with the READ open to any authenticated caller.** That is
+the point, not an oversight: it lived in `finance.ts` behind
+`requireAppAccess('finance')`, which is precisely why every screen outside Finance
+printed `$` — a payslip is an HR screen and a deal is an Acquisition screen, and
+neither can reach `/api/finance/*`. A list of ISO codes and symbols is less sensitive
+than the staff directory and appears on every invoice the company sends. Writing —
+adding, retiring, re-denominating — stays on `finance/accounts`.
+
+Client side, `apps/web/src/lib/currency.ts` is the only formatter. `useCurrencies()`
+gives `money(value, code?)`, which takes the row's currency when it has one and the
+base when it does not; `formatMoney(value, symbol)` is the non-hook form for
+`HRReports`, which builds its print documents as HTML strings outside React. The
+catalogue is fetched once per page load and shared through a module-level cache, with
+`invalidateCurrencies()` notifying mounted components — without that, adding a
+currency left it missing from the very dropdown that created it until a reload.
+
+A currency with no symbol falls back to its **code** (`AED 5,000`), never to another
+currency's symbol. The server-side PDFs in `src/statements` print bare numbers with no
+symbol at all and are deliberately unchanged: `sanitise()` is WinAnsi-only, so `₹`
+would render as `?`.
 
 ### Bindings and secrets
 

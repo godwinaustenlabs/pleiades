@@ -4,6 +4,7 @@ import AssetPreviewModal from './AssetPreviewModal';
 import UserAvatar from './UserAvatar';
 import { previewTypeFor } from '../lib/preview';
 import { token } from '../lib/auth';
+import { useCurrencies } from '../lib/currency';
 import { statusChipClass, statusTone } from '../lib/status';
 
 export interface Column {
@@ -46,6 +47,7 @@ export default function GAGrid({
   canDelete = true,
   rowActions = []
 }: GAGridProps) {
+  const { money } = useCurrencies();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -125,7 +127,18 @@ export default function GAGrid({
         );
       }
       case 'currency':
-        return <span className="font-mono text-sm tabular-nums">${Number(value).toLocaleString()}</span>;
+        /**
+         * The ROW's currency when it names one, the company's own when it does not.
+         *
+         * This was a hardcoded `$`, which made every amount in every grid wrong on a
+         * database denominated in anything else — and the Accounts table showed `$`
+         * in this column while printing `PKR` in the next one along.
+         */
+        return (
+          <span className="font-mono text-sm tabular-nums">
+            {money(value, record.currency)}
+          </span>
+        );
       case 'date':
         return <span className="text-sm text-textSecondary">{value ? new Date(value).toLocaleDateString() : '—'}</span>;
       case 'image':

@@ -110,6 +110,8 @@
     404 err="Record not found"
 /api/crm/tickets/:id/notes
     200 ok data=array<empty>
+/api/currencies
+    200 ok data=array<{code,createdAt,createdByUserId,id,isActive,isBase,name,symbol}>
 /api/dashboard/attendance/today
     200 ok data=null
 /api/dashboard/calendar/token
@@ -172,8 +174,6 @@
     200 ok data=array<{defaultLifeMonths,key}>
 /api/finance/assets/depreciation
     200 ok data={lines,period,postable,total}
-/api/finance/currencies
-    200 ok data=array<{code,createdAt,createdByUserId,id,isActive,name,symbol}>
 /api/finance/documents
     200 ok data=array<{createdAt,department,documentType,id,title,uploadedBy,url}>
 /api/finance/export/journals

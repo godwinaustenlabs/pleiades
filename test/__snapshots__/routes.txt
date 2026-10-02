@@ -143,6 +143,11 @@ GET    /api/crm/tickets/:id
 PATCH  /api/crm/tickets/:id
 GET    /api/crm/tickets/:id/notes
 POST   /api/crm/tickets/:id/notes
+GET    /api/currencies
+POST   /api/currencies
+DELETE /api/currencies/:id
+PATCH  /api/currencies/:id
+PUT    /api/currencies/base
 POST   /api/dashboard/attendance/checkin
 POST   /api/dashboard/attendance/checkout
 GET    /api/dashboard/attendance/today
@@ -212,10 +217,6 @@ POST   /api/finance/assets/:id/dispose
 GET    /api/finance/assets/classes
 GET    /api/finance/assets/depreciation
 POST   /api/finance/assets/post-depreciation
-GET    /api/finance/currencies
-POST   /api/finance/currencies
-DELETE /api/finance/currencies/:id
-PATCH  /api/finance/currencies/:id
 GET    /api/finance/documents
 POST   /api/finance/documents
 DELETE /api/finance/documents/:id

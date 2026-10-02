@@ -422,8 +422,13 @@ VALUES ('cc_daily_runner_actor', 'daily_runner_actor', 'company', 'Daily runner 
 -- manifest records the row shape `/finance/currencies` returns rather than an
 -- empty array, which would say nothing about it.
 DELETE FROM currencies;
-INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_pkr','PKR','Pakistani Rupee','Rs',1,0);
-INSERT INTO currencies (currency_id, code, name, symbol, is_active, created_at) VALUES ('cur_usd','USD','United States Dollar','$',1,0);
+-- PKR is the base, as it is in production: `is_base` decides the symbol on every
+-- amount that names no currency of its own, which is almost all of them.
+INSERT INTO currencies (currency_id, code, name, symbol, is_active, is_base, created_at) VALUES ('cur_pkr','PKR','Pakistani Rupee','Rs',1,1,0);
+INSERT INTO currencies (currency_id, code, name, symbol, is_active, is_base, created_at) VALUES ('cur_usd','USD','United States Dollar','$',1,0,0);
+-- No symbol on purpose: the client falls back to the CODE rather than borrowing
+-- another currency's symbol, and that path needs a row to exercise it.
+INSERT INTO currencies (currency_id, code, name, symbol, is_active, is_base, created_at) VALUES ('cur_aed','AED','UAE Dirham',NULL,1,0,0);
 
 
 -- ── Mail fixture ────────────────────────────────────────────────────────────

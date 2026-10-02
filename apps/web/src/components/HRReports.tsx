@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, FileText, Users, Calendar, Banknote, Shield, X, Loader2 } from 'lucide-react';
 import { token } from '../lib/auth';
+import { useCurrencies, formatMoney } from '../lib/currency';
 import { errorMessage } from '../lib/errors';
 
 
@@ -19,6 +20,15 @@ interface ReportConfig {
 }
 
 export default function HRReports(_props: HRReportsProps) {
+  /**
+   * The print documents are built as HTML STRINGS, outside React, so they cannot call
+   * a hook at the point of formatting. The symbol is resolved here and closed over by
+   * `fmt` — which is why `formatMoney` exists separately from the hook's `money`.
+   *
+   * Payroll is in the company's own money; these reports have no per-row currency.
+   */
+  const { symbolFor } = useCurrencies();
+  const fmt = (n: unknown) => formatMoney(n, symbolFor());
   const reports: ReportConfig[] = [
     { id: 'emp_dir', name: 'Employee Directory', desc: 'Complete list of active and inactive employees.', icon: Users, endpoint: '/api/core/employees', dateKey: 'hireDate', empKey: 'id' },
     { id: 'att_rep', name: 'Attendance Report', desc: 'Detailed log of check-in, check-out, status, and total hours.', icon: Calendar, endpoint: '/api/hr/attendance', dateKey: 'date', empKey: 'employeeId' },
@@ -225,10 +235,10 @@ export default function HRReports(_props: HRReportsProps) {
  <tr>
  <td><strong>${getEmpName(r.employeeId)}</strong></td>
  <td>${r.payrollMonth}</td>
- <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
- <td class="mono text-red">$${r.withholdingTax?.toLocaleString()}</td>
- <td class="mono text-red">$${r.otherDeductions?.toLocaleString()}</td>
- <td class="mono font-bold">$${r.netPay?.toLocaleString()}</td>
+ <td class="mono">${fmt(r.grossSalary)}</td>
+ <td class="mono text-red">${fmt(r.withholdingTax)}</td>
+ <td class="mono text-red">${fmt(r.otherDeductions)}</td>
+ <td class="mono font-bold">${fmt(r.netPay)}</td>
  </tr>
  `).join('');
     } else if (report.id === 'tax_rep') {
@@ -242,8 +252,8 @@ export default function HRReports(_props: HRReportsProps) {
  <tr>
  <td><strong>${getEmpName(r.employeeId)}</strong></td>
  <td>${r.payrollMonth}</td>
- <td class="mono">$${r.grossSalary?.toLocaleString()}</td>
- <td class="mono font-bold text-red">$${r.withholdingTax?.toLocaleString()}</td>
+ <td class="mono">${fmt(r.grossSalary)}</td>
+ <td class="mono font-bold text-red">${fmt(r.withholdingTax)}</td>
  </tr>
  `).join('');
     } else if (report.id === 'asset_reg') {

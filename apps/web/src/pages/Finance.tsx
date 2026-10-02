@@ -20,6 +20,8 @@ import StatementsPanel from '../components/StatementsPanel';
 import ReportsPanel from '../components/ReportsPanel';
 import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
+import { useCurrencies, invalidateCurrencies } from '../lib/currency';
+import { errorMessage } from '../lib/errors';
 
 
 type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'statements' | 'agent' | 'email';
@@ -80,8 +82,17 @@ function Finance() {
   const [clients, setClients] = useState<any[]>([]);
   const [fundRequests, setFundRequests] = useState<any[]>([]);
   const [showNestedForm, setShowNestedForm] = useState<string | null>(null); // key = which nested form to show
-  const [currencies, setCurrencies] = useState<{ id: string; code: string; name?: string | null; isActive?: boolean }[]>([]);
   const [showCurrencyForm, setShowCurrencyForm] = useState(false);
+  /**
+   * One catalogue for the dropdown AND for every figure on the page.
+   *
+   * The page already loaded currencies for the picker and then printed a hardcoded
+   * `$` beside them — showing `$` in the balance column and `PKR` in the currency
+   * column of the same row. `money()` takes the row's own currency when it has one
+   * and the company's base when it does not.
+   */
+  const { currencies, money, baseCode, loaded: currenciesLoaded } = useCurrencies();
+  const [savingBase, setSavingBase] = useState(false);
 
   // Granular Permissions
   // Grants come from the shared hook, which resolves them from the user's role.
@@ -152,7 +163,6 @@ function Finance() {
     fetchWithAuth(`${API}/finance/fund-requests`, setFundRequests);
     fetchWithAuth(`${API}/core/committees`, setCommittees);
     fetchWithAuth(`${API}/core/clients`, setClients);
-    fetchWithAuth(`${API}/finance/currencies`, setCurrencies);
   };
 
 
@@ -338,7 +348,7 @@ function Finance() {
                             <span className="text-[10px] text-textSecondary font-mono">{new Date(d.entryDate).toLocaleDateString()}</span>
                             {!d.isBalanceEntry && d.id && <span className="text-[10px] font-mono text-success/60 bg-success/5 border border-success/10 px-1.5 py-0.5 rounded self-start">{d.id}</span>}
                           </div>
-                          <span className={`font-mono font-black ${d.isBalanceEntry ? 'text-warning' : 'text-success'}`}>${(d.amount || 0).toLocaleString()}</span>
+                          <span className={`font-mono font-black ${d.isBalanceEntry ? 'text-warning' : 'text-success'}`}>{money(d.amount || 0)}</span>
                         </div>
                       ))}
                     </div>
@@ -354,7 +364,7 @@ function Finance() {
                             <span className="text-[10px] text-textSecondary font-mono">{new Date(c.entryDate).toLocaleDateString()}</span>
                             {!c.isBalanceEntry && c.id && <span className="text-[10px] font-mono text-danger/60 bg-danger/5 border border-danger/10 px-1.5 py-0.5 rounded self-start">{c.id}</span>}
                           </div>
-                          <span className={`font-mono font-black ${c.isBalanceEntry ? 'text-warning' : 'text-danger'}`}>${(c.amount || 0).toLocaleString()}</span>
+                          <span className={`font-mono font-black ${c.isBalanceEntry ? 'text-warning' : 'text-danger'}`}>{money(c.amount || 0)}</span>
                         </div>
                       ))}
                     </div>
@@ -364,18 +374,18 @@ function Finance() {
                 <div className="mt-8 pt-6 border-t-2 border-white/20 grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
                   <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
                     <span>Total Dr</span>
-                    <span className="text-success font-mono">${(ledgerViewData.totalDebit || 0).toLocaleString()}</span>
+                    <span className="text-success font-mono">{money(ledgerViewData.totalDebit || 0)}</span>
                   </div>
                   <div className="flex justify-between font-black text-lg px-4 border-b-2 border-white/20 pb-2">
                     <span>Total Cr</span>
-                    <span className="text-danger font-mono">${(ledgerViewData.totalCredit || 0).toLocaleString()}</span>
+                    <span className="text-danger font-mono">{money(ledgerViewData.totalCredit || 0)}</span>
                   </div>
                 </div>
                 
                 <div className="mt-8 flex justify-center relative z-10">
                   <div className={`px-8 py-4 rounded-2xl border-2 font-black text-xl flex gap-4 items-center shadow-2xl ${ledgerViewData.balanceSide === 'debit' ? 'bg-success/10 border-success/30 text-success shadow-success/20' : 'bg-danger/10 border-danger/30 text-danger shadow-danger/20'}`}>
                     <span>Balance b/d:</span>
-                    <span className="font-mono">${(ledgerViewData.closingBalance || 0).toLocaleString()}</span>
+                    <span className="font-mono">{money(ledgerViewData.closingBalance || 0)}</span>
                     <span className="text-xs uppercase tracking-widest bg-surfaceAlt px-3 py-1.5 rounded-lg border border-white/10">{ledgerViewData.balanceSide}</span>
                   </div>
                 </div>
@@ -437,6 +447,58 @@ function Finance() {
                 ledgers={ledgers.map(l => ({ id: l.id, name: l.ledgerName }))}
               />
             )}
+          {/**
+            * Which currency the company's own money is in.
+            *
+            * Only on the Accounts tab, because that is where somebody is already
+            * thinking about denominations. It is not decoration: it decides the symbol
+            * on every amount that names no currency of its own — a transaction, an
+            * invoice, a payslip, a line in the asset register — and leaving it settable
+            * only by direct database access would make it the same kind of hidden
+            * configuration as an unset webhook secret.
+            */}
+          {tab === 'accounts' && currenciesLoaded && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-textSecondary">
+                Company currency
+              </span>
+              <select
+                value={baseCode}
+                disabled={!getPerm('accounts').canEdit || savingBase}
+                onChange={async (e) => {
+                  const code = e.target.value;
+                  if (!code || code === baseCode) return;
+                  setSavingBase(true);
+                  try {
+                    const res = await fetch(`${API}/currencies/base`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+                      body: JSON.stringify({ code }),
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(body?.error || 'Could not change the company currency');
+                    invalidateCurrencies();
+                  } catch (err) {
+                    alert(errorMessage(err, 'Could not change the company currency'));
+                  } finally {
+                    setSavingBase(false);
+                  }
+                }}
+                className="rounded-lg border border-white/10 bg-surfaceAlt px-3 py-1.5 text-xs font-bold focus:border-primary focus:outline-none disabled:opacity-50"
+              >
+                {currencies.filter(c => c.isActive).map(c => (
+                  <option key={c.code} value={c.code}>
+                    {c.symbol ? `${c.symbol} — ${c.code}` : c.code}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] leading-relaxed text-textSecondary">
+                Used wherever a figure names no currency of its own. Changing it re-labels
+                existing figures; it does not convert them.
+              </span>
+            </div>
+          )}
+
           <GAGrid
             title={TABS.find(t => t.id === tab)?.label || 'Finance'}
             entityName={tab.slice(0, -1)}
@@ -456,9 +518,9 @@ function Finance() {
                     }
                     if (lines.length > 0) {
                       const total = lines.filter((l: any) => l.type === 'debit').reduce((acc: number, l: any) => acc + (l.amount || 0), 0);
-                      return <span className="font-mono">${total.toLocaleString()}</span>;
+                      return <span className="font-mono">{money(total)}</span>;
                     }
-                    return <span className="font-mono">${(v || 0).toLocaleString()}</span>;
+                    return <span className="font-mono">{money(v || 0)}</span>;
                   }
                 },
                 { key: 'debitAccountId', label: 'Debit Account', render: (v: any, row: any) => {
@@ -505,8 +567,8 @@ function Finance() {
                 { key: 'accountName', label: 'Account', type: 'avatar' as const },
                 { key: 'accountType', label: 'Type', type: 'badge' as const },
                 { key: 'bankName', label: 'Bank' },
-                { key: 'openingBalance', label: 'Opening Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.openingBalanceSide === 'debit' ? 'text-success font-bold' : row.openingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.openingBalanceSide === 'debit' ? 'Dr' : row.openingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
-                { key: 'closingBalance', label: 'Closing Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">${Number(v || 0).toLocaleString()} <span className={row.closingBalanceSide === 'debit' ? 'text-success font-bold' : row.closingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.closingBalanceSide === 'debit' ? 'Dr' : row.closingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
+                { key: 'openingBalance', label: 'Opening Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">{money(v || 0, row.currency)} <span className={row.openingBalanceSide === 'debit' ? 'text-success font-bold' : row.openingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.openingBalanceSide === 'debit' ? 'Dr' : row.openingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
+                { key: 'closingBalance', label: 'Closing Bal.', render: (v: any, row: any) => <span className="font-mono text-sm">{money(v || 0, row.currency)} <span className={row.closingBalanceSide === 'debit' ? 'text-success font-bold' : row.closingBalanceSide === 'credit' ? 'text-danger font-bold' : 'text-textSecondary'}>{row.closingBalanceSide === 'debit' ? 'Dr' : row.closingBalanceSide === 'credit' ? 'Cr' : '—'}</span></span> },
                 { key: 'currency', label: 'Currency' },
                 { key: 'status', label: 'Status', type: 'status' as const },
               ]
@@ -565,14 +627,14 @@ function Finance() {
                           <div className="font-bold">{b.accountName}</div>
                           <div className="text-xs text-textSecondary">{b.accountNumber}</div>
                         </td>
-                        <td className="p-4 text-right font-mono text-success">{b.type === 'debit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
-                        <td className="p-4 text-right font-mono text-danger">{b.type === 'credit' ? `$${b.amount.toLocaleString()}` : '-'}</td>
+                        <td className="p-4 text-right font-mono text-success">{b.type === 'debit' ? money(b.amount) : '-'}</td>
+                        <td className="p-4 text-right font-mono text-danger">{b.type === 'credit' ? money(b.amount) : '-'}</td>
                       </tr>
                     ))}
                     <tr className="bg-surfaceAlt font-black text-lg">
                       <td className="p-4 text-right">TOTAL</td>
-                      <td className="p-4 text-right font-mono text-success border-t-2 border-success/30">${trialBalanceData.totalDebit.toLocaleString()}</td>
-                      <td className="p-4 text-right font-mono text-danger border-t-2 border-danger/30">${trialBalanceData.totalCredit.toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono text-success border-t-2 border-success/30">{money(trialBalanceData.totalDebit)}</td>
+                      <td className="p-4 text-right font-mono text-danger border-t-2 border-danger/30">{money(trialBalanceData.totalCredit)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -639,7 +701,7 @@ function Finance() {
           ]}
           onClose={() => setShowCurrencyForm(false)}
           onSubmit={async (formData) => {
-            const res = await fetch(`${API}/finance/currencies`, {
+            const res = await fetch(`${API}/currencies`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
               body: JSON.stringify(formData),
@@ -648,9 +710,13 @@ function Finance() {
             // A duplicate answers 409 with a sentence worth showing; EntityForm
             // surfaces whatever a rejected promise carries.
             if (!res.ok) throw new Error(body?.error || 'Could not add that currency');
-            const list = await fetch(`${API}/finance/currencies`, { headers: { Authorization: `Bearer ${token()}` } })
-              .then(r => r.json()).catch(() => null);
-            if (list?.data) setCurrencies(list.data);
+            /**
+             * The catalogue is cached for the whole page load and shared by every
+             * component that renders an amount, so adding one has to clear it —
+             * otherwise the new currency is missing from the dropdown that just
+             * created it, and its symbol never appears anywhere until a reload.
+             */
+            invalidateCurrencies();
             setShowCurrencyForm(false);
           }}
         />

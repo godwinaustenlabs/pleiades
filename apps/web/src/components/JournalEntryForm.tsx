@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useCurrencies } from '../lib/currency';
 import { X, Plus, Trash2 } from 'lucide-react';
 
 interface JournalEntryFormProps {
@@ -10,6 +11,8 @@ interface JournalEntryFormProps {
 }
 
 export default function JournalEntryForm({ initialData, accounts, invoices, onClose, onSubmit }: JournalEntryFormProps) {
+  /** A journal is in the company's own money; there is no per-entry currency. */
+  const { money } = useCurrencies();
   const [entryDate, setEntryDate] = useState(initialData?.entryDate || new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState(initialData?.description || '');
   const [invoiceId, setInvoiceId] = useState(initialData?.invoiceId || '');
@@ -156,8 +159,8 @@ export default function JournalEntryForm({ initialData, accounts, invoices, onCl
                 {isBalanced ? '✅ Entry is Balanced' : '❌ Out of Balance'}
               </div>
               <div className="flex gap-6 text-sm font-mono">
-                <div>Dr: ${(drTotal).toLocaleString()}</div>
-                <div>Cr: ${(crTotal).toLocaleString()}</div>
+                <div>Dr: {money(drTotal)}</div>
+                <div>Cr: {money(crTotal)}</div>
               </div>
             </div>
           </form>
