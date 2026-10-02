@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (29 files, 699 tests)
+npm test          # vitest — see test/ (30 files, 714 tests)
 npm run test:watch
 ```
 
@@ -1050,6 +1050,45 @@ selection-aware DOM surgery — and **paste goes through the same sanitiser**, s
 copying out of a web page brings that page's markup with it. `body_text` is always
 maintained alongside the HTML rather than derived at send time, so a rich message is
 never sent as HTML alone.
+
+### Website leads (`POST /api/acquisition/contacts/intake`)
+
+The marketing site (`godwinausten.org`, a separate repo) captures an email behind
+its playbook lead magnet and hands it here as a lead in Acquisition. Before this
+existed it validated the address, served the PDF and **threw the address away** —
+it logged the domain only, because there was nowhere to put the rest. Everything
+captured before 2026-10-02 is gone.
+
+Why it is not `POST /contacts`, which already exists:
+
+- **The payload is narrow.** `POST /contacts` spreads the whole body into the
+  insert — fine for an operator who holds the grant, wrong for an external caller,
+  which would otherwise set `leadScore`, `contactOwner` or `pipelineStage` itself.
+  Intake takes an email, an optional name and a source label and derives the rest.
+- **It is idempotent on email.** A visitor downloading the guide twice, or a retry
+  after a timeout, is one lead and two `leads_activity` rows. A repeat never
+  overwrites the lead, because somebody may have since set an owner, a stage or a
+  real name, and a second download is not a reason to reset any of that.
+- **It records provenance** in `lead_source` *and* on the activity trail, because
+  "came in through the playbook" is what makes the lead worth calling.
+
+`fullName` is NOT NULL and holds the **address**, not a name derived from it:
+turning `john.smith@acme.co` into "John Smith" is a guess that reads as a fact and
+is wrong for every `info@` and `hello@`. `companyName` takes the domain unless it
+is a free mail provider — nobody works at Gmail.
+
+**Authorization is the existing `x-api-key` mechanism and nothing new.** The site
+presents a key; `authMiddleware` resolves the `api_keys` row and the login it acts
+as; the route is gated like any other on `acquisition/contacts` edit. That login
+(`usr_site_intake`) holds that one grant, has no employee record, and its
+`password_hash` is `!no-login` — neither PBKDF2 nor a legacy SHA-256 digest, so
+`verifyPassword` can never return valid and the account cannot sign in at all. A
+leaked website key creates leads; it does not read a payslip.
+
+Deliberately **not** a second unauthenticated write. `POST /api/webhooks/resend`
+is the only one of those in the system and its Svix signature is the whole
+authorization; adding another trust domain for a form submission would be a far
+larger change than the feature is worth.
 
 ### Currencies (`src/routes/currencies.ts`)
 

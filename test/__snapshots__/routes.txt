@@ -13,6 +13,7 @@ POST   /api/acquisition/contacts
 DELETE /api/acquisition/contacts/:id
 GET    /api/acquisition/contacts/:id
 PATCH  /api/acquisition/contacts/:id
+POST   /api/acquisition/contacts/intake
 GET    /api/acquisition/content
 POST   /api/acquisition/content
 DELETE /api/acquisition/content/:id

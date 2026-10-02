@@ -6,7 +6,22 @@ import { authMiddleware } from '../middleware/auth';
 import { requireAppAccess, requireFeatureAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
-import { ok, created, notFound, serverError } from '../utils/response';
+import { ok, created, notFound, badRequest, serverError } from '../utils/response';
+
+/**
+ * Domains that are never a company, so `companyName` stays empty rather than
+ * claiming somebody works at Gmail.
+ *
+ * Not exhaustive and does not need to be: the cost of a miss is one lead with
+ * its domain in the company column, which is visibly wrong and trivially fixed,
+ * against the cost of a false company name on every consumer address.
+ */
+const FREE_MAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk', 'hotmail.com',
+  'hotmail.co.uk', 'outlook.com', 'live.com', 'msn.com', 'icloud.com', 'me.com',
+  'mac.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'yandex.com',
+  'zoho.com', 'mail.com',
+]);
 
 const acquisitionRouter = new Hono<{ Bindings: Env }>();
 acquisitionRouter.use('*', authMiddleware);
@@ -102,6 +117,135 @@ acquisitionRouter.post('/contacts', requireFeatureAccess('acquisition', 'contact
     return created(c, { id });
   } catch (err) { return serverError(c, err); }
 });
+/**
+ * POST /acquisition/contacts/intake
+ *
+ * One captured email from the marketing site's lead magnet, turned into a lead.
+ *
+ * ## Why this is not `POST /contacts`
+ *
+ * It is called by another service rather than by a person in a form, and that
+ * changes three things:
+ *
+ *  - **The payload is narrow.** `POST /contacts` spreads the whole body into the
+ *    insert, which is fine for an operator who already holds the grant and wrong
+ *    for an external caller — it would let the site set `leadScore`,
+ *    `contactOwner` or `pipelineStage` to anything. This takes an email, an
+ *    optional name, and a source label, and derives the rest here.
+ *  - **It has to be idempotent.** A visitor who downloads the guide twice, or a
+ *    retry after a timeout, must not produce two leads. Matched on email.
+ *  - **It records WHERE the lead came from**, as a `leads_activity` row as well
+ *    as `leadSource`, because "came in through the playbook" is the fact that
+ *    makes the lead worth calling and it is lost if it only lives in a log line.
+ *
+ * ## Authorization
+ *
+ * Nothing new: the site presents `x-api-key`, which `authMiddleware` resolves to
+ * the `api_keys` row and the user it acts as, and this route is then gated like
+ * any other on `acquisition/contacts` edit. That key names a login holding that
+ * one grant and nothing else, so a leaked website key can create leads and
+ * cannot read a payslip.
+ *
+ * Deliberately NOT a second unauthenticated write. `POST /api/webhooks/resend`
+ * is the only one of those in the system and its signature is the whole
+ * authorization; adding another trust domain for a form submission would be a
+ * much larger change than the feature is worth.
+ */
+acquisitionRouter.post('/contacts/intake', requireFeatureAccess('acquisition', 'contacts', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user' as any);
+    const body = await c.req.json().catch(() => ({}));
+
+    const email = String(body?.email ?? '').trim().toLowerCase();
+    // Deliberately loose. This is already-validated input arriving from a form
+    // that rejected what the browser would not accept, and the cost of being
+    // stricter here is dropping a real lead over an address shape we had not
+    // thought of. One `@`, something either side, no whitespace.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      return badRequest(c, 'A valid email is required.');
+    }
+
+    const at = email.lastIndexOf('@');
+    const domain = email.slice(at + 1);
+
+    /**
+     * `source` says which magnet, and defaults to saying at least that much.
+     *
+     * Capped and stripped of newlines because it is rendered in a grid and
+     * exported to CSV, where an embedded newline becomes a broken row.
+     */
+    const source = String(body?.source ?? '').replace(/\s+/g, ' ').trim().slice(0, 120)
+      || 'Website — lead magnet';
+
+    const existing = await db.query.contactsLeads.findFirst({
+      where: eq(schema.contactsLeads.email, email),
+    });
+
+    if (existing) {
+      /**
+       * Already a lead. Record the fresh download and leave the lead alone.
+       *
+       * Overwriting would be worse than doing nothing: somebody may have since
+       * set an owner, a stage or a real name, and a second PDF download is not a
+       * reason to reset any of that. The repeat interest is the useful part, and
+       * it goes on the activity trail.
+       */
+      const activityId = generateId('act');
+      await db.insert(schema.leadsActivity).values({
+        id: activityId,
+        contactId: existing.id,
+        activityType: 'lead_magnet_download',
+        notes: `Downloaded again — ${source}`,
+        automationTrigger: true,
+        timestamp: new Date(),
+        createdAt: new Date(),
+      });
+      await logAudit(c.env, user.id, 'CREATE', 'leads_activity', activityId, { email, source, repeat: true });
+      return ok(c, { id: existing.id, created: false, repeat: true });
+    }
+
+    const id = generateId('lead');
+    await db.insert(schema.contactsLeads).values({
+      id,
+      /**
+       * `fullName` is NOT NULL and we do not know their name, so it holds the
+       * ADDRESS rather than a name derived from it.
+       *
+       * `john.smith@acme.com` becoming "John Smith" is a guess that looks like a
+       * fact, and it would be wrong for every `info@`, `hello@` and
+       * `firstname.lastname` that is not a person's name. The address is the only
+       * thing the visitor actually told us; whoever calls them can put a real
+       * name in afterwards.
+       */
+      fullName: body?.name ? String(body.name).trim().slice(0, 120) : email,
+      // The domain is a fact about the address, not an inferred company name, so
+      // it is only set when it is plausibly one — a free mail provider is not.
+      companyName: FREE_MAIL_DOMAINS.has(domain) ? null : domain,
+      email,
+      leadSource: source,
+      // Every intake lands at the top of the funnel. Anything else would be the
+      // site deciding how warm its own leads are.
+      pipelineStage: 'new',
+      createdAt: new Date(),
+    });
+
+    const activityId = generateId('act');
+    await db.insert(schema.leadsActivity).values({
+      id: activityId,
+      contactId: id,
+      activityType: 'lead_magnet_download',
+      notes: `Captured from ${source}`,
+      automationTrigger: true,
+      timestamp: new Date(),
+      createdAt: new Date(),
+    });
+
+    await logAudit(c.env, user.id, 'CREATE', 'contacts_leads', id, { email, source, via: 'intake' });
+    return created(c, { id, created: true });
+  } catch (err) { return serverError(c, err); }
+});
+
 acquisitionRouter.get('/contacts/:id', requireFeatureAccess('acquisition', 'contacts', 'view'), async (c) => {
   try {
     const row = await getDb(c.env).query.contactsLeads.findFirst({ where: eq(schema.contactsLeads.id, c.req.param('id')) });
