@@ -42,7 +42,10 @@ export function profilePhotoUrl(raw?: string | null): string | null {
 export function initialsFor(name?: string | null, fallback?: string | null): string {
 	const source = (name || fallback || '').trim();
 	if (!source) return '?';
-	const parts = source.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
+	// An address stands in for a name on a website lead. Only the mailbox half
+	// is about the person: `saadnaik@icloud.com` is S, not S…C for ".com".
+	const person = source.includes('@') ? source.slice(0, source.indexOf('@')) : source;
+	const parts = person.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
 	if (parts.length === 0) return source.charAt(0).toUpperCase();
 	if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
 	return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();

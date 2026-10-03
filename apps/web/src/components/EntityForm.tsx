@@ -241,6 +241,11 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
                     className={`w-full rounded-xl border border-white/10 bg-surface/50 py-2.5 pl-4 text-sm transition-colors focus:border-primary/50 focus:outline-none appearance-none ${field.action ? 'pr-24' : 'pr-4'}`}
                   >
                     <option value="">Select option...</option>
+                    {/* A stored value outside the list (a lead's source set by the
+                        website intake) would otherwise display as unset. */}
+                    {formData[field.key] && !field.options?.some(opt => opt.value === formData[field.key]) && (
+                      <option value={formData[field.key]}>{formData[field.key]}</option>
+                    )}
                     {field.options?.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}

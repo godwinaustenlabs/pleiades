@@ -94,8 +94,10 @@ export default function GAGrid({
         return (
           <div className="flex flex-wrap gap-1 max-w-full md:max-w-[200px]">
             {tags.slice(0, 3).map((v, i) => (
-              <span key={i} className={`chip chip-${statusTone(v)}`}>
-                {v}
+              // `.chip` is nowrap, so without a cap a long value runs out of
+              // the 200px wrapper and over the next column.
+              <span key={i} title={v} className={`chip chip-${statusTone(v)} max-w-full`}>
+                <span className="truncate">{v}</span>
               </span>
             ))}
             {tags.length > 3 && (
@@ -176,7 +178,19 @@ export default function GAGrid({
         );
       }
       default:
-        return <span className="text-sm break-anywhere">{value}</span>;
+        if (value === null || value === undefined || value === '') {
+          return <span className="text-textTertiary text-xs">—</span>;
+        }
+        // Break-anywhere is for the phone cards. In the table it also lowers the
+        // column's min-content width, so the table squeezed an email to
+        // `saadnaik@iclo|ud.com` rather than scroll; there, wrap at word breaks.
+        // Spelled as utilities, not `.break-anywhere`: that class is unlayered
+        // and would beat the `md:` override.
+        return (
+          <span className="text-sm [overflow-wrap:anywhere] [word-break:break-word] md:[overflow-wrap:break-word] md:[word-break:normal]">
+            {value}
+          </span>
+        );
     }
   };
 
@@ -253,7 +267,7 @@ export default function GAGrid({
                     className="p-4 text-[10px] font-black text-textSecondary uppercase tracking-[0.15em] cursor-pointer hover:text-primary transition-colors group"
                     onClick={() => handleSort(col.key)}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       {col.label}
                       <ArrowUpDown className={`w-3 h-3 transition-opacity ${sortKey === col.key ? 'text-primary opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
                     </div>
