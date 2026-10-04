@@ -12,20 +12,24 @@ import NotificationCenter from '../components/NotificationCenter';
 import ModuleTabs from '../components/ModuleTabs';
 import MailboxTab from '../components/MailboxTab';
 import UserAvatar from '../components/UserAvatar';
+import TimeWidget from '../components/TimeWidget';
+import TeamTime from '../components/TeamTime';
+import { useTimer, formatDuration } from '../lib/time';
 import EntityForm from '../components/EntityForm';
 import Login from './Login';
-import { Share2, RefreshCw, Copy, Check, Eye, Edit2, LogOut } from 'lucide-react';
+import { Share2, RefreshCw, Copy, Check, Eye, Edit2, Timer } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { API, currentUser, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 
 
 export default function UserDashboard() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'calendar' | 'committees' | 'appointments' | 'notes' | 'email'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'time' | 'calendar' | 'committees' | 'appointments' | 'notes' | 'email'>('overview');
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
     { id: 'tasks', label: 'Kanban Board', icon: CheckCircle2 },
+    { id: 'time', label: 'My time', icon: Timer },
     { id: 'calendar', label: 'Schedule', icon: CalendarIcon },
     { id: 'committees', label: 'Committees', icon: BookOpen },
     { id: 'appointments', label: 'Appointments', icon: CalendarIcon },
@@ -38,9 +42,7 @@ export default function UserDashboard() {
   ] as const;
 
   const [data, setData] = useState<any>(null);
-  const [attendanceToday, setAttendanceToday] = useState<any>(null);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState('0h 0m');
+  const timer = useTimer();
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState({ title: '', content: '' });
@@ -59,7 +61,6 @@ export default function UserDashboard() {
       fetchDashboard();
       fetchNotes();
       fetchCalToken();
-      fetchAttendance();
       
       const interval = setInterval(() => {
         fetchDashboard();
@@ -113,60 +114,6 @@ export default function UserDashboard() {
       console.error(err);
     }
   };
-
-  const fetchAttendance = async () => {
-    try {
-      const res = await fetch(`${API}/dashboard/attendance/today`, {
-        headers: { Authorization: `Bearer ${token()}` }
-      });
-      const d = await res.json();
-      setAttendanceToday(d.data || null);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleCheckIn = async () => {
-    setAttendanceLoading(true);
-    try {
-      const res = await fetch(`${API}/dashboard/attendance/checkin`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token()}` }
-      });
-      if (res.ok) await fetchAttendance();
-    } catch { /* non-fatal: leave prior state */ }
-    finally { setAttendanceLoading(false); }
-  };
-
-  const handleCheckOut = async () => {
-    setAttendanceLoading(true);
-    try {
-      const res = await fetch(`${API}/dashboard/attendance/checkout`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token()}` }
-      });
-      if (res.ok) await fetchAttendance();
-    } catch { /* non-fatal: leave prior state */ }
-    finally { setAttendanceLoading(false); }
-  };
-
-  useEffect(() => {
-    if (attendanceToday?.checkIn && !attendanceToday?.checkOut) {
-      const updateElapsed = () => {
-        const [hours, minutes, seconds] = attendanceToday.checkIn.split(':').map(Number);
-        const checkInDate = new Date();
-        checkInDate.setHours(hours, minutes, seconds, 0);
-        const diffMs = Date.now() - checkInDate.getTime();
-        if (diffMs > 0) {
-          const totalMins = Math.floor(diffMs / 60000);
-          setElapsedTime(`${Math.floor(totalMins / 60)}h ${totalMins % 60}m`);
-        }
-      };
-      updateElapsed();
-      const interval = setInterval(updateElapsed, 60000);
-      return () => clearInterval(interval);
-    }
-  }, [attendanceToday]);
 
   const resetCalToken = async () => {
     if (!confirm('This will invalidate your current calendar URL. Continue?')) return;
@@ -264,13 +211,17 @@ export default function UserDashboard() {
           </div>
 
           <div className="flex items-center justify-between md:justify-end gap-4">
-            <div className="flex flex-col items-start md:items-end">
-              <span className="text-[10px] md:text-xs font-bold text-textSecondary uppercase tracking-widest">Efficiency Score</span>
-              <span className="text-2xl md:text-3xl font-black text-primary">{data?.stats?.efficiencyScore || 'N/A'}%</span>
-            </div>
+            {/* Logged today, where the efficiency score used to be. A record of time
+                spent, not a score: evaluation here is done by people. */}
+            {timer.state ? (
+              <button onClick={() => setActiveTab('time')} className="flex flex-col items-start md:items-end text-left md:text-right">
+                <span className="text-[10px] md:text-xs font-bold text-textSecondary uppercase tracking-widest">Logged today</span>
+                <span className="text-2xl md:text-3xl font-black text-primary font-mono">{formatDuration(timer.loggedTodayMs)}</span>
+              </button>
+            ) : <span />}
 
             {/* Bell and avatar are one group, so `justify-between` puts the
-                score at one end and the controls at the other rather than
+                time at one end and the controls at the other rather than
                 stranding the bell in the middle of the row. */}
             <div className="flex items-center gap-2 md:gap-3">
             <NotificationCenter currentApp="dashboard" />
@@ -379,81 +330,7 @@ export default function UserDashboard() {
 
               {/* Sidebar Info */}
               <div className="space-y-6">
-                {/* Attendance Widget */}
-                {data?.employee && (
-                  <div className="glass-panel p-6 rounded-3xl bg-white/5 border border-white/10 relative overflow-hidden group">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-primary-dark opacity-50" />
-                    <h3 className="font-bold mb-1 flex items-center gap-2">
-                      📍 Today's Attendance
-                    </h3>
-                    <p className="text-xs text-textSecondary font-bold mb-4">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                    
-                    <div className="flex flex-col gap-4">
-                      {attendanceToday ? (
-                        <>
-                          <div className="flex items-center gap-3 bg-surfaceAlt p-3 rounded-2xl border border-white/5">
-                            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary border border-primary/30">
-                              <Clock className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Checked In At</p>
-                              <p className="text-sm font-bold text-white font-mono">{attendanceToday.checkIn}</p>
-                            </div>
-                          </div>
-                          
-                          {!attendanceToday.checkOut ? (
-                            <div className="text-center py-2">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1 animate-pulse">Elapsed Time</p>
-                              <p className="text-2xl font-black text-white font-mono">{elapsedTime}</p>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-3 bg-surfaceAlt p-3 rounded-2xl border border-white/5">
-                              <div className="w-10 h-10 rounded-xl bg-warning/20 flex items-center justify-center text-warning border border-warning/30">
-                                <CheckCircle2 className="w-5 h-5" />
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary">Checked Out</p>
-                                <p className="text-sm font-bold text-white font-mono">{attendanceToday.checkOut}</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {!attendanceToday.checkOut && (
-                            <button
-                              onClick={handleCheckOut}
-                              disabled={attendanceLoading}
-                              className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-all border border-white/10 flex items-center justify-center gap-2"
-                            >
-                              {attendanceLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <LogOut className="w-4 h-4" />}
-                              Check Out
-                            </button>
-                          )}
-                          {attendanceToday.checkOut && (
-                            <div className="mt-2 text-center p-3 rounded-xl bg-primary/10 border border-primary/20">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Total Hours</p>
-                              <p className="text-lg font-black text-white font-mono">{attendanceToday.totalHours} hrs</p>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-center py-4">
-                          <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
-                            <div className="w-3 h-3 rounded-full bg-warning animate-pulse" />
-                          </div>
-                          <p className="text-sm font-bold text-white mb-1">Not Clocked In</p>
-                          <p className="text-xs text-textSecondary mb-4">Start your workday to track time.</p>
-                          <button
-                            onClick={handleCheckIn}
-                            disabled={attendanceLoading}
-                            className="w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-surface font-bold text-sm transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-                          >
-                            {attendanceLoading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : 'Check In Now'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <TimeWidget timer={timer} onOpenLog={() => setActiveTab('time')} />
                 <div className="glass-panel p-6 rounded-3xl bg-gradient-to-br from-primary/20 to-transparent overflow-hidden">
                   <h3 className="font-bold mb-4 flex items-center gap-2">
                     <CalendarIcon className="w-4 h-4 text-primary" /> Active Appointments
@@ -607,6 +484,14 @@ export default function UserDashboard() {
         )}
 
         {/* Notes Tab */}
+        {activeTab === 'time' && (
+          <div className="glass-panel p-6 md:p-8 rounded-3xl bg-white/5 border border-white/10">
+            <h2 className="text-xl font-bold mb-1">My time</h2>
+            <p className="text-sm text-textSecondary mb-6">Where your time went, day by day. You can add or change your own entries for the last 14 days.</p>
+            <TeamTime selfAvailable={!(timer.loaded && !timer.state)} />
+          </div>
+        )}
+
         {activeTab === 'email' && (
           <MailboxTab
             scope={{ kind: 'mine' }}

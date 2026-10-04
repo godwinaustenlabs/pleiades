@@ -26,7 +26,6 @@ CREATE TABLE `acq_tasks` (
 	`assignee` text,
 	`airtable_user_id` text,
 	`status` text,
-	`estimated_effort` real,
 	`actual_effort` real,
 	`sprint_id` text,
 	`campaign_id` text,
@@ -474,12 +473,11 @@ CREATE TABLE `employees` (
 	`employment_status` text,
 	`hire_date` text,
 	`base_salary` real,
-	`efficiency_score` real,
 	`profile_photo` text,
 	`sector_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
-, `email` text, `phone` text, `cnic` text, `dob` text, `gender` text, `address` text, `contact_info` text, `emergency_contact` text, `designation` text, `reporting_manager_id` text, `employment_type` text, `confirmation_date` text, `contract_start_date` text, `contract_end_date` text, `bank_details` text, `tax_information` text, `assigned_office` text, `notes` text);
+, `email` text, `phone` text, `cnic` text, `dob` text, `gender` text, `address` text, `contact_info` text, `emergency_contact` text, `designation` text, `reporting_manager_id` text, `employment_type` text, `confirmation_date` text, `contract_start_date` text, `contract_end_date` text, `bank_details` text, `tax_information` text, `assigned_office` text, `notes` text, timezone TEXT NOT NULL DEFAULT 'Asia/Karachi');
 CREATE TABLE `environments` (
 	`env_id` text PRIMARY KEY NOT NULL,
 	`env_name` text NOT NULL,
@@ -956,7 +954,7 @@ CREATE TABLE "transactions" (
   `fund_request_id` text REFERENCES fund_requests(fund_request_id),
   `created_at` integer NOT NULL
 );
-CREATE TABLE "universal_tasks" (`task_id` text PRIMARY KEY NOT NULL, `title` text NOT NULL, `description` text, `status` text NOT NULL, `priority` text, `department` text NOT NULL, `task_type` text, `creator_id` text, `appointment_id` text, `committee_id` text, `board_position` integer DEFAULT 0, `related_entity_id` text, `related_entity_type` text, `estimated_hours` real, `start_date` text, `due_date` text, `completed_at` integer, `created_at` integer NOT NULL, `updated_at` integer NOT NULL, FOREIGN KEY (`creator_id`) REFERENCES `users_logins`(`id`) ON UPDATE no action ON DELETE no action, FOREIGN KEY (`appointment_id`) REFERENCES `appointments`(`appointment_id`) ON UPDATE no action ON DELETE no action, FOREIGN KEY (`committee_id`) REFERENCES `committees`(`committee_id`) ON UPDATE no action ON DELETE no action);
+CREATE TABLE "universal_tasks" (`task_id` text PRIMARY KEY NOT NULL, `title` text NOT NULL, `description` text, `status` text NOT NULL, `priority` text, `department` text NOT NULL, `task_type` text, `creator_id` text, `appointment_id` text, `committee_id` text, `board_position` integer DEFAULT 0, `related_entity_id` text, `related_entity_type` text, `start_date` text, `due_date` text, `completed_at` integer, `created_at` integer NOT NULL, `updated_at` integer NOT NULL, FOREIGN KEY (`creator_id`) REFERENCES `users_logins`(`id`) ON UPDATE no action ON DELETE no action, FOREIGN KEY (`appointment_id`) REFERENCES `appointments`(`appointment_id`) ON UPDATE no action ON DELETE no action, FOREIGN KEY (`committee_id`) REFERENCES `committees`(`committee_id`) ON UPDATE no action ON DELETE no action);
 CREATE TABLE user_app_permissions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users_logins(id),
@@ -1207,3 +1205,38 @@ CREATE INDEX idx_appointment_app_permissions_appt
 CREATE UNIQUE INDEX users_logins_employee_unique
 	ON users_logins (employee_id) WHERE employee_id IS NOT NULL;
 CREATE INDEX idx_mailboxes_appointment ON mailboxes (appointment_id);
+CREATE TABLE work_days (
+  work_day_id  TEXT PRIMARY KEY NOT NULL,
+  employee_id  TEXT NOT NULL REFERENCES employees(employee_id),
+  work_date    TEXT NOT NULL,
+  timezone     TEXT NOT NULL,
+  logged_ms    INTEGER NOT NULL DEFAULT 0,
+  paused_ms    INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+CREATE TABLE time_entries (
+  time_entry_id        TEXT PRIMARY KEY NOT NULL,
+  work_day_id          TEXT NOT NULL REFERENCES work_days(work_day_id),
+  employee_id          TEXT NOT NULL REFERENCES employees(employee_id),
+  kind                 TEXT NOT NULL CHECK (kind IN ('work', 'pause')),
+  started_at           INTEGER NOT NULL,
+  ended_at             INTEGER,
+  task_id              TEXT REFERENCES universal_tasks(task_id),
+  note                 TEXT,
+  source               TEXT NOT NULL CHECK (source IN ('timer', 'manual', 'legacy')),
+  time_unknown         INTEGER NOT NULL DEFAULT 0,
+  auto_closed          INTEGER NOT NULL DEFAULT 0,
+  edited_at            INTEGER,
+  original_started_at  INTEGER,
+  original_ended_at    INTEGER,
+  original_task_id     TEXT,
+  created_at           INTEGER NOT NULL,
+  CHECK (ended_at IS NULL OR ended_at > started_at),
+  CHECK (kind = 'work' OR task_id IS NULL)
+);
+CREATE UNIQUE INDEX work_days_employee_date_unique ON work_days (employee_id, work_date);
+CREATE UNIQUE INDEX time_entries_one_open ON time_entries (employee_id) WHERE ended_at IS NULL;
+CREATE INDEX idx_time_entries_day  ON time_entries (work_day_id);
+CREATE INDEX idx_time_entries_task ON time_entries (task_id);
+CREATE INDEX idx_time_entries_employee_start ON time_entries (employee_id, started_at);

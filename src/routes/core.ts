@@ -17,6 +17,7 @@ async function sha256hex(input: string): Promise<string> {
 
 import { UserPayload } from '../middleware/auth';
 import { hashPassword } from '../utils/password';
+import { isValidTimeZone } from '../time/clock';
 
 const coreRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 coreRouter.use('*', authMiddleware);
@@ -26,6 +27,18 @@ coreRouter.use('*', authMiddleware);
 coreRouter.use('*', requireAppAccess('core'));
 
 /* ── EMPLOYEES ── */
+/**
+ * `timezone` decides which date somebody's logged time falls on, so a typo would
+ * file every session on the wrong day. Validated against the runtime's own zone
+ * list; blank means "leave it" (the column defaults to Asia/Karachi). Returns an
+ * error message, or null.
+ */
+function normaliseTimezone(body: Record<string, unknown>): string | null {
+  if (body.timezone === undefined) return null;
+  if (body.timezone === null || body.timezone === '') { delete body.timezone; return null; }
+  return isValidTimeZone(body.timezone) ? null : `Unknown timezone: ${String(body.timezone)}`;
+}
+
 /**
  * Fields that must not be exposed on the general directory.
  *
@@ -71,8 +84,10 @@ coreRouter.post('/employees', requireFeatureAccess('core', 'employees', 'edit'),
     const now = new Date();
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes } = body;
-    const cleanBody = { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes };
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes, timezone } = body;
+    const cleanBody = { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes, timezone };
+    const tzError = normaliseTimezone(cleanBody);
+    if (tzError) return badRequest(c, tzError);
 
     await db.insert(schema.employees).values({ ...cleanBody, id, createdAt: now, updatedAt: now });
     await logAudit(c.env, user.id, 'CREATE', 'employees', id, cleanBody);
@@ -102,10 +117,12 @@ coreRouter.patch('/employees/:id', requireFeatureAccess('core', 'employees', 'ed
     const id = c.req.param('id');
     
     // Sanitize body: only keep valid employee columns
-    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, efficiencyScore, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes } = body;
+    const { name, slackId, department, role, email, phone, employmentStatus, hireDate, baseSalary, profilePhoto, sectorId, cnic, dob, gender, address, contactInfo, emergencyContact, designation, reportingManagerId, employmentType, confirmationDate, contractStartDate, contractEndDate, bankDetails, taxInformation, assignedOffice, notes, timezone } = body;
     const cleanBody: any = {};
-    const fields = ['name', 'slackId', 'department', 'role', 'email', 'phone', 'employmentStatus', 'hireDate', 'baseSalary', 'efficiencyScore', 'profilePhoto', 'sectorId', 'cnic', 'dob', 'gender', 'address', 'contactInfo', 'emergencyContact', 'designation', 'reportingManagerId', 'employmentType', 'confirmationDate', 'contractStartDate', 'contractEndDate', 'bankDetails', 'taxInformation', 'assignedOffice', 'notes'];
+    const fields = ['name', 'slackId', 'department', 'role', 'email', 'phone', 'employmentStatus', 'hireDate', 'baseSalary', 'profilePhoto', 'sectorId', 'cnic', 'dob', 'gender', 'address', 'contactInfo', 'emergencyContact', 'designation', 'reportingManagerId', 'employmentType', 'confirmationDate', 'contractStartDate', 'contractEndDate', 'bankDetails', 'taxInformation', 'assignedOffice', 'notes', 'timezone'];
     fields.forEach(f => { if (body[f] !== undefined) cleanBody[f] = body[f]; });
+    const tzError = normaliseTimezone(cleanBody);
+    if (tzError) return badRequest(c, tzError);
 
     await db.update(schema.employees).set({ ...cleanBody, updatedAt: new Date() }).where(eq(schema.employees.id, id));
     

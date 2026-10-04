@@ -85,7 +85,7 @@
 /api/core/employee-lab/:employeeId
     200 ok data=array<empty>
 /api/core/employees
-    200 ok data=array<{address,assignedOffice,bankDetails,baseSalary,cnic,confirmationDate,contactInfo,contractEndDate,contractStartDate,createdAt,department,designation,dob,efficiencyScore,email,emergencyContact,employmentStatus,employmentType,gender,hireDate,id,name,notes,phone,profilePhoto,reportingManagerId,role,sectorId,slackId,taxInformation,updatedAt}>
+    200 ok data=array<{address,assignedOffice,bankDetails,baseSalary,cnic,confirmationDate,contactInfo,contractEndDate,contractStartDate,createdAt,department,designation,dob,email,emergencyContact,employmentStatus,employmentType,gender,hireDate,id,name,notes,phone,profilePhoto,reportingManagerId,role,sectorId,slackId,taxInformation,timezone,updatedAt}>
 /api/core/employees/:id
     404 err="Record not found"
 /api/core/employees/:id/impact
@@ -112,8 +112,6 @@
     200 ok data=array<empty>
 /api/currencies
     200 ok data=array<{code,createdAt,createdByUserId,id,isActive,isBase,name,symbol}>
-/api/dashboard/attendance/today
-    200 ok data=null
 /api/dashboard/calendar/token
     200 ok data={token}
 /api/dashboard/me
@@ -122,6 +120,16 @@
     200 ok data=array<empty>
 /api/dashboard/preferences
     200 ok data={}
+/api/dashboard/time/days
+    200 ok data=null
+/api/dashboard/time/days/:date
+    200 ok data=null
+/api/dashboard/time/missed
+    200 ok data=null
+/api/dashboard/time/state
+    200 ok data=null
+/api/dashboard/time/tasks
+    200 ok data=null
 /api/email/automations
     200 ok data={events,recentFailures,sender}
 /api/email/delivery-health
@@ -218,8 +226,6 @@
     200 raw={endpoints,service,status,timestamp,version}
 /api/hr/assets
     200 ok data=array<empty>
-/api/hr/attendance
-    200 ok data=array<empty>
 /api/hr/company-documents
     200 ok data=array<{createdAt,department,documentType,id,title,uploadedBy,url}>
 /api/hr/documents
@@ -311,7 +317,7 @@
 /api/public/calendar/feed/:token
     404 text/plain
 /api/tasks
-    200 ok data=array<{appointmentId,assignments,boardPosition,committeeId,completedAt,createdAt,creatorId,department,description,dueDate,estimatedHours,id,priority,relatedEntityId,relatedEntityType,startDate,status,taskType,title,updatedAt}>
+    200 ok data=array<{appointmentId,assignments,boardPosition,committeeId,completedAt,createdAt,creatorId,department,description,dueDate,id,priority,relatedEntityId,relatedEntityType,startDate,status,taskType,title,updatedAt}>
 /api/tasks/:id/attachments
     200 ok data=array<empty>
 /api/tech/deployments
@@ -346,3 +352,15 @@
     500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"
 /api/tech/tasks/:id
     500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"
+/api/time/now
+    200 ok data={loggingNow}
+/api/time/people
+    200 ok data=array<{designation,id,name,relation,sectorName}>
+/api/time/people/:employeeId/days
+    200 ok data={canEdit,days,from,timezone,to}
+/api/time/people/:employeeId/days/:date
+    400 err="date must be YYYY-MM-DD"
+/api/time/report
+    200 ok data={from,group,rows,to,totalMs}
+/api/time/tasks/:taskId
+    404 err="Task not found"

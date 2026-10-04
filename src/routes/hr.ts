@@ -363,19 +363,10 @@ hrRouter.get('/employees/:id/permissions', requireFeatureAccess('hr', 'employees
   } catch (err) { return serverError(c, err); }
 });
 
-/* ── ATTENDANCE ── */
-hrRouter.get('/attendance', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {
-  try { return ok(c, await getDb(c.env).query.attendance.findMany({ where: c.req.query('employee_id') ? eq(schema.attendance.employeeId, c.req.query('employee_id')!) : undefined })); }
-  catch (err) { return serverError(c, err); }
-});
-hrRouter.post('/attendance', requireFeatureAccess('hr', 'employees', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user'); const body = await c.req.json(); const id = generateId('att');
-    await db.insert(schema.attendance).values({ ...body, id, createdAt: new Date() });
-    await logAudit(c.env, user.id, 'CREATE', 'attendance', id, body);
-    return created(c, { id });
-  } catch (err) { return serverError(c, err); }
-});
+/* ── ATTENDANCE ──
+ * Gone. Time is logged through /api/dashboard/time (your own) and read across
+ * people through /api/time, gated on hr/attendance rather than hr/employees. The
+ * old rows were copied by migration 0053; see docs/attendance-design.md. */
 
 /* ── LEAVE REQUESTS ── */
 hrRouter.get('/leave-requests', requireFeatureAccess('hr', 'employees', 'view'), async (c) => {

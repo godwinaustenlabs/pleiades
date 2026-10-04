@@ -81,7 +81,6 @@ export const acqTasks = sqliteTable('acq_tasks', {
   assignee: text('assignee'),
 
   status: text('status'),
-  estimatedEffort: real('estimated_effort'),
   actualEffort: real('actual_effort'),
   sprintId: text('sprint_id').references(() => sprints.id),
   campaignId: text('campaign_id').references(() => campaigns.id),

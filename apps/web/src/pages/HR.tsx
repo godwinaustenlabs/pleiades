@@ -28,6 +28,15 @@ import { API, token } from '../lib/auth';
 import { usePermissions } from '../lib/usePermissions';
 import { errorMessage } from '../lib/errors';
 
+/** Every zone the browser knows, for the employee form's timezone field. The server validates too. */
+const TIMEZONES: string[] = (() => {
+  try {
+    return (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? ['Asia/Karachi'];
+  } catch {
+    return ['Asia/Karachi'];
+  }
+})();
+
 
 
 type Tab = 'dashboard' | 'directory' | 'payroll' | 'committees' | 'tasks' | 'reports' | 'sops' | 'email';
@@ -361,7 +370,6 @@ function HR() {
         {tab === 'dashboard' && (
           <HRDashboard 
             employees={employees} 
-            attendance={[]} 
             leaves={[]} 
             payroll={payrollRecords} 
             assets={[]} 
@@ -556,7 +564,7 @@ interface EmployeeFormProps {
 }
 
 function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit, canEditPermissions, canManageAccount, onManageAccount }: EmployeeFormProps) {
-  const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, efficiencyScore: 0, sectorId: '', cnic: '', dob: '', gender: 'Male', address: '', emergencyContact: '', contactInfo: '', designation: '', reportingManagerId: '', employmentType: 'Full-time', confirmationDate: '', contractStartDate: '', contractEndDate: '', assignedOffice: '', bankDetails: '', taxInformation: '' });
+  const [formData, setFormData] = useState(initialData || { name: '', department: '', employmentStatus: 'active', profilePhoto: null, slackId: '', hireDate: '', baseSalary: 0, sectorId: '', cnic: '', dob: '', gender: 'Male', address: '', emergencyContact: '', contactInfo: '', designation: '', reportingManagerId: '', employmentType: 'Full-time', confirmationDate: '', contractStartDate: '', contractEndDate: '', assignedOffice: '', bankDetails: '', taxInformation: '', timezone: 'Asia/Karachi' });
   const [assets, setAssets] = useState<any[]>([]);
   const [unassignedAssets, setUnassignedAssets] = useState<any[]>([]);
 
@@ -916,12 +924,16 @@ function EmployeeForm({ initialData, appointments, employees, onClose, onSubmit,
                 <input type="number" value={formData.baseSalary || ''} onChange={e => setFormData({ ...formData, baseSalary: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Efficiency</label>
-                <input type="number" step="0.01" value={formData.efficiencyScore || ''} onChange={e => setFormData({ ...formData, efficiencyScore: Number(e.target.value) })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50 font-mono" />
-              </div>
-              <div className="space-y-1.5">
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Sector ID</label>
                 <input type="text" value={formData.sectorId || ''} onChange={e => setFormData({ ...formData, sectorId: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+              </div>
+              {/* Decides which date this person's logged time falls on. */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Timezone</label>
+                <input list="tz-options" value={formData.timezone || ''} placeholder="Asia/Karachi" onChange={e => setFormData({ ...formData, timezone: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50" />
+                <datalist id="tz-options">
+                  {TIMEZONES.map(tz => <option key={tz} value={tz} />)}
+                </datalist>
               </div>
             </div>
             <div className="space-y-3">

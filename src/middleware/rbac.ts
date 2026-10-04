@@ -39,7 +39,10 @@ export const APP_FEATURES: Record<string, string[]> = {
   // it is the act that confers access — a handover moves grants, a mailbox and a
   // committee seat — so it belongs with the other access controls and not with
   // payroll. HR still READS the list, to show somebody's post in the directory.
-  hr: ['employees', 'payroll', 'tasks', 'email', 'email_templates'],
+  // `attendance` reads everybody's logged time and the organisation reports, and
+  // changes old entries. Split from `employees` by 0053 (which copied the grant), so
+  // editing somebody's profile no longer means rewriting their time.
+  hr: ['employees', 'payroll', 'tasks', 'attendance', 'email', 'email_templates'],
   // `ledgers`, `journals` and `trial_balance` are gated by the Finance UI but
   // were missing here, so getPerm() always returned false and those tabs were
   // superadmin-only by accident. They are real features; declare them.

@@ -29,6 +29,9 @@ DELETE FROM user_app_permissions;
 -- otherwise fail the foreign key on `DELETE FROM employees`, and the failure lands
 -- in the NEXT test as an unexplained fixture error rather than where it was caused.
 DELETE FROM appointment_app_permissions;
+-- Logged time references employees AND tasks, so it goes before both.
+DELETE FROM time_entries;
+DELETE FROM work_days;
 DELETE FROM task_attachments;
 DELETE FROM task_assignments;
 DELETE FROM universal_tasks;

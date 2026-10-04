@@ -26,7 +26,6 @@ export const universalTasks = sqliteTable('universal_tasks', {
   relatedEntityId: text('related_entity_id'),
   relatedEntityType: text('related_entity_type'),
   
-  estimatedHours: real('estimated_hours'),
   startDate: text('start_date'),
   dueDate: text('due_date'),
   completedAt: integer('completed_at', { mode: 'timestamp' }),

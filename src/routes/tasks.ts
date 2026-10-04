@@ -336,8 +336,14 @@ tasksRouter.delete('/:id', async (c) => {
       return c.json({ success: false, error: 'Permission denied: cannot delete tasks' }, 403);
     }
 
-    await db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id));
-    await db.delete(schema.universalTasks).where(eq(schema.universalTasks.id, id));
+    // Logged time outlives the task: it was worked, and it is somebody's record. It
+    // is released to general work (task_id → null), which also keeps the foreign key
+    // from refusing the delete. One batch, so a task is never half-removed.
+    await db.batch([
+      db.update(schema.timeEntries).set({ taskId: null }).where(eq(schema.timeEntries.taskId, id)),
+      db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id)),
+      db.delete(schema.universalTasks).where(eq(schema.universalTasks.id, id)),
+    ]);
     await logAudit(c.env, user.id, 'DELETE', 'universal_tasks', id);
     return ok(c, { id, deleted: true });
   } catch (err) {

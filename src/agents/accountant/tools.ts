@@ -575,12 +575,9 @@ export const buildPleiadesTools = (ctx: ToolContext) => {
               callApi('GET', `/api/hr/payroll${a.month ? `?month=${encodeURIComponent(a.month)}` : ''}`),
     }),
 
-    get_attendance: tool({
-      description: 'Attendance records, for payroll and statutory reporting.',
-      inputSchema: z.object({ employee_id: z.string().optional() }),
-      execute: async (a: any) =>
-              callApi('GET', `/api/hr/attendance${a.employee_id ? `?employeeId=${a.employee_id}` : ''}`),
-    }),
+    // No attendance tool. Pay here is per task and nobody owes hours, so an
+    // accounting agent reading logged time is exactly the link to payroll the time
+    // system rules out — see docs/attendance-design.md §0.
 
     get_loans: tool({
       description: 'Employee loans — they appear as payroll deductions.',

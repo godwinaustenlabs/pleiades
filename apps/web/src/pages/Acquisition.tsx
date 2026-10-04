@@ -396,7 +396,6 @@ function Acquisition() {
               },
               { key: 'assignee', label: 'Assignee', type: 'text' as const },
               { key: 'dueDate', label: 'Due Date', type: 'date' as const },
-              { key: 'estimatedEffort', label: 'Estimated Effort (hrs)', type: 'number' as const },
               { key: 'actualEffort', label: 'Actual Effort (hrs)', type: 'number' as const },
               { key: 'sprintId', label: 'Sprint', type: 'select' as const, options: sprintsList.map(s => ({ value: s.id, label: s.sprintName })), action: { label: '+ New Sprint', onClick: () => setShowNestedForm('sprint') } },
               { key: 'campaignId', label: 'Campaign', type: 'select' as const, options: campaigns.map(c => ({ value: c.id, label: c.campaignName })), action: { label: '+ New Campaign', onClick: () => setShowNestedForm('campaign') } },

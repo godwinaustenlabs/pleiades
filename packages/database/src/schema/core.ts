@@ -12,7 +12,6 @@ export const employees = sqliteTable('employees', {
   employmentStatus: text('employment_status'), // active | inactive | on_leave
   hireDate: text('hire_date'),
   baseSalary: real('base_salary'),
-  efficiencyScore: real('efficiency_score'),
   profilePhoto: text('profile_photo'),
   sectorId: text('sector_id'),
   
@@ -33,6 +32,8 @@ export const employees = sqliteTable('employees', {
   taxInformation: text('tax_information'), // JSON
   assignedOffice: text('assigned_office'),
   notes: text('notes'),
+  /** IANA zone. Decides which date a logged session belongs to; see schema/time.ts. */
+  timezone: text('timezone').notNull().default('Asia/Karachi'),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),

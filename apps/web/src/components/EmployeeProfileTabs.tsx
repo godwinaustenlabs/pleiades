@@ -7,6 +7,7 @@ import { previewTypeFor } from '../lib/preview';
 import { API, token } from '../lib/auth';
 import { useCurrencies } from '../lib/currency';
 import { errorMessage } from '../lib/errors';
+import TimeLog from './TimeLog';
 
 
 interface EmployeeProfileTabsProps {
@@ -15,7 +16,7 @@ interface EmployeeProfileTabsProps {
   onSave?: (data: any) => void;
 }
 
-type Tab = 'profile' | 'documents' | 'payroll' | 'attendance' | 'assets' | 'performance';
+type Tab = 'profile' | 'documents' | 'payroll' | 'time' | 'assets' | 'performance';
 
 export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfileTabsProps) {
   const [activeTab, setActiveTab] = useState<Tab>('profile');
@@ -25,8 +26,6 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
   const [loadingPayroll, setLoadingPayroll] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
-  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
-  const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [assets, setAssets] = useState<any[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -105,11 +104,6 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
       })
         .then(r => r.json()).then(d => setPayrollHistory(d.data || [])).finally(() => setLoadingPayroll(false));
     }
-    if (activeTab === 'attendance' && employee?.id) {
-      setLoadingAttendance(true);
-      fetch(`${API}/hr/attendance?employee_id=${employee.id}`, { headers: { Authorization: `Bearer ${token()}` } })
-        .then(r => r.json()).then(d => setAttendanceRecords((d.data || []).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()))).finally(() => setLoadingAttendance(false));
-    }
     if (activeTab === 'assets' && employee?.id) {
       setLoadingAssets(true);
       fetch(`${API}/hr/assets?assigned_to=${employee.id}`, { headers: { Authorization: `Bearer ${token()}` } })
@@ -130,7 +124,7 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'documents', label: 'Documents', icon: FileText },
     { id: 'payroll', label: 'Payroll', icon: Banknote },
-    { id: 'attendance', label: 'Attendance', icon: Calendar },
+    { id: 'time', label: 'Time', icon: Calendar },
     { id: 'assets', label: 'Assets', icon: Briefcase },
     { id: 'performance', label: 'Performance', icon: TrendingUp },
   ];
@@ -421,49 +415,13 @@ export default function EmployeeProfileTabs({ employee, onClose }: EmployeeProfi
               </div>
             )}
 
-            {activeTab === 'attendance' && (
+            {activeTab === 'time' && employee?.id && (
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white mb-4">Attendance & Leaves</h3>
-                <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-                   <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-success">{attendanceRecords.filter(r => r.status === 'Present').length}</p>
-                     <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Days Present</p>
-                   </div>
-                   <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-warning">{attendanceRecords.reduce((acc, r) => acc + (r.totalHours || 0), 0).toFixed(1)}</p>
-                     <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Total Hours Recorded</p>
-                   </div>
-                   <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-                     <p className="text-2xl font-black text-danger">{attendanceRecords.filter(r => r.status === 'Absent' || r.status === 'Late').length}</p>
-                     <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold mt-1">Late/Absent Records</p>
-                   </div>
-                </div>
-                {loadingAttendance ? (
-                  <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
-                ) : attendanceRecords.length === 0 ? (
-                  <div className="p-8 rounded-2xl border border-dashed border-white/10 bg-white/5 text-center">
-                    <Calendar className="w-8 h-8 mx-auto mb-3 opacity-20 text-white" />
-                    <p className="text-xs text-textSecondary italic">No attendance records found.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {attendanceRecords.map(record => (
-                      <div key={record.id} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
-                        <div>
-                          <p className="font-bold text-sm">{new Date(record.date).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</p>
-                          <p className="text-xs text-textSecondary mt-0.5">
-                            {record.checkIn ? `In: ${record.checkIn}` : 'No check-in'} 
-                            {record.checkOut ? ` · Out: ${record.checkOut}` : ''}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-xs font-bold ${record.status === 'Present' ? 'text-success' : 'text-warning'}`}>{record.status}</p>
-                          {record.totalHours && <p className="text-[10px] text-textSecondary mt-1">{record.totalHours} hrs</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <h3 className="text-lg font-bold text-white">Logged time</h3>
+                <p className="text-xs text-textSecondary -mt-2">
+                  What this person logged, for a manual review. There are no required hours to measure against.
+                </p>
+                <TimeLog employeeId={employee.id} />
               </div>
             )}
 

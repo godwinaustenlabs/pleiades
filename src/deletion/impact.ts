@@ -290,7 +290,7 @@ async function employeeRows(db: Db, employeeId: string) {
   const [
     appointments, assets, employeeDocs, attendance, leaveRequests, leaveBalances,
     payroll, salaryStructures, salaryRevisions, loans, reviews, legalTracker,
-    labMemberships, committeeSeats, taskAssignments,
+    labMemberships, committeeSeats, taskAssignments, workDays, timeEntries,
   ] = await Promise.all([
     db.query.appointments.findMany({ where: eq(schema.appointments.employeeId, employeeId), columns: { id: true, roleOrTitle: true, isActive: true } }),
     db.query.assets.findMany({ where: eq(schema.assets.assignedTo, employeeId), columns: { id: true, assetName: true, assetType: true } }),
@@ -307,6 +307,8 @@ async function employeeRows(db: Db, employeeId: string) {
     db.query.employeeLab.findMany({ where: eq(schema.employeeLab.employeeId, employeeId) }),
     db.query.committeeMembers.findMany({ where: eq(schema.committeeMembers.employeeId, employeeId) }),
     db.query.taskAssignments.findMany({ where: eq(schema.taskAssignments.employeeId, employeeId), columns: { id: true, taskId: true } }),
+    db.query.workDays.findMany({ where: eq(schema.workDays.employeeId, employeeId), columns: { id: true } }),
+    db.query.timeEntries.findMany({ where: eq(schema.timeEntries.employeeId, employeeId), columns: { id: true, taskId: true } }),
   ]);
 
   /**
@@ -340,7 +342,7 @@ async function employeeRows(db: Db, employeeId: string) {
   return {
     employee, login, appointments, assets, employeeDocs, attendance, leaveRequests,
     leaveBalances, payroll, salaryStructures, salaryComponents, salaryRevisions, loans,
-    reviews, legalTracker, labMemberships, committeeSeats, taskAssignments,
+    reviews, legalTracker, labMemberships, committeeSeats, taskAssignments, workDays, timeEntries,
     reviewedByThem, approvedLeave, approvedRevisions, ledLabs, headedSectors,
     crmTickets, uploadedDocs, reports, ticketNotes,
   };
@@ -457,7 +459,11 @@ export async function employeeImpact(
   }
 
   const hrRecords: [string, number][] = [
-    ['Attendance days', r.attendance.length],
+    ['Attendance days (before time logging)', r.attendance.length],
+    // A person's logged time is theirs alone, so it goes with them — and with it
+    // their share of every task it was on. The tasks themselves are untouched.
+    ['Days of logged time', r.workDays.length],
+    ['Logged time entries', r.timeEntries.length],
     ['Leave requests', r.leaveRequests.length],
     ['Leave balances', r.leaveBalances.length],
     ['Salary structures', r.salaryStructures.length + r.salaryComponents.length],
@@ -612,6 +618,9 @@ export async function deleteEmployee(env: Env, employeeId: string): Promise<Casc
   writes.push(db.delete(schema.payrollRecords).where(eq(schema.payrollRecords.employeeId, employeeId)));
   writes.push(db.delete(schema.loans).where(eq(schema.loans.employeeId, employeeId)));
   writes.push(db.delete(schema.attendance).where(eq(schema.attendance.employeeId, employeeId)));
+  // Entries before days: time_entries.work_day_id references work_days.
+  writes.push(db.delete(schema.timeEntries).where(eq(schema.timeEntries.employeeId, employeeId)));
+  writes.push(db.delete(schema.workDays).where(eq(schema.workDays.employeeId, employeeId)));
   writes.push(db.delete(schema.leaveRequests).where(eq(schema.leaveRequests.employeeId, employeeId)));
   writes.push(db.delete(schema.leaveBalances).where(eq(schema.leaveBalances.employeeId, employeeId)));
   writes.push(db.delete(schema.performanceReviews).where(eq(schema.performanceReviews.employeeId, employeeId)));

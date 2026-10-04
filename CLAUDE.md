@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (30 files, 714 tests)
+npm test          # vitest — see test/ (31 files, 741 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,19 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0051_base_currency.sql`, which adds `currencies.is_base`. See
+The newest is `0053_time_tracking.sql`: `work_days` + `time_entries` replace
+`attendance` (see Time logging below), `employees.timezone` is added, the old rows
+are copied (as `timezone = 'UTC'`, which is what they were), and `hr/attendance` is
+granted to every holder of `hr/employees` in both grant tables. `attendance` itself
+is left in place for one release so the copy can be checked against it on
+`pleiades-db`; drop it in a later migration once row counts and hour totals agree.
+
+Before that, `0052_drop_scores_and_estimates.sql` drops `employees.efficiency_score`,
+`universal_tasks.estimated_hours` and `acq_tasks.estimated_effort`. Evaluation is
+manual and tasks are not valued in hours. Export those columns before applying it
+remotely — dropped data does not come back.
+
+Before that, `0051_base_currency.sql`, which adds `currencies.is_base`. See
 Currencies below for why: `accounts.currency` was stored and never read, so every
 amount in the app printed a hardcoded `$` on a database denominated entirely in PKR.
 Reading the column fixes accounts; the base fixes everything with no currency column
@@ -1089,6 +1101,37 @@ Deliberately **not** a second unauthenticated write. `POST /api/webhooks/resend`
 is the only one of those in the system and its Svix signature is the whole
 authorization; adding another trust domain for a form submission would be a far
 larger change than the feature is worth.
+
+### Time logging (`src/time`, `src/routes/time.ts`)
+
+Play/pause time logging replaced attendance. **Pay is per task and nobody owes
+hours**, and that constraint shapes everything: there are no schedules, no
+required hours, no `late` / `absent` / `overtime`, no score, and no route that
+lists people ranked by hours. Hours never reach payroll — the accountant's
+`get_attendance` tool was removed, and `test/time.test.ts` fails if it or any
+`/time` route comes back. Read `docs/attendance-design.md` before changing any of it.
+
+- **Intervals are the record.** `time_entries` holds work and pause intervals as
+  UTC epoch **milliseconds** (not the seconds `mode: 'timestamp'` stores elsewhere),
+  optionally on a `universal_tasks` row. `work_days` groups them by local date in the
+  employee's timezone, **snapshotted** on the day so changing `employees.timezone`
+  re-dates nothing. Its `logged_ms` / `paused_ms` are caches, always recomputed
+  from the entries, never adjusted by a delta.
+- **One running interval per person** is the partial unique index
+  `time_entries_one_open`. Every transition in `src/time/store.ts` is one D1 batch
+  that closes the open interval conditionally and opens the next only if that close
+  was its own, so two tabs racing get one 200 and one 409 carrying the current state.
+- **Edits are visible, not approved.** A person changes their own last 14 days; the
+  first edit keeps the timer's values in `original_*`. Older entries, and anybody
+  else's, are changed by their department head (`sectors.head_employee_id`) or
+  `hr/attendance` edit — never on their own record — with a reason in the audit log.
+- **Who reads whose time** is one helper, `src/time/access.ts`: self, reporting
+  manager, department head, `hr/attendance`. That is why `/api/time` is top level —
+  a head reads their people without any HR grant.
+- The `*/5` cron closes work timers older than 16 h and pauses older than 12 h,
+  marked `auto_closed` and left out of totals by default.
+- Deleting a task releases its entries to general work (`task_id → null`) in the
+  same batch; deleting a person deletes their days and entries.
 
 ### Currencies (`src/routes/currencies.ts`)
 

@@ -6,6 +6,10 @@ import { authMiddleware, UserPayload } from '../middleware/auth';
 import { actorEmployeeId, requireAppAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
+import { logAudit } from '../utils/audit';
+import * as time from '../time/store';
+import { TimeError } from '../time/store';
+import { isIsoDate } from '../time/clock';
 
 const dashboardRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 dashboardRouter.use('*', authMiddleware);
@@ -48,14 +52,11 @@ dashboardRouter.get('/me', async (c) => {
     const todoTasks = tasks.filter((t: any) => t.status === 'todo').length;
     const blockedTasks = tasks.filter((t: any) => t.status === 'blocked').length;
 
-    // Get employee record for efficiency score
-    let efficiencyScore = null;
     let employeeRecord = null;
     if (employeeId) {
       employeeRecord = await db.query.employees.findFirst({
         where: eq(schema.employees.id, employeeId),
       });
-      efficiencyScore = employeeRecord?.efficiencyScore ?? null;
     }
 
     /**
@@ -129,8 +130,7 @@ dashboardRouter.get('/me', async (c) => {
         completedTasks: allTasks.filter(t => t.status === 'completed').length, 
         inProgressTasks: allTasks.filter(t => t.status === 'in_progress').length, 
         todoTasks: allTasks.filter(t => t.status === 'todo').length, 
-        blockedTasks: allTasks.filter(t => t.status === 'blocked').length, 
-        efficiencyScore 
+        blockedTasks: allTasks.filter(t => t.status === 'blocked').length,
       },
       tasks: allTasks.slice(0, 50),
       appointments,
@@ -142,89 +142,102 @@ dashboardRouter.get('/me', async (c) => {
 });
 
 /**
- * ── ATTENDANCE SELF-SERVICE ──
+ * ── TIME (self-service) ──
  *
- * Attendance is per EMPLOYEE, not per post: somebody holding two appointments
- * checks in once, as themselves. The employee is resolved from the database via
- * `actorEmployeeId` rather than read off the token, because a stale or relinked
- * claim would file a day's attendance against the wrong person — a record that is
- * wrong and looks right.
+ * The play/pause log. Time is per EMPLOYEE, not per post: somebody holding two
+ * appointments logs once, as themselves. The employee is resolved from the database
+ * via `actorEmployeeId` rather than read off the token, because a stale or relinked
+ * claim would file time against the wrong person — a record that is wrong and looks
+ * right.
+ *
+ * Wording is deliberate throughout, here and in the UI: start / pause / done for
+ * now. Pay is per task and nobody owes hours, so there is no clock-in, no shift and
+ * no "late". See docs/attendance-design.md.
  */
-dashboardRouter.get('/attendance/today', async (c) => {
+async function timeRoute(c: any, fn: (employeeId: string, db: D1Database, now: number) => Promise<Response>) {
   try {
     const employeeId = await actorEmployeeId(c);
-    if (!employeeId) return ok(c, null); // No employee record
-    const today = new Date().toISOString().split('T')[0];
-    const record = await getDb(c.env).query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
-    });
-    return ok(c, record || null);
-  } catch (err) { return serverError(c, err); }
-});
-
-dashboardRouter.post('/attendance/checkin', async (c) => {
-  try {
-    const employeeId = await actorEmployeeId(c);
-    if (!employeeId) return badRequest(c, 'User has no employee profile');
-    
-    const db = getDb(c.env);
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date().toLocaleTimeString('en-US', { hour12: false }); // "14:30:00"
-    
-    // Ensure no double check-in
-    const existing = await db.query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
-    });
-    
-    if (existing) return badRequest(c, 'Already checked in today');
-    
-    const id = generateId('att');
-    await db.insert(schema.attendance).values({
-      id,
-      employeeId: employeeId,
-      date: today,
-      checkIn: now,
-      status: 'Present',
-      createdAt: new Date(),
-    });
-    return created(c, { id, checkIn: now });
-  } catch (err) { return serverError(c, err); }
-});
-
-dashboardRouter.post('/attendance/checkout', async (c) => {
-  try {
-    const employeeId = await actorEmployeeId(c);
-    if (!employeeId) return badRequest(c, 'User has no employee profile');
-    
-    const db = getDb(c.env);
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
-    
-    const existing = await db.query.attendance.findFirst({
-      where: and(eq(schema.attendance.employeeId, employeeId), eq(schema.attendance.date, today))
-    });
-    
-    if (!existing || !existing.checkIn) return badRequest(c, 'Not checked in today');
-    if (existing.checkOut) return badRequest(c, 'Already checked out today');
-    
-    // Calculate total hours
-    let totalHours = null;
-    try {
-      const start = new Date(`1970-01-01T${existing.checkIn}`);
-      const end = new Date(`1970-01-01T${now}`);
-      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-        totalHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60); // In hours
+    // A login with no employee record (an admin account, a contractor) has no time
+    // to show: reads answer null so the workspace simply hides the widget, writes refuse.
+    if (!employeeId) {
+      return c.req.method === 'GET' ? ok(c, null) : badRequest(c, 'Your login is not linked to an employee record');
+    }
+    return await fn(employeeId, c.env.DB, Date.now());
+  } catch (err) {
+    if (err instanceof TimeError) {
+      // A conflict carries the current state, so a second tab corrects itself
+      // from the refusal instead of needing another round trip.
+      if (err.status === 409) {
+        const employeeId = await actorEmployeeId(c);
+        const state = employeeId ? await time.getState(c.env.DB, employeeId, Date.now()) : null;
+        return c.json({ success: false, error: err.message, data: state }, 409);
       }
-    } catch {}
+      return c.json({ success: false, error: err.message }, err.status);
+    }
+    return serverError(c, err);
+  }
+}
 
-    await db.update(schema.attendance).set({
-      checkOut: now,
-      totalHours: totalHours !== null ? Number(totalHours.toFixed(2)) : undefined,
-    }).where(eq(schema.attendance.id, existing.id));
-    
-    return ok(c, { checkOut: now, totalHours });
-  } catch (err) { return serverError(c, err); }
-});
+dashboardRouter.get('/time/state', (c) => timeRoute(c, async (employeeId, db, now) => ok(c, {
+  ...(await time.getState(db, employeeId, now)),
+  autoClosed: await time.recentAutoClosed(db, employeeId, now),
+})));
+
+for (const action of ['start', 'pause', 'resume', 'switch', 'done'] as const) {
+  dashboardRouter.post(`/time/${action}`, (c) => timeRoute(c, async (employeeId, db, now) => {
+    const body = await c.req.json().catch(() => ({}));
+    const state = await time.transition(db, employeeId, action, { taskId: body?.taskId }, now);
+    await logAudit(c.env, c.get('user').id, action === 'start' ? 'CREATE' : 'UPDATE', 'time_entries',
+      state.openEntry?.id ?? employeeId, { action, taskId: state.openEntry?.taskId ?? null });
+    return ok(c, state);
+  }));
+}
+
+dashboardRouter.get('/time/tasks', (c) => timeRoute(c, async (employeeId, db) => ok(c, await time.loggableTasks(db, employeeId))));
+
+dashboardRouter.get('/time/days', (c) => timeRoute(c, async (employeeId, db, now) => {
+  const tz = await time.employeeTimezone(db, employeeId);
+  const range = time.defaultRange(now, tz);
+  const from = isIsoDate(c.req.query('from')) ? c.req.query('from')! : range.from;
+  const to = isIsoDate(c.req.query('to')) ? c.req.query('to')! : range.to;
+  return ok(c, { timezone: tz, from, to, days: await time.listDays(db, employeeId, from, to) });
+}));
+
+dashboardRouter.get('/time/days/:date', (c) => timeRoute(c, async (employeeId, db, now) => {
+  const date = c.req.param('date');
+  if (!isIsoDate(date)) return badRequest(c, 'date must be YYYY-MM-DD');
+  const day = await time.dayByDate(db, employeeId, date);
+  if (!day) return ok(c, null);
+  return ok(c, await time.dayDetail(db, day, now));
+}));
+
+dashboardRouter.get('/time/missed', (c) => timeRoute(c, async (employeeId, db, now) =>
+  ok(c, await time.missedDays(db, c.get('user').id, employeeId, now))));
+
+/* Own entries. Self-service covers the last 14 days; older is a head's or HR's job. */
+dashboardRouter.post('/time/entries', (c) => timeRoute(c, async (employeeId, db, now) => {
+  const body = await c.req.json();
+  const entry = await time.addManual(db, employeeId, body, now, { beyondWindow: false });
+  await logAudit(c.env, c.get('user').id, 'CREATE', 'time_entries', entry.id, body);
+  return created(c, entry);
+}));
+
+dashboardRouter.patch('/time/entries/:id', (c) => timeRoute(c, async (employeeId, db, now) => {
+  const entry = await time.getEntry(db, c.req.param('id'));
+  if (!entry || entry.employeeId !== employeeId) return notFound(c);
+  const body = await c.req.json();
+  const updated = await time.editEntry(db, entry, body, now, { beyondWindow: false });
+  await logAudit(c.env, c.get('user').id, 'UPDATE', 'time_entries', entry.id, { before: entry, change: body });
+  return ok(c, updated);
+}));
+
+dashboardRouter.delete('/time/entries/:id', (c) => timeRoute(c, async (employeeId, db, now) => {
+  const entry = await time.getEntry(db, c.req.param('id'));
+  if (!entry || entry.employeeId !== employeeId) return notFound(c);
+  await time.deleteEntry(db, entry, now, { beyondWindow: false });
+  await logAudit(c.env, c.get('user').id, 'DELETE', 'time_entries', entry.id, { before: entry });
+  return ok(c, { id: entry.id, deleted: true });
+}));
 
 /* ── NOTES ── */
 dashboardRouter.get('/notes', async (c) => {

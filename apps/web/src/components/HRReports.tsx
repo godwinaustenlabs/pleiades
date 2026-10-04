@@ -19,6 +19,11 @@ interface ReportConfig {
   empKey: string;
 }
 
+/** Task titles are typed by people; they go into an HTML string below. */
+function escapeHtml(v: unknown): string {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
 export default function HRReports(_props: HRReportsProps) {
   /**
    * The print documents are built as HTML STRINGS, outside React, so they cannot call
@@ -31,7 +36,11 @@ export default function HRReports(_props: HRReportsProps) {
   const fmt = (n: unknown) => formatMoney(n, symbolFor());
   const reports: ReportConfig[] = [
     { id: 'emp_dir', name: 'Employee Directory', desc: 'Complete list of active and inactive employees.', icon: Users, endpoint: '/api/core/employees', dateKey: 'hireDate', empKey: 'id' },
-    { id: 'att_rep', name: 'Attendance Report', desc: 'Detailed log of check-in, check-out, status, and total hours.', icon: Calendar, endpoint: '/api/hr/attendance', dateKey: 'date', empKey: 'employeeId' },
+    // Hours per task: how long each piece of work took and how many people it took.
+    // Deliberately not per person — there are no required hours, so nothing here
+    // marks anybody present, absent or late. Per-person time is read one person at
+    // a time on their profile.
+    { id: 'time_rep', name: 'Time by Task', desc: 'Hours logged on each task, how many people contributed, and how long it took from creation to completion.', icon: Calendar, endpoint: '/api/time/report?group=task', dateKey: '', empKey: '' },
     { id: 'leave_rep', name: 'Leave Summary', desc: 'List of leave requests, status, and approved types.', icon: Calendar, endpoint: '/api/hr/leave-requests', dateKey: 'startDate', empKey: 'employeeId' },
     { id: 'pay_sum', name: 'Payroll Summary', desc: 'Earnings, deductions, bonuses, and net pay breakdown.', icon: Banknote, endpoint: '/api/hr/payroll', dateKey: 'payrollMonth', empKey: 'employeeId' },
     { id: 'tax_rep', name: 'Tax Report', desc: 'Withholding tax records per employee.', icon: FileText, endpoint: '/api/hr/payroll', dateKey: 'payrollMonth', empKey: 'employeeId' },
@@ -69,6 +78,19 @@ export default function HRReports(_props: HRReportsProps) {
     setLoading(true);
 
     try {
+      // Time is aggregated by the server over a date range, not filtered here.
+      if (selectedReport.id === 'time_rep') {
+        const q = new URLSearchParams();
+        if (startDate) q.set('from', startDate);
+        if (endDate) q.set('to', endDate);
+        const res = await fetch(`${selectedReport.endpoint}&${q}`, { headers: { Authorization: `Bearer ${token()}` } });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Failed to fetch report data');
+        openReportPrintWindow(selectedReport, d.data?.rows || []);
+        setSelectedReport(null);
+        return;
+      }
+
       // 1. Fetch data from endpoint
       let url = selectedReport.endpoint;
       if (employeeId !== 'ALL' && selectedReport.id !== 'emp_dir') {
@@ -108,41 +130,7 @@ export default function HRReports(_props: HRReportsProps) {
         }
         return true;
       });
-      let finalData = filteredData;
-
-      if (selectedReport.id === 'att_rep' && startDate && endDate) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const employeesToCheck = employeeId === 'ALL' 
-          ? allEmployees.filter(e => e.employmentStatus === 'active')
-          : allEmployees.filter(e => e.id === employeeId);
-        
-        const absentRows: any[] = [];
-        
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const day = d.getDay();
-          if (day === 0 || day === 6) continue; // Skip weekends
-          
-          const dateStr = d.toISOString().split('T')[0];
-          
-          for (const emp of employeesToCheck) {
-            const hasRecord = filteredData.some((r: any) => r.employeeId === emp.id && r.date === dateStr);
-            if (!hasRecord) {
-              absentRows.push({
-                id: `absent-${emp.id}-${dateStr}`,
-                employeeId: emp.id,
-                date: dateStr,
-                checkIn: null,
-                checkOut: null,
-                status: 'Absent',
-                totalHours: 0
-              });
-            }
-          }
-        }
-        
-        finalData = [...filteredData, ...absentRows].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      }
+      const finalData = filteredData;
 
       // 3. Render and Print PDF
       openReportPrintWindow(selectedReport, finalData);
@@ -186,23 +174,25 @@ export default function HRReports(_props: HRReportsProps) {
  <td>${r.hireDate || '—'}</td>
  </tr>
  `).join('');
-    } else if (report.id === 'att_rep') {
+    } else if (report.id === 'time_rep') {
+      const hrs = (ms: number) => (ms / 3_600_000).toFixed(1);
+      const days = (a: number | null, b: number | null) => (a && b ? Math.max(0, Math.round((b - a) / 86_400_000)) + ' d' : '—');
       tableHeaders = `
- <th>Employee</th>
- <th>Date</th>
- <th>Check In</th>
- <th>Check Out</th>
+ <th>Task</th>
  <th>Status</th>
  <th>Hours</th>
+ <th>Contributors</th>
+ <th>Added or edited later</th>
+ <th>Created → completed</th>
  `;
       tableRows = data.map(r => `
  <tr>
- <td><strong>${getEmpName(r.employeeId)}</strong></td>
- <td>${r.date}</td>
- <td>${r.checkIn || '—'}</td>
- <td>${r.checkOut || '—'}</td>
- <td><span class="badge ${r.status?.toLowerCase()}">${r.status || '—'}</span></td>
- <td class="mono">${r.totalHours ? r.totalHours.toFixed(1) : '0.0'}</td>
+ <td><strong>${escapeHtml(r.key ? r.label : 'General work (no task)')}</strong></td>
+ <td>${escapeHtml(r.status || '—')}</td>
+ <td class="mono">${hrs(r.ms)}</td>
+ <td class="mono">${r.people}</td>
+ <td class="mono">${hrs(r.changedMs || 0)}</td>
+ <td class="mono">${days(r.createdAt, r.completedAt)}</td>
  </tr>
  `).join('');
     } else if (report.id === 'leave_rep') {
@@ -393,8 +383,10 @@ export default function HRReports(_props: HRReportsProps) {
             <div className="p-6 space-y-4">
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-black text-textSecondary uppercase tracking-widest ml-1">Employee Scope</label>
+                {selectedReport.id === 'time_rep' && <p className="text-[11px] text-textSecondary ml-1">This report is per task, across everybody.</p>}
                 <select
                   value={employeeId}
+                  disabled={selectedReport.id === 'time_rep'}
                   onChange={e => setEmployeeId(e.target.value)}
                   className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50"
                 >

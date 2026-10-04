@@ -19,6 +19,7 @@ import currenciesRouter from './routes/currencies';
 import crmRouter from './routes/crm';
 import portalRouter from './routes/portal';
 import dashboardRouter from './routes/dashboard';
+import timeRouter from './routes/time';
 import permissionsRouter from './routes/permissions';
 import assetsRouter from './routes/assets';
 import notificationsRouter from './routes/notifications';
@@ -242,6 +243,10 @@ app.route('/api/portal', portalRouter);
 // Dashboard — User personal dashboard (auth only)
 app.route('/api/dashboard', dashboardRouter);
 
+// Time — other people's logged time and task contributions. Top level because a
+// department head or manager reads it without any HR grant; see routes/time.ts.
+app.route('/api/time', timeRouter);
+
 // Permissions — Granular access control management
 app.route('/api/permissions', permissionsRouter);
 app.route('/api/assets', assetsRouter);
@@ -380,6 +385,16 @@ export default {
     // time: a retryable provider failure whose backoff has elapsed, one whose
     // Worker was evicted mid-send, or a scheduled send coming due.
     if (event.cron === '*/5 * * * *') {
+      // Timers left running past the caps (16 h work, 12 h pause) are closed and
+      // marked, so a forgotten timer cannot run all weekend. See src/time/store.ts.
+      try {
+        const { sweepForgotten } = await import('./time/store');
+        const closed = await sweepForgotten(env.DB, Date.now());
+        if (closed > 0) console.log(`[time] auto-closed ${closed} forgotten timer(s)`);
+      } catch (err) {
+        console.error('[time] sweep failed:', err);
+      }
+
       try {
         const { sweep } = await import('./email/outbox');
         const result = await sweep(env);

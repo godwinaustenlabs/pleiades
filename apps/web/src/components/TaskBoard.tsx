@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Clock, Tags } from 'lucide-react';
+import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Tags } from 'lucide-react';
 import { API, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
+import TaskTimePanel from './TaskTimePanel';
 
 
 type Status = 'todo' | 'in_progress' | 'completed' | 'blocked';
@@ -258,12 +259,6 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                                 {task.taskType}
                               </span>
                             )}
-                            {task.estimatedHours > 0 && (
-                              <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                                <Clock className="w-2.5 h-2.5" />
-                                {task.estimatedHours}h
-                              </span>
-                            )}
                           </div>
                         </div>
                         <div className="flex flex-col gap-1">
@@ -351,7 +346,6 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     startDate: initialData?.startDate ? initialData.startDate.substring(0, 10) : '',
     dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
     taskType: initialData?.taskType || 'operational',
-    estimatedHours: initialData?.estimatedHours || 0,
   });
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -459,8 +453,8 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
               className={`${inputCls} resize-none leading-relaxed`} />
           </div>
 
-          {/* Priority / Status / Task Type / Estimated Hours */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+          {/* Priority / Status / Task Type */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div>
               <label className={labelCls}>Priority <span className="text-danger">*</span></label>
               <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })} className={inputCls}>
@@ -489,10 +483,6 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
                 <option value="urgent">Urgent</option>
                 <option value="meeting">Meeting</option>
               </select>
-            </div>
-            <div>
-              <label className={labelCls}>Est. Hours</label>
-              <input type="number" step="0.5" value={form.estimatedHours} onChange={e => setForm({ ...form, estimatedHours: Number(e.target.value) })} className={inputCls} />
             </div>
           </div>
 
@@ -528,6 +518,8 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
               </select>
             </div>
           )}
+
+          {mode === 'edit' && initialData?.id && <TaskTimePanel taskId={initialData.id} />}
 
           {/* Attachments (only in edit mode for now to keep ID simple) */}
           {mode === 'edit' && (

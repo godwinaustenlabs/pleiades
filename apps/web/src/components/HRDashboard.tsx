@@ -1,21 +1,29 @@
-import React from 'react';
-import { Users, Calendar, Activity, CheckCircle2, Clock, AlertTriangle, FileText, Briefcase } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Users, Calendar, Activity, CheckCircle2, Clock, FileText, Briefcase } from 'lucide-react';
+import { timeApi } from '../lib/time';
 
 interface HRDashboardProps {
   employees: any[];
-  attendance: any[];
   leaves: any[];
   payroll: any[];
   assets: any[];
 }
 
-export default function HRDashboard({ employees, attendance, leaves }: HRDashboardProps) {
+export default function HRDashboard({ employees, leaves }: HRDashboardProps) {
   const activeEmployees = employees.filter(e => e.employmentStatus === 'active');
   
   const today = new Date().toISOString().split('T')[0];
-  const presentToday = attendance.filter(a => a.date === today && a.status === 'Present').length;
   const onLeaveToday = leaves.filter(l => l.status === 'Approved' && l.startDate <= today && l.endDate >= today).length;
-  const absentToday = activeEmployees.length - presentToday - onLeaveToday;
+
+  /**
+   * How many people have a timer running — a count, never names. There is no
+   * "present" or "absent" here: nobody owes hours, so not logging is not absence.
+   * Null when the viewer lacks hr/attendance, and the card then says so.
+   */
+  const [loggingNow, setLoggingNow] = useState<number | null>(null);
+  useEffect(() => {
+    timeApi<{ loggingNow: number }>('GET', '/time/now').then((r) => setLoggingNow(r.loggingNow)).catch(() => setLoggingNow(null));
+  }, []);
 
   const pendingLeaves = leaves.filter(l => l.status === 'Pending').length;
   
@@ -37,8 +45,8 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
             <CheckCircle2 className="w-6 h-6 text-success" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Present Today</p>
-            <p className="text-2xl font-black">{presentToday}</p>
+            <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Logging Time Now</p>
+            <p className="text-2xl font-black">{loggingNow ?? '—'}</p>
           </div>
         </div>
 
@@ -53,12 +61,12 @@ export default function HRDashboard({ employees, attendance, leaves }: HRDashboa
         </div>
 
         <div className="glass-panel p-6 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-danger/20 flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6 text-danger" />
+          <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
+            <Calendar className="w-6 h-6 text-textSecondary" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">Absent Today</p>
-            <p className="text-2xl font-black">{absentToday}</p>
+            <p className="text-[10px] uppercase tracking-widest text-textSecondary font-bold">On Leave Today</p>
+            <p className="text-2xl font-black">{onLeaveToday}</p>
           </div>
         </div>
       </div>
