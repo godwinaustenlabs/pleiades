@@ -1,6 +1,6 @@
 # Attendance & effort tracking — design
 
-Status: **implemented on `dev`, revision 5** · 4 Oct 2026 — migrations 0052/0053 not yet applied to `pleiades-db`
+Status: **live** · 4 Oct 2026 — migrations 0052 and 0053 applied to `pleiades-db`, worker version fe8afc6d
 
 Two changes, shipped separately:
 
