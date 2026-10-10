@@ -430,7 +430,7 @@ export default function UserDashboard() {
         {/* Tasks Tab */}
         {activeTab === 'tasks' && (
           <div className="animate-in fade-in zoom-in-95 duration-500">
-            <TaskBoard department="Dashboard" fetchGlobal={true} employeeId={data?.user?.employeeId} accentColor="primary" />
+            <TaskBoard department="Dashboard" workspace accentColor="primary" />
           </div>
         )}
 
@@ -725,6 +725,20 @@ export default function UserDashboard() {
             } catch (err) {
               alert(errorMessage(err, 'Error updating task'));
             }
+          }}
+          onDelete={async () => {
+            if (!confirm('Delete this task permanently?')) return;
+            const res = await fetch(`${API}/tasks/${editingTask.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token()}` },
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              alert(err.error || 'Could not delete this task.');
+              return;
+            }
+            setEditingTask(null);
+            fetchDashboard();
           }}
         />
       )}

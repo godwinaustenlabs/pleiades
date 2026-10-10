@@ -114,9 +114,11 @@ interface EntityFormProps {
    * *underneath* it and could not be typed into. A nested form says so.
    */
   nested?: boolean;
+  /** Shows a Delete button in the footer. The caller confirms and performs it. */
+  onDelete?: () => Promise<void>;
 }
 
-export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading, onChange, nested = false }: EntityFormProps) {
+export default function EntityForm({ title, fields, initialData = {}, onClose, onSubmit, loading: externalLoading, onChange, nested = false, onDelete }: EntityFormProps) {
   const [formData, setFormData] = useState(() => {
     const data = { ...initialData };
     fields.forEach(f => {
@@ -338,6 +340,17 @@ export default function EntityForm({ title, fields, initialData = {}, onClose, o
         </form>
 
         <div className="pb-safe md:pb-6-safe flex gap-3 border-t border-white/10 bg-white/5 px-4 pt-4 md:gap-4 md:px-6 md:pt-6">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={loading || externalLoading || !!uploading}
+              aria-label="Delete"
+              className="flex items-center justify-center gap-2 rounded-xl border border-danger/30 px-4 py-3 text-sm font-bold text-danger transition-all hover:bg-danger/10 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" /> <span className="hidden md:inline">Delete</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

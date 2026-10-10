@@ -3,12 +3,14 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
-import { checkFeaturePermission } from '../middleware/rbac';
+import { actorEmployeeId, checkFeaturePermission } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
 import { ok, created, notFound, serverError } from '../utils/response';
 import { postToSlack } from '../utils/slack';
 import { notifyTaskAssigned } from '../email/task-notify';
+import { workspaceTasks } from '../tasks/workspace';
+import { keyFromUrl, removeObjects } from '../deletion/impact';
 
 const tasksRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 tasksRouter.use('*', authMiddleware);
@@ -41,9 +43,22 @@ function sanitizeTaskBody(body: any) {
 }
 
 // GET /tasks?dept=...&userId=...&committeeId=...&appointmentId=...&status=...
+// GET /tasks?scope=workspace — the caller's own workspace board
 tasksRouter.get('/', async (c) => {
   try {
     const db = getDb(c.env);
+
+    /*
+     * The workspace board shows exactly what the workspace calendar shows, from the
+     * same function. No department check: every task here is one the caller is
+     * assigned to, or sits on a post or committee they hold — which is what puts it
+     * on their calendar already. Editing and deleting are still checked per task.
+     */
+    if (c.req.query('scope') === 'workspace') {
+      const tasks = await workspaceTasks(db, await actorEmployeeId(c));
+      return ok(c, tasks.sort((a, b) => (a.boardPosition ?? 0) - (b.boardPosition ?? 0)));
+    }
+
     const user = c.get('user');
     const dept = c.req.query('dept');
     const userId = c.req.query('userId'); // This is employeeId now
@@ -338,12 +353,21 @@ tasksRouter.delete('/:id', async (c) => {
 
     // Logged time outlives the task: it was worked, and it is somebody's record. It
     // is released to general work (task_id → null), which also keeps the foreign key
-    // from refusing the delete. One batch, so a task is never half-removed.
+    // from refusing the delete. Attachments go with the task — left in place, their
+    // foreign key refused the delete outright, so any task with a file attached
+    // could not be removed at all. One batch, so a task is never half-removed; the
+    // files themselves go after it commits, never before (see removeObjects).
+    const attachments = await db.query.taskAttachments.findMany({
+      where: eq(schema.taskAttachments.taskId, id),
+      columns: { r2Key: true },
+    });
     await db.batch([
       db.update(schema.timeEntries).set({ taskId: null }).where(eq(schema.timeEntries.taskId, id)),
       db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id)),
+      db.delete(schema.taskAttachments).where(eq(schema.taskAttachments.taskId, id)),
       db.delete(schema.universalTasks).where(eq(schema.universalTasks.id, id)),
     ]);
+    await removeObjects(c.env, attachments.map((a) => keyFromUrl(a.r2Key)).filter((k): k is string => !!k));
     await logAudit(c.env, user.id, 'DELETE', 'universal_tasks', id);
     return ok(c, { id, deleted: true });
   } catch (err) {

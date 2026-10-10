@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
@@ -10,6 +10,7 @@ import { logAudit } from '../utils/audit';
 import * as time from '../time/store';
 import { TimeError } from '../time/store';
 import { isIsoDate } from '../time/clock';
+import { workspaceTasks } from '../tasks/workspace';
 
 const dashboardRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 dashboardRouter.use('*', authMiddleware);
@@ -30,27 +31,6 @@ dashboardRouter.get('/me', async (c) => {
      * avatar) keyed off the wrong person if they had been relinked.
      */
     const employeeId = await actorEmployeeId(c);
-
-    // Get all tasks assigned to user via task_assignments junction table
-    const myAssignments = employeeId
-      ? await db.query.taskAssignments.findMany({
-          where: eq(schema.taskAssignments.employeeId, employeeId),
-        })
-      : [];
-    const myTaskIds = myAssignments.map((a: any) => a.taskId);
-    const tasks = myTaskIds.length > 0
-      ? await db.query.universalTasks.findMany({
-          where: inArray(schema.universalTasks.id, myTaskIds),
-          orderBy: [desc(schema.universalTasks.createdAt)],
-          with: { assignments: true },
-        })
-      : [];
-
-    const totalTasks = tasks.length;
-    const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
-    const inProgressTasks = tasks.filter((t: any) => t.status === 'in_progress').length;
-    const todoTasks = tasks.filter((t: any) => t.status === 'todo').length;
-    const blockedTasks = tasks.filter((t: any) => t.status === 'blocked').length;
 
     let employeeRecord = null;
     if (employeeId) {
@@ -76,8 +56,6 @@ dashboardRouter.get('/me', async (c) => {
         })
       : [];
 
-    const appointmentIds = appointments.map(a => a.id);
-
     // Get committee memberships
     const committees = employeeId
       ? await db.query.committeeMembers.findMany({
@@ -85,25 +63,10 @@ dashboardRouter.get('/me', async (c) => {
           with: { committee: true },
         })
       : [];
-    
-    const committeeIds = committees.map(c => c.committeeId);
 
-    // Get more tasks (committee and appointment specific)
-    const extraTasks = (appointmentIds.length > 0 || committeeIds.length > 0)
-      ? await db.query.universalTasks.findMany({
-          where: or(
-            appointmentIds.length > 0 ? inArray(schema.universalTasks.appointmentId, appointmentIds) : undefined,
-            committeeIds.length > 0 ? inArray(schema.universalTasks.committeeId, committeeIds) : undefined
-          ),
-          orderBy: [desc(schema.universalTasks.createdAt)],
-          with: { assignments: true },
-        })
-      : [];
-
-    // Merge and deduplicate tasks
-    const allTasksMap = new Map();
-    [...tasks, ...extraTasks].forEach(t => allTasksMap.set(t.id, t));
-    const allTasks = Array.from(allTasksMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Assigned, plus every task on a post held or a committee sat on — the same
+    // set the workspace Kanban shows (src/tasks/workspace.ts).
+    const allTasks = await workspaceTasks(db, employeeId);
 
     // Get dashboard state
     const dashState = await db.query.userDashboardState.findFirst({

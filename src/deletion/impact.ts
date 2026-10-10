@@ -541,7 +541,7 @@ export type CascadeResult = { summary: Record<string, number>; filesRemoved: num
  * already gone leaves rows pointing at nothing. Failures here are logged and
  * swallowed — the deletion has happened, and throwing would report it as failed.
  */
-async function removeObjects(env: Env, keys: string[]): Promise<number> {
+export async function removeObjects(env: Env, keys: string[]): Promise<number> {
   let removed = 0;
   if (!env.CRM_BUCKET) return 0;
   for (const key of [...new Set(keys)].filter(Boolean)) {

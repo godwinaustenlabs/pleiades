@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (31 files, 741 tests)
+npm test          # vitest — see test/ (32 files, 746 tests)
 npm run test:watch
 ```
 
@@ -590,6 +590,14 @@ still holds several such prefixes, listed as legacy entries in `READ_RULES`.
 Do not add new ones.
 
 `universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
+
+A person's **workspace** task set — assigned to them, or on a post they hold or a
+committee they sit on — is computed in one place, `src/tasks/workspace.ts`, and read
+by both the workspace calendar (`GET /api/dashboard/me`) and the workspace Kanban
+(`GET /api/tasks?scope=workspace`). They used to compute it separately and the Kanban
+only looked at assignments, so a committee task assigned to somebody else sat on every
+member's calendar and on no board at all, with no way to delete it from the UI.
+`test/workspace-tasks.test.ts` pins the two to the same set.
 
 ### Generated documents (`src/statements`)
 

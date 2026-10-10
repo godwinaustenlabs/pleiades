@@ -26,10 +26,15 @@ interface TaskBoardProps {
   employeeId?: string;
   accentColor?: string;
   canEdit?: boolean;
-  fetchGlobal?: boolean;
+  /**
+   * The caller's own workspace: every task assigned to them or on a post or
+   * committee they hold — the same set as the workspace calendar. Tasks here come
+   * from every department, so each one is moved and deleted under its own.
+   */
+  workspace?: boolean;
 }
 
-export default function TaskBoard({ department, committeeId, employeeId, canEdit = true, fetchGlobal = false }: TaskBoardProps) {
+export default function TaskBoard({ department, committeeId, employeeId, canEdit = true, workspace = false }: TaskBoardProps) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -41,14 +46,17 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
 
   const fetchTasks = useCallback(() => {
     const params = new URLSearchParams();
-    if (department && !fetchGlobal) params.set('dept', department);
-    if (committeeId) params.set('committeeId', committeeId);
-    if (employeeId) params.set('userId', employeeId); // Backend still uses 'userId' query param
+    if (workspace) params.set('scope', 'workspace');
+    else {
+      if (department) params.set('dept', department);
+      if (committeeId) params.set('committeeId', committeeId);
+      if (employeeId) params.set('userId', employeeId); // Backend still uses 'userId' query param
+    }
     setLoading(true);
     fetch(`${API}/tasks?${params}`, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => r.json()).then(d => { setTasks(d.data || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [department, committeeId, employeeId]);
+  }, [department, committeeId, employeeId, workspace]);
 
   useEffect(() => {
     fetchTasks();
@@ -92,7 +100,7 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
     await fetch(`${API}/tasks/reorder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ tasks: [{ id: taskId, status: newStatus, boardPosition: colTasks.length, department: department || 'General' }] }),
+      body: JSON.stringify({ tasks: [{ id: taskId, status: newStatus, boardPosition: colTasks.length, department: task.department || department || 'General' }] }),
     });
   };
 
@@ -100,8 +108,13 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
   const handleDelete = async (id: string) => {
     if (!canEdit) return;
     if (!confirm('Delete this task permanently?')) return;
+    const res = await fetch(`${API}/tasks/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Could not delete this task.');
+      return;
+    }
     setTasks(prev => prev.filter(t => t.id !== id));
-    await fetch(`${API}/tasks/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
   };
 
   const handleCreate = async (data: any) => {
