@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (32 files, 746 tests)
+npm test          # vitest — see test/ (33 files, 757 tests)
 npm run test:watch
 ```
 
@@ -1140,6 +1140,29 @@ lists people ranked by hours. Hours never reach payroll — the accountant's
   marked `auto_closed` and left out of totals by default.
 - Deleting a task releases its entries to general work (`task_id → null`) in the
   same batch; deleting a person deletes their days and entries.
+
+### Note dictation (`POST /api/dashboard/notes/transcribe`)
+
+The personal-notes editor has a microphone (`components/DictationTextarea.tsx`, with
+the recorder and the insertion rules in `lib/dictation.ts`). Hold it to talk and let
+go, or tap to start and tap to finish; Escape discards. Words land at the caret (or
+replace the selection) and the caret ends after them, so typing and dictating mix.
+
+- **Whisper turbo on the `AI` binding**, not Deepgram Nova-3. Nova-3 is faster
+  (~1s against 1.5–3s) but about ten times the price per audio minute, and Workers
+  AI's free allowance is shared with both agents.
+- **Live preview without a socket.** While someone speaks, the whole recording so far
+  is re-sent at a gap that grows with its length (a quarter of it, never under 1.2s),
+  one request in flight. Each answer replaces the last, which is the "correcting as it
+  goes" effect; the pass made on release is the one kept.
+- **`vad_filter: true` is required** — without it silence comes back as "Thank you."
+- **No `initial_prompt`.** Passing the note as context made Whisper return the
+  prompt's first word repeated ("Agenda Agenda Agenda") on about half of attempts for
+  audio it transcribes correctly bare. Measured, not guessed — do not add it back.
+- Under ~1s of audio Whisper invents a word, so the first preview waits for 2s and a
+  recording under 0.5s is never sent.
+- The browser does the base64; the Worker only parses and forwards, which keeps it
+  inside the Free plan's 10ms CPU. Nothing is stored — no audio, no transcript.
 
 ### Currencies (`src/routes/currencies.ts`)
 

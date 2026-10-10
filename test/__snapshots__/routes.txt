@@ -156,6 +156,7 @@ GET    /api/dashboard/notes
 POST   /api/dashboard/notes
 DELETE /api/dashboard/notes/:id
 PATCH  /api/dashboard/notes/:id
+POST   /api/dashboard/notes/transcribe
 GET    /api/dashboard/preferences
 PATCH  /api/dashboard/preferences
 GET    /api/dashboard/time/days

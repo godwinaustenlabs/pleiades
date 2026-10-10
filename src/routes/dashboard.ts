@@ -262,6 +262,48 @@ dashboardRouter.delete('/notes/:id', async (c) => {
   } catch (err) { return serverError(c, err); }
 });
 
+/*
+ * POST /dashboard/notes/transcribe — speech to text for dictating into a note.
+ *
+ * Body: `{ audio }`, the recording base64-encoded by the browser (WebM/Opus from
+ * Chrome and Firefox, MP4/AAC from Safari — both decode).
+ *
+ * Stateless and stores nothing: the audio exists for the length of this request,
+ * and the text goes back to the browser, which writes it into the note. While the
+ * person is speaking the client re-sends the whole recording every few seconds, so
+ * each answer is a fresh transcription that corrects the last one; the call made
+ * when they let go of the mic is the one that is kept.
+ *
+ * Whisper turbo rather than Deepgram Nova-3, which is faster but about ten times
+ * the price per audio minute — and Workers AI's free allowance is shared with both
+ * agents. `vad_filter` is not optional: without it Whisper transcribes silence as
+ * "Thank you.", which is the classic way dictation types words nobody said.
+ *
+ * There is deliberately no `initial_prompt`. Passing the note's text as context
+ * looked like it would help with names, and on this model it does the opposite:
+ * the same recording that transcribes correctly bare came back as the prompt's
+ * first word repeated ("Agenda Agenda Agenda") on about half of attempts.
+ *
+ * The base64 comes from the browser so the Worker never encodes audio itself; at
+ * 10ms of CPU per request on the Free plan, it only parses and forwards.
+ */
+const TRANSCRIBE_MODEL = '@cf/openai/whisper-large-v3-turbo';
+/** ~3 MB of audio — far past the client's five-minute cap at 24 kbps Opus. */
+const MAX_AUDIO_BASE64 = 4_000_000;
+
+dashboardRouter.post('/notes/transcribe', async (c) => {
+  try {
+    const body = await c.req.json<{ audio?: unknown }>().catch(() => null);
+    const audio = body?.audio;
+    if (typeof audio !== 'string' || audio.length === 0) return badRequest(c, 'audio required');
+    if (audio.length > MAX_AUDIO_BASE64) return c.json({ success: false, error: 'Recording is too long' }, 413);
+    if (!c.env.AI) return c.json({ success: false, error: 'Transcription is not available' }, 503);
+
+    const result = await c.env.AI.run(TRANSCRIBE_MODEL, { audio, vad_filter: true });
+    return ok(c, { text: (result.text ?? '').trim() });
+  } catch (err) { return serverError(c, err); }
+});
+
 /* ── PREFERENCES ── */
 dashboardRouter.get('/preferences', async (c) => {
   try {

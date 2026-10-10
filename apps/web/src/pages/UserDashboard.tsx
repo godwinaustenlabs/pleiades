@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import TaskBoard from '../components/TaskBoard';
 import CalendarView from '../components/CalendarView';
+import DictationTextarea from '../components/DictationTextarea';
 import ProfileModal from '../components/ProfileModal';
 import NotificationCenter from '../components/NotificationCenter';
 import ModuleTabs from '../components/ModuleTabs';
@@ -49,6 +50,8 @@ export default function UserDashboard() {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [editingNote, setEditingNote] = useState<any>(null);
   const [viewingNote, setViewingNote] = useState<any>(null);
+  /** The note form's mic is open or still writing in; saving now would save half a sentence. */
+  const [dictating, setDictating] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -131,6 +134,7 @@ export default function UserDashboard() {
 
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dictating) return;
     if (!newNote.title) return;
     try {
       const isEditing = !!editingNote;
@@ -612,16 +616,17 @@ export default function UserDashboard() {
                       onChange={e => setNewNote({ ...newNote, title: e.target.value })}
                       className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
                     />
-                    <textarea
-                      placeholder="Content (Markdown supported)..."
+                    <DictationTextarea
+                      placeholder="Content (Markdown supported) — or hold the mic and speak..."
                       rows={10}
                       value={newNote.content}
-                      onChange={e => setNewNote({ ...newNote, content: e.target.value })}
+                      onChange={content => setNewNote(n => ({ ...n, content }))}
+                      onDictatingChange={setDictating}
                       className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none font-mono"
                     />
                     <div className="flex justify-end gap-3 pt-2">
                       <button type="button" onClick={() => { setShowNoteForm(false); setEditingNote(null); }} className="px-6 py-2 text-sm font-bold text-textSecondary">Cancel</button>
-                      <button type="submit" className="px-6 py-2 bg-primary text-surface font-bold rounded-xl hover:bg-primary/90 transition-all">
+                      <button type="submit" disabled={dictating} className="px-6 py-2 bg-primary text-surface font-bold rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50">
                         {editingNote ? 'Save Changes' : 'Create Note'}
                       </button>
                     </div>
