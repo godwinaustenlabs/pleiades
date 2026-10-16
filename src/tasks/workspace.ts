@@ -4,6 +4,24 @@ import type { getDb } from '@pleiades/database';
 
 type Db = ReturnType<typeof getDb>;
 
+/** The posts this person actively holds and the committees they sit on. */
+export async function workspaceRefs(db: Db, employeeId: string) {
+  const [appointments, committees] = await Promise.all([
+    db.query.appointments.findMany({
+      where: and(eq(schema.appointments.employeeId, employeeId), eq(schema.appointments.isActive, true)),
+      columns: { id: true },
+    }),
+    db.query.committeeMembers.findMany({
+      where: eq(schema.committeeMembers.employeeId, employeeId),
+      columns: { committeeId: true },
+    }),
+  ]);
+  return {
+    appointmentIds: appointments.map((a) => a.id),
+    committeeIds: committees.map((c) => c.committeeId),
+  };
+}
+
 /**
  * Every task that belongs in one person's workspace: the ones assigned to them,
  * plus every task on a post they actively hold or a committee they sit on.
@@ -14,26 +32,21 @@ type Db = ReturnType<typeof getDb>;
  * so a committee task assigned to somebody else sat on a member's calendar and on
  * no board at all. The calendar has no delete, so nobody could remove it either.
  *
+ * The same three sources decide which repeating series a person's calendar
+ * projects (`GET /tasks/recurrences/upcoming`), via `workspaceRefs`.
+ *
  * Newest first, each task carrying its `assignments`.
  */
 export async function workspaceTasks(db: Db, employeeId: string | null) {
   if (!employeeId) return [];
 
-  const [assignments, appointments, committees] = await Promise.all([
+  const [assignments, refs] = await Promise.all([
     db.query.taskAssignments.findMany({ where: eq(schema.taskAssignments.employeeId, employeeId) }),
-    db.query.appointments.findMany({
-      where: and(eq(schema.appointments.employeeId, employeeId), eq(schema.appointments.isActive, true)),
-      columns: { id: true },
-    }),
-    db.query.committeeMembers.findMany({
-      where: eq(schema.committeeMembers.employeeId, employeeId),
-      columns: { committeeId: true },
-    }),
+    workspaceRefs(db, employeeId),
   ]);
 
   const taskIds = assignments.map((a) => a.taskId);
-  const appointmentIds = appointments.map((a) => a.id);
-  const committeeIds = committees.map((c) => c.committeeId);
+  const { appointmentIds, committeeIds } = refs;
 
   const sources = [
     taskIds.length > 0 ? inArray(schema.universalTasks.id, taskIds) : undefined,

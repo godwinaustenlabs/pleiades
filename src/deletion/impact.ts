@@ -139,7 +139,12 @@ async function appointmentRows(db: Db, appointmentId: string) {
     where: eq(schema.mailboxes.appointmentId, appointmentId),
   });
 
-  return { appointment, grants, tasks, taskIds, attachments, assignments, mailboxes };
+  const series = await db.query.taskRecurrences.findMany({
+    where: eq(schema.taskRecurrences.appointmentId, appointmentId),
+    columns: { id: true, title: true, isActive: true },
+  });
+
+  return { appointment, grants, tasks, taskIds, attachments, assignments, mailboxes, series };
 }
 
 export async function appointmentImpact(env: Env, appointmentId: string): Promise<Impact | null> {
@@ -147,7 +152,7 @@ export async function appointmentImpact(env: Env, appointmentId: string): Promis
   const rows = await appointmentRows(db, appointmentId);
   if (!rows) return null;
 
-  const { appointment, grants, tasks, attachments, assignments, mailboxes } = rows;
+  const { appointment, grants, tasks, attachments, assignments, mailboxes, series } = rows;
   const items: ImpactItem[] = [];
   const downloads: DownloadLink[] = [];
 
@@ -179,6 +184,16 @@ export async function appointmentImpact(env: Env, appointmentId: string): Promis
       note: `Deleted outright, with ${assignments.length} assignment(s) and ${attachments.length} attachment(s). To keep one, open it first and point it at another post or none.`,
       examples: some(tasks.map((t) => `${t.title} (${t.status})`)),
       downloads: attachments.map((a) => toLink(a.title, a.r2Key)).filter((l): l is DownloadLink => !!l),
+    });
+  }
+
+  if (series.length > 0) {
+    items.push({
+      label: 'Repeating tasks addressed to this post',
+      count: series.length,
+      fate: 'delete',
+      note: 'The series are deleted, so no further occurrences are created. Occurrences already created are counted with the tasks above.',
+      examples: some(series.map((s) => `${s.title}${s.isActive ? '' : ' (stopped)'}`)),
     });
   }
 
@@ -232,12 +247,16 @@ export async function appointmentImpact(env: Env, appointmentId: string): Promis
 async function appointmentDeletions(db: Db, appointmentId: string): Promise<{ writes: unknown[]; r2Keys: string[]; summary: Record<string, number> } | null> {
   const rows = await appointmentRows(db, appointmentId);
   if (!rows) return null;
-  const { appointment, grants, tasks, taskIds, attachments, mailboxes } = rows;
+  const { appointment, grants, tasks, taskIds, attachments, mailboxes, series } = rows;
 
   const writes: unknown[] = [];
   const r2Keys: string[] = [];
 
   for (const ids of chunk(taskIds, 20)) {
+    // Logged time outlives a task, as it does on an ordinary task delete: it is
+    // released to general work. Left pointing at the task, its foreign key refused
+    // the whole cascade for any post whose tasks anybody had logged time against.
+    writes.push(db.update(schema.timeEntries).set({ taskId: null }).where(inArray(schema.timeEntries.taskId, ids)));
     writes.push(db.delete(schema.taskAssignments).where(inArray(schema.taskAssignments.taskId, ids)));
     writes.push(db.delete(schema.taskAttachments).where(inArray(schema.taskAttachments.taskId, ids)));
     writes.push(db.delete(schema.universalTasks).where(inArray(schema.universalTasks.id, ids)));
@@ -245,6 +264,13 @@ async function appointmentDeletions(db: Db, appointmentId: string): Promise<{ wr
   for (const a of attachments) {
     const k = keyFromUrl(a.r2Key);
     if (k) r2Keys.push(k);
+  }
+
+  // Repeating series addressed to the post. Any occurrence that survives (one
+  // re-pointed at another post) is unlinked first, so the series can go.
+  for (const ids of chunk(series.map((s) => s.id), 20)) {
+    writes.push(db.update(schema.universalTasks).set({ recurrenceId: null, occurrenceAt: null }).where(inArray(schema.universalTasks.recurrenceId, ids)));
+    writes.push(db.delete(schema.taskRecurrences).where(inArray(schema.taskRecurrences.id, ids)));
   }
 
   // Detached and switched off, never deleted — see the note in appointmentImpact.
@@ -269,6 +295,7 @@ async function appointmentDeletions(db: Db, appointmentId: string): Promise<{ wr
       grants: grants.length,
       tasks: tasks.length,
       taskAttachments: attachments.length,
+      repeatingTasks: series.length,
       mailboxesDetached: mailboxes.length,
     },
   };
@@ -655,6 +682,7 @@ export async function deleteEmployee(env: Env, employeeId: string): Promise<Casc
     // Attribution is cleared, content is kept: a CRM document does not stop
     // existing because the person who uploaded it left the company.
     writes.push(db.update(schema.universalTasks).set({ creatorId: null }).where(eq(schema.universalTasks.creatorId, uid)));
+    writes.push(db.update(schema.taskRecurrences).set({ creatorId: null }).where(eq(schema.taskRecurrences.creatorId, uid)));
     writes.push(db.update(schema.taskAttachments).set({ uploadedById: null }).where(eq(schema.taskAttachments.uploadedById, uid)));
     writes.push(db.update(schema.crmDocuments).set({ uploadedById: null }).where(eq(schema.crmDocuments.uploadedById, uid)));
     writes.push(db.update(schema.crmPlannerEvents).set({ createdById: null }).where(eq(schema.crmPlannerEvents.createdById, uid)));

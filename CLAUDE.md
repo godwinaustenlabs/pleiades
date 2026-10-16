@@ -26,7 +26,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (33 files, 757 tests)
+npm test          # vitest — see test/ (35 files, 805 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,12 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0053_time_tracking.sql`: `work_days` + `time_entries` replace
+The newest is `0054_task_recurrences.sql`: repeating tasks (see Repeating tasks
+below). Purely additive — the `task_recurrences` table, `universal_tasks.recurrence_id`
+and `occurrence_at`, and the partial unique index on the pair that makes creating an
+occurrence idempotent. No table is rebuilt, so no foreign-key deferral was needed.
+
+Before that, `0053_time_tracking.sql`: `work_days` + `time_entries` replace
 `attendance` (see Time logging below), `employees.timezone` is added, the old rows
 are copied (as `timezone = 'UTC'`, which is what they were), and `hr/attendance` is
 granted to every holder of `hr/employees` in both grant tables. `attendance` itself
@@ -589,7 +594,7 @@ Upload prefixes must be passed explicitly (`pathPrefix` on a `file` field in
 still holds several such prefixes, listed as legacy entries in `READ_RULES`.
 Do not add new ones.
 
-`universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
+`universal_tasks` is the cross-department task table (`department` field: HR | Finance | Legal | Ops | Acquisition | Tech) with `task_assignments` as the many-to-many join to employees. A row with `recurrence_id` set is one occurrence of a repeating series (`task_recurrences`) — see Repeating tasks. Task permissions are checked per-department via the `tasks` feature (`checkFeaturePermission(c, dept, 'tasks', ...)`), not by a router-level gate.
 
 A person's **workspace** task set — assigned to them, or on a post they hold or a
 committee they sit on — is computed in one place, `src/tasks/workspace.ts`, and read
@@ -598,6 +603,43 @@ by both the workspace calendar (`GET /api/dashboard/me`) and the workspace Kanba
 only looked at assignments, so a committee task assigned to somebody else sat on every
 member's calendar and on no board at all, with no way to delete it from the UI.
 `test/workspace-tasks.test.ts` pins the two to the same set.
+
+### Repeating tasks (`src/tasks/recurrence.ts`, `src/tasks/recurring.ts`)
+
+Any task board's create form has a **Repeat** section: every hour, day, week (on the
+start day) or month (on the start date), or Custom — every N hours/days/weeks/months,
+on chosen weekdays, or on a chosen day of the month. A series is one
+`task_recurrences` row; it never appears anywhere as itself.
+
+- **Occurrences are ordinary tasks.** Each is created as a real `universal_tasks` row
+  with the series' department, committee, post and real `task_assignments`, carrying
+  `recurrence_id` + `occurrence_at`. Every board, the workspace, the calendar, the ICS
+  feed, time logging and the permission checks therefore need no special case. Editing,
+  completing or deleting one occurrence touches that occurrence only.
+- **Created a short lead ahead** — one period, capped at a week — by the `*/5` cron
+  (`runDueSeries`) and by the request that creates or edits a series. So tomorrow's daily
+  task is on the board today, without a monthly one filling it a month early. The
+  calendar projects further occurrences (`GET /tasks/recurrences/upcoming`), drawn dashed
+  and inert. Hourly series are not projected.
+- **Exactly once.** An occurrence's task id is derived from (series, instant) and the
+  pair is unique in the database, so every insert is `ON CONFLICT DO NOTHING` and two
+  overlapping writers cannot duplicate one. `next_run_at` advances by compare-and-set.
+- **After an outage only the latest missed occurrence is created**, not every one — a
+  quiet weekend must not leave forty-eight copies of an hourly task.
+- **The 31st is clamped per month**, never carried: 28/29 Feb, 30 Apr, back to the 31st.
+  Wall-clock times are in the series' own zone, so "Mondays at 09:00" survives DST;
+  hourly is absolute.
+- **Edit or stop affects the future only.** Upcoming occurrences nobody has started are
+  removed and (on edit) re-created; past and started ones are left alone.
+- **Assignees are notified once**, when the series is created — never per occurrence,
+  which on Resend's 90-a-day allowance an hourly task would exhaust by lunch.
+- Deleting a post deletes series addressed to it (and the impact report lists them);
+  deleting a person clears them as a series' creator. Inactive assignees are skipped
+  when an occurrence is created.
+
+`test/recurrence.test.ts` pins the rule engine, including a seeded brute-force
+comparison against a day-by-day enumerator; `test/recurring-tasks.test.ts` the API,
+the cron, idempotency and the deletion cascades.
 
 ### Generated documents (`src/statements`)
 

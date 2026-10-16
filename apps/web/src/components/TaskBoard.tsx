@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Tags } from 'lucide-react';
+import { Plus, GripVertical, Users, Building2, Trash2, X, Lock, Edit2, CalendarDays, AlertCircle, FileText, Upload, Loader2, Tags, Repeat } from 'lucide-react';
 import { API, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 import TaskTimePanel from './TaskTimePanel';
+import RepeatEditor from './RepeatEditor';
+import { defaultRepeat, fromSeries, localToday, toRule } from '../lib/recurrence';
+import type { RepeatState, SeriesRow } from '../lib/recurrence';
 
 
 type Status = 'todo' | 'in_progress' | 'completed' | 'blocked';
@@ -39,6 +42,8 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
+  /** The repeating series being edited, as GET /tasks/recurrences/:id returns it. */
+  const [editingSeries, setEditingSeries] = useState<SeriesRow | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [committees, setCommittees] = useState<any[]>([]);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -147,6 +152,37 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
     } catch (err) {
       alert(errorMessage(err, 'An error occurred'));
     }
+  };
+
+  /* ── Repeating series ── */
+  const openSeries = async (recurrenceId: string) => {
+    const res = await fetch(`${API}/tasks/recurrences/${recurrenceId}`, { headers: { Authorization: `Bearer ${token()}` } });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(d.error || 'Could not open this series.'); return; }
+    setEditingTask(null);
+    setEditingSeries(d.data);
+  };
+
+  const saveSeries = async (recurrenceId: string, data: Record<string, unknown>) => {
+    const res = await fetch(`${API}/tasks/recurrences/${recurrenceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+      body: JSON.stringify(data),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(d.error || 'Could not save the series.'); return; }
+    setEditingSeries(null);
+    fetchTasks();
+  };
+
+  const stopSeries = async (recurrenceId: string) => {
+    if (!confirm('Stop repeating this task?\n\nNo more occurrences will be created. Upcoming ones nobody has started are removed; past and started ones stay.')) return;
+    const res = await fetch(`${API}/tasks/recurrences/${recurrenceId}/stop`, { method: 'POST', headers: { Authorization: `Bearer ${token()}` } });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(d.error || 'Could not stop the series.'); return; }
+    setEditingSeries(null);
+    setEditingTask(null);
+    fetchTasks();
   };
 
   const grouped = STATUSES.map(s => ({
@@ -266,6 +302,15 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
                                 {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
                               </span>
                             )}
+                            {task.recurrenceId && (
+                              <span
+                                className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20"
+                                title="One occurrence of a repeating task"
+                              >
+                                <Repeat className="w-2.5 h-2.5" />
+                                Repeats{task.occurrenceAt ? ` · ${new Date(task.occurrenceAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                              </span>
+                            )}
                             {task.taskType && (
                               <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-textSecondary bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
                                 <Tags className="w-2.5 h-2.5" />
@@ -330,6 +375,23 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
           initialData={editingTask}
           onClose={() => setEditingTask(null)}
           onSubmit={(data) => handleEdit(editingTask.id, data)}
+          onOpenSeries={canEdit ? openSeries : undefined}
+          onStopSeries={canEdit ? stopSeries : undefined}
+        />
+      )}
+
+      {/* Edit Repeating Series Modal */}
+      {editingSeries && (
+        <TaskFormModal
+          mode="series"
+          department={editingSeries.department}
+          defaultCommitteeId={committeeId}
+          employees={employees}
+          committees={committees}
+          initialData={editingSeries}
+          onClose={() => setEditingSeries(null)}
+          onSubmit={(data) => saveSeries(editingSeries.id, data)}
+          onStopSeries={stopSeries}
         />
       )}
     </div>
@@ -338,7 +400,8 @@ export default function TaskBoard({ department, committeeId, employeeId, canEdit
 
 /* ── Unified Task Form Modal ── */
 interface TaskFormModalProps {
-  mode: 'create' | 'edit';
+  /** `series` edits a repeating series: the template every future occurrence is made from. */
+  mode: 'create' | 'edit' | 'series';
   department?: string;
   defaultCommitteeId?: string;
   employees: any[];
@@ -346,20 +409,35 @@ interface TaskFormModalProps {
   initialData?: any;
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
+  /** Editing one occurrence: open the series it belongs to. */
+  onOpenSeries?: (recurrenceId: string) => void;
+  onStopSeries?: (recurrenceId: string) => void;
 }
 
-function TaskFormModal({ mode, department, defaultCommitteeId, employees, committees, initialData, onClose, onSubmit }: TaskFormModalProps) {
+function TaskFormModal({ mode, department, defaultCommitteeId, employees, committees, initialData, onClose, onSubmit, onOpenSeries, onStopSeries }: TaskFormModalProps) {
   const [form, setForm] = useState({
     title: initialData?.title || '',
     description: initialData?.description || '',
     priority: initialData?.priority || 'medium',
     status: initialData?.status || 'todo',
-    assigneeIds: initialData?.assignments?.map((a: any) => a.employeeId) || [],
+    // A task carries `assignments`; a series (mode 'series') carries `assigneeIds`.
+    assigneeIds: initialData?.assigneeIds ?? initialData?.assignments?.map((a: any) => a.employeeId) ?? [],
     committeeId: initialData?.committeeId || defaultCommitteeId || '',
     startDate: initialData?.startDate ? initialData.startDate.substring(0, 10) : '',
     dueDate: initialData?.dueDate ? initialData.dueDate.substring(0, 10) : '',
     taskType: initialData?.taskType || 'operational',
   });
+  const [repeat, setRepeat] = useState<RepeatState>(() =>
+    mode === 'series' && initialData ? fromSeries(initialData) : defaultRepeat(localToday()),
+  );
+  const repeating = mode === 'series' || (mode === 'create' && repeat.mode !== 'none');
+  /** The series an occurrence being edited belongs to — read so the form can say so. */
+  const [series, setSeries] = useState<{ id: string; summary: string; isActive: boolean } | null>(null);
+  useEffect(() => {
+    if (mode !== 'edit' || !initialData?.recurrenceId) return;
+    fetch(`${API}/tasks/recurrences/${initialData.recurrenceId}`, { headers: { Authorization: `Bearer ${token()}` } })
+      .then(r => r.json()).then(d => { if (d.data) setSeries(d.data); }).catch(() => {});
+  }, [mode, initialData?.recurrenceId]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -419,6 +497,11 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
     if (!data.committeeId) data.committeeId = null;
     if (!data.startDate) data.startDate = null;
     if (!data.dueDate) data.dueDate = null;
+    if (repeating) {
+      // Each occurrence is created `todo`, dated its own day; the rule decides when.
+      data.recurrence = toRule(repeat.mode === 'none' ? { ...repeat, mode: 'custom' } : repeat);
+      delete data.status; delete data.startDate; delete data.dueDate;
+    }
     try {
       await onSubmit(data);
     } finally {
@@ -435,9 +518,9 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
         {/* Header */}
         <div className="flex items-center justify-between p-6 md:p-8 border-b border-white/5 bg-white/5 flex-shrink-0">
           <div>
-            <h2 className="text-xl font-black tracking-tight">{mode === 'create' ? 'Create Task' : 'Edit Task'}</h2>
+            <h2 className="text-xl font-black tracking-tight">{mode === 'create' ? 'Create Task' : mode === 'series' ? 'Edit Repeating Task' : 'Edit Task'}</h2>
             <p className="text-[10px] font-black uppercase tracking-widest text-textSecondary mt-1">
-              {department || 'General Operations'} · {mode === 'edit' ? 'Update existing task' : 'New task will be assigned to this department'}
+              {department || 'General Operations'} · {mode === 'edit' ? 'Update existing task' : mode === 'series' ? 'Changes apply to upcoming occurrences' : 'New task will be assigned to this department'}
             </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5" /></button>
@@ -477,7 +560,7 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
                 <option value="urgent">🔴 Urgent</option>
               </select>
             </div>
-            <div>
+            <div className={repeating ? 'hidden' : ''}>
               <label className={labelCls}>Status <span className="text-danger">*</span></label>
               <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}>
                 <option value="todo">To Do</option>
@@ -511,15 +594,51 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
               </select>
               <p className="text-[9px] text-textSecondary mt-1">Hold Cmd/Ctrl to select multiple</p>
             </div>
-            <div>
+            <div className={repeating ? 'hidden' : ''}>
               <label className={labelCls}>Start Date</label>
               <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
             </div>
-            <div>
+            <div className={repeating ? 'hidden' : ''}>
               <label className={labelCls}>Due Date</label>
               <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className={inputCls} />
             </div>
           </div>
+
+          {/* Repeat — when creating, and the rule itself when editing a series */}
+          {(mode === 'create' || mode === 'series') && (
+            <RepeatEditor value={repeat} onChange={setRepeat} allowNone={mode === 'create'} inputCls={inputCls} labelCls={labelCls} />
+          )}
+
+          {/* One occurrence of a series: say so, and lead to the series */}
+          {mode === 'edit' && initialData?.recurrenceId && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <Repeat className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-primary">Part of a repeating task</p>
+                  <p className="mt-1 text-xs text-textSecondary">
+                    {series ? (series.isActive ? series.summary : 'This series has been stopped.') : 'Loading…'} Changes here apply to this occurrence only.
+                  </p>
+                </div>
+              </div>
+              {series?.isActive && (onOpenSeries || onStopSeries) && (
+                <div className="flex flex-shrink-0 gap-2">
+                  {onOpenSeries && (
+                    <button type="button" onClick={() => onOpenSeries(initialData.recurrenceId)}
+                      className="rounded-full border border-primary/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/10">
+                      Edit series
+                    </button>
+                  )}
+                  {onStopSeries && (
+                    <button type="button" onClick={() => onStopSeries(initialData.recurrenceId)}
+                      className="rounded-full border border-danger/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-danger hover:bg-danger/10">
+                      Stop repeating
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Committee */}
           {committees.length > 0 && (
@@ -561,14 +680,20 @@ function TaskFormModal({ mode, department, defaultCommitteeId, employees, commit
           )}
 
           {/* Footer */}
-          <div className="flex justify-end gap-4 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-4 pt-2">
+            {mode === 'series' && onStopSeries && initialData?.id && (
+              <button type="button" onClick={() => onStopSeries(initialData.id)}
+                className="mr-auto rounded-full border border-danger/30 px-6 py-3 text-xs font-black uppercase tracking-widest text-danger hover:bg-danger/10">
+                Stop repeating
+              </button>
+            )}
             <button type="button" onClick={onClose}
               className="px-8 py-3 text-xs font-black uppercase tracking-widest text-textSecondary hover:text-white transition-colors">
               Cancel
             </button>
             <button type="submit" disabled={loading}
               className="px-10 py-3.5 text-xs font-black uppercase tracking-widest bg-primary hover:bg-primary/90 text-surface rounded-full transition-all disabled:opacity-50 shadow-lg shadow-primary/20 flex items-center gap-2">
-              {loading ? 'Saving...' : mode === 'create' ? 'Deploy Task' : 'Save Changes'}
+              {loading ? 'Saving...' : mode === 'create' ? (repeating ? 'Create Repeating Task' : 'Deploy Task') : mode === 'series' ? 'Save Series' : 'Save Changes'}
             </button>
           </div>
         </form>

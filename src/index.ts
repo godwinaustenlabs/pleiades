@@ -395,6 +395,17 @@ export default {
         console.error('[time] sweep failed:', err);
       }
 
+      // Repeating tasks: create every occurrence that has come inside its lead
+      // window. Idempotent by construction (src/tasks/recurring.ts), so a tick that
+      // overlaps another, or a retried invocation, creates nothing twice.
+      try {
+        const { runDueSeries } = await import('./tasks/recurring');
+        const created = await runDueSeries(env, Date.now());
+        if (created > 0) console.log(`[recurring] created ${created} occurrence(s)`);
+      } catch (err) {
+        console.error('[recurring] run failed:', err);
+      }
+
       try {
         const { sweep } = await import('./email/outbox');
         const result = await sweep(env);

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import TaskBoard from '../components/TaskBoard';
 import CalendarView from '../components/CalendarView';
+import type { ProjectedOccurrence } from '../components/CalendarView';
 import DictationTextarea from '../components/DictationTextarea';
 import ProfileModal from '../components/ProfileModal';
 import NotificationCenter from '../components/NotificationCenter';
@@ -52,6 +53,17 @@ export default function UserDashboard() {
   const [viewingNote, setViewingNote] = useState<any>(null);
   /** The note form's mic is open or still writing in; saving now would save half a sentence. */
   const [dictating, setDictating] = useState(false);
+  /** What repeating tasks will create in the calendar's visible range. */
+  const [projected, setProjected] = useState<ProjectedOccurrence[]>([]);
+  const fetchProjected = async (from: string, to: string) => {
+    try {
+      const res = await fetch(`${API}/tasks/recurrences/upcoming?from=${from}&to=${to}`, { headers: { Authorization: `Bearer ${token()}` } });
+      const d = await res.json();
+      if (res.ok) setProjected(d.data || []);
+    } catch {
+      // The calendar still shows every real task; projections are a courtesy.
+    }
+  };
   const [editingTask, setEditingTask] = useState<any>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -391,6 +403,8 @@ export default function UserDashboard() {
             <CalendarView 
               tasks={data?.tasks || []} 
               appointments={data?.appointments || []} 
+              projected={projected}
+              onRangeChange={fetchProjected}
               onEditTask={(task) => {
                 setEditingTask(task);
               }}

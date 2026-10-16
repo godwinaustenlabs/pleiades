@@ -31,7 +31,7 @@ import {
   campaigns, contactsLeads, leadsActivity, funnelsPipelines,
   contentCalendar, sprints, acqTasks, dealPipelines, dealStages, deals,
 } from './acquisition';
-import { universalTasks, taskAssignments } from './unified_tasks';
+import { universalTasks, taskAssignments, taskRecurrences } from './unified_tasks';
 import {
   crmTickets, crmDocuments, crmPlannerEvents,
   clientLogins, userNotes, userDashboardState,
@@ -352,6 +352,7 @@ export const universalTasksRelations = relations(universalTasks, ({ one, many })
   creator: one(usersLogins, { fields: [universalTasks.creatorId], references: [usersLogins.id], relationName: 'taskCreator' }),
   appointment: one(appointments, { fields: [universalTasks.appointmentId], references: [appointments.id] }),
   committee: one(committees, { fields: [universalTasks.committeeId], references: [committees.id] }),
+  recurrence: one(taskRecurrences, { fields: [universalTasks.recurrenceId], references: [taskRecurrences.id] }),
 }));
 
 export const taskAssignmentsRelations = relations(taskAssignments, ({ one }) => ({
@@ -416,4 +417,8 @@ export const conversationTurnsRelations = relations(conversationTurns, ({ one })
     fields: [conversationTurns.conversationId],
     references: [agentConversations.id],
   }),
+}));
+
+export const taskRecurrencesRelations = relations(taskRecurrences, ({ many }) => ({
+  occurrences: many(universalTasks),
 }));

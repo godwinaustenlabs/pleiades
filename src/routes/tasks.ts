@@ -6,11 +6,18 @@ import { authMiddleware, UserPayload } from '../middleware/auth';
 import { actorEmployeeId, checkFeaturePermission } from '../middleware/rbac';
 import { generateId } from '../utils/id';
 import { logAudit } from '../utils/audit';
-import { ok, created, notFound, serverError } from '../utils/response';
+import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 import { postToSlack } from '../utils/slack';
 import { notifyTaskAssigned } from '../email/task-notify';
 import { workspaceTasks } from '../tasks/workspace';
-import { keyFromUrl, removeObjects } from '../deletion/impact';
+import { deleteTasks } from '../tasks/delete';
+import {
+  createSeries, updateSeries, stopSeries, present, project, workspaceSeries, parseRule,
+  type SeriesTemplate, type RuleInput,
+} from '../tasks/recurring';
+import { describeRule, nextOccurrence, occurrencesBetween, type Rule } from '../tasks/recurrence';
+import { workspaceRefs } from '../tasks/workspace';
+import { isIsoDate, localDate, DAY_MS } from '../time/clock';
 
 const tasksRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 tasksRouter.use('*', authMiddleware);
@@ -39,8 +46,149 @@ function sanitizeTaskBody(body: any) {
   fields.forEach(f => {
     if (sanitized[f] === '') sanitized[f] = null;
   });
+  // Which series a task belongs to, and which occurrence it is, are written only
+  // by src/tasks/recurring.ts. A client setting them could forge an occurrence
+  // and block the real one through the unique index.
+  delete sanitized.recurrenceId;
+  delete sanitized.occurrenceAt;
   return sanitized;
 }
+
+/**
+ * Tells newly assigned people about a task, on Slack and by email.
+ *
+ * Email as well as Slack, not instead: Slack only reaches people with a slack_id on
+ * file. Email goes through waitUntil so a slow provider does not hold up the
+ * response — the outbox row is written first, and the cron sweeps what does not go.
+ */
+async function announceAssignment(
+  c: any,
+  task: { id: string; title: string; department: string; dueDate?: string | null },
+  assigneeIds: string[],
+) {
+  const db = getDb(c.env);
+  try {
+    for (const empId of assigneeIds) {
+      const assignee = await db.query.employees.findFirst({
+        where: eq(schema.employees.id, empId),
+        columns: { slackId: true },
+      });
+      if (assignee?.slackId) {
+        await postToSlack(c.env, assignee.slackId, `You have been assigned a new task: ${task.title}`);
+      }
+    }
+  } catch (err) {
+    console.error('[Slack Notification Error]', err);
+  }
+  c.executionCtx.waitUntil(notifyTaskAssigned(c.env, task, assigneeIds));
+}
+
+/** A series' template fields, from a request body. */
+function templateFrom(body: any): Partial<SeriesTemplate> {
+  const t: Partial<SeriesTemplate> = {};
+  if (typeof body.title === 'string') t.title = body.title;
+  if (body.description !== undefined) t.description = body.description || null;
+  if (body.priority !== undefined) t.priority = body.priority || null;
+  if (body.taskType !== undefined) t.taskType = body.taskType || null;
+  if (body.committeeId !== undefined) t.committeeId = body.committeeId || null;
+  if (body.appointmentId !== undefined) t.appointmentId = body.appointmentId || null;
+  if (Array.isArray(body.assigneeIds)) t.assigneeIds = body.assigneeIds.filter((x: unknown) => typeof x === 'string' && x);
+  return t;
+}
+
+// ── REPEATING SERIES ── (registered before the `/:id` routes)
+
+// POST /tasks/recurrences/preview — what a rule means, before saving it.
+tasksRouter.post('/recurrences/preview', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = parseRule((body as any).recurrence ?? body);
+    if ('error' in parsed) return badRequest(c, parsed.error);
+    const next = occurrencesBetween(parsed.rule, Date.now(), Date.now() + 800 * DAY_MS, 5);
+    return ok(c, {
+      summary: describeRule(parsed.rule),
+      next: next.map((at) => ({ occurrenceAt: at, date: localDate(at, parsed.rule.timezone) })),
+    });
+  } catch (err) { return serverError(c, err); }
+});
+
+// GET /tasks/recurrences/upcoming?from=YYYY-MM-DD&to=YYYY-MM-DD
+// The caller's workspace series, projected — occurrences not yet created as tasks.
+tasksRouter.get('/recurrences/upcoming', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const today = new Date().toISOString().slice(0, 10);
+    const fromQ = c.req.query('from');
+    const toQ = c.req.query('to');
+    const from = isIsoDate(fromQ) ? fromQ : today;
+    const to = isIsoDate(toQ) ? toQ : new Date(Date.parse(`${from}T00:00:00Z`) + 42 * DAY_MS).toISOString().slice(0, 10);
+    const fromMs = Date.parse(`${from}T00:00:00Z`) - DAY_MS; // a day either side covers every zone
+    const toMs = Date.parse(`${to}T00:00:00Z`) + 2 * DAY_MS;
+    if (toMs < fromMs || toMs - fromMs > 100 * DAY_MS) return badRequest(c, 'window must be 1 to 93 days');
+
+    const employeeId = await actorEmployeeId(c);
+    if (!employeeId) return ok(c, []);
+    const rows = await workspaceSeries(db, employeeId, await workspaceRefs(db, employeeId));
+    return ok(c, project(rows, fromMs, toMs).filter((o) => o.date >= from && o.date <= to));
+  } catch (err) { return serverError(c, err); }
+});
+
+// GET /tasks/recurrences/:id
+tasksRouter.get('/recurrences/:id', async (c) => {
+  try {
+    const row = await getDb(c.env).query.taskRecurrences.findFirst({
+      where: eq(schema.taskRecurrences.id, c.req.param('id')),
+    });
+    if (!row) return notFound(c, 'Series not found');
+    if (!(await checkFeaturePermission(c, row.department.toLowerCase(), 'tasks', 'view'))) {
+      return c.json({ success: false, error: 'Permission denied: cannot view tasks in this department' }, 403);
+    }
+    return ok(c, present(row));
+  } catch (err) { return serverError(c, err); }
+});
+
+// PATCH /tasks/recurrences/:id — changes future occurrences; past ones stay as they are.
+tasksRouter.patch('/recurrences/:id', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const row = await db.query.taskRecurrences.findFirst({ where: eq(schema.taskRecurrences.id, c.req.param('id')) });
+    if (!row) return notFound(c, 'Series not found');
+    if (!(await checkFeaturePermission(c, row.department.toLowerCase(), 'tasks', 'edit'))) {
+      return c.json({ success: false, error: 'Permission denied: cannot edit tasks in this department' }, 403);
+    }
+    if (!row.isActive) return badRequest(c, 'This series has been stopped');
+
+    const body = sanitizeTaskBody(await c.req.json());
+    const changes: Partial<SeriesTemplate> & { rule?: Rule } = templateFrom(body);
+    if (changes.title !== undefined && !changes.title.trim()) return badRequest(c, 'title is required');
+    if (body.recurrence !== undefined) {
+      const parsed = parseRule(body.recurrence as RuleInput);
+      if ('error' in parsed) return badRequest(c, parsed.error);
+      changes.rule = parsed.rule;
+    }
+
+    const result = await updateSeries(c.env, db, row, changes, Date.now());
+    await logAudit(c.env, user.id, 'UPDATE', 'task_recurrences', row.id, body);
+    return ok(c, { ...present(result.row), replacedOccurrences: result.removed, taskIds: result.taskIds });
+  } catch (err) { return serverError(c, err); }
+});
+
+// POST /tasks/recurrences/:id/stop — no more occurrences; upcoming untouched ones go.
+tasksRouter.post('/recurrences/:id/stop', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const user = c.get('user');
+    const row = await db.query.taskRecurrences.findFirst({ where: eq(schema.taskRecurrences.id, c.req.param('id')) });
+    if (!row) return notFound(c, 'Series not found');
+    if (!(await checkFeaturePermission(c, row.department.toLowerCase(), 'tasks', 'edit'))) {
+      return c.json({ success: false, error: 'Permission denied: cannot edit tasks in this department' }, 403);
+    }
+    const removed = await stopSeries(c.env, db, row, Date.now());
+    await logAudit(c.env, user.id, 'UPDATE', 'task_recurrences', row.id, { stopped: true, removedOccurrences: removed });
+    return ok(c, { id: row.id, stopped: true, removedOccurrences: removed });
+  } catch (err) { return serverError(c, err); }
+});
 
 // GET /tasks?dept=...&userId=...&committeeId=...&appointmentId=...&status=...
 // GET /tasks?scope=workspace — the caller's own workspace board
@@ -142,9 +290,35 @@ tasksRouter.post('/', async (c) => {
       return c.json({ success: false, error: `Permission denied: cannot create tasks for ${dept}` }, 403);
     }
 
+    /*
+     * A repeating task. The body is the same task plus a `recurrence` rule; what is
+     * stored is a series, and its occurrences are created as ordinary tasks — the
+     * first of them now, if it falls inside the lead window. Assignees hear about
+     * the series once, here, and never per occurrence (see src/tasks/recurring.ts).
+     */
+    if (body.recurrence !== undefined && body.recurrence !== null) {
+      const parsed = parseRule(body.recurrence as RuleInput);
+      if ('error' in parsed) return badRequest(c, parsed.error);
+      const template = { ...templateFrom(body), title: body.title, department: body.department } as SeriesTemplate;
+      template.assigneeIds = template.assigneeIds ?? [];
+      const { row, taskIds } = await createSeries(db, template, parsed.rule, user.id, Date.now());
+      const summary = describeRule(parsed.rule);
+      if (template.assigneeIds.length > 0) {
+        const first = nextOccurrence(parsed.rule, Number.NEGATIVE_INFINITY);
+        await announceAssignment(c, {
+          id: taskIds[0] ?? row.id,
+          title: `${row.title} (repeats: ${summary})`,
+          department: row.department,
+          dueDate: first === null ? null : localDate(first, parsed.rule.timezone),
+        }, template.assigneeIds);
+      }
+      await logAudit(c.env, user.id, 'CREATE', 'task_recurrences', row.id, body);
+      return created(c, { id: taskIds[0] ?? null, recurrenceId: row.id, summary, taskIds });
+    }
+
     const id = generateId('task');
 
-    const { assigneeIds: _assigneeIds, ...taskBody } = body;
+    const { assigneeIds: _assigneeIds, recurrence: _recurrence, ...taskBody } = body;
     await db.insert(schema.universalTasks).values({
       ...taskBody,
       id,
@@ -166,31 +340,7 @@ tasksRouter.post('/', async (c) => {
       if (assignmentsToInsert.length > 0) {
         await db.insert(schema.taskAssignments).values(assignmentsToInsert);
       }
-
-      // Slack Notification for all assignees
-      try {
-        for (const empId of body.assigneeIds) {
-          const assignee = await db.query.employees.findFirst({
-            where: eq(schema.employees.id, empId),
-            columns: { slackId: true }
-          });
-          if (assignee?.slackId) {
-            await postToSlack(c.env, assignee.slackId, `You have been assigned a new task: ${body.title}`);
-          }
-        }
-      } catch (err) {
-        console.error('[Slack Notification Error]', err);
-      }
-
-      // Email as well as Slack. Not instead: the Slack post above only reaches
-      // people with a slack_id on file, which is not everybody. waitUntil so a
-      // slow provider does not hold up the 201 — the outbox row is already
-      // written by then, and the cron sweeps anything that does not go out.
-      c.executionCtx.waitUntil(notifyTaskAssigned(
-        c.env,
-        { id, title: body.title, department: body.department, dueDate: body.dueDate ?? null },
-        body.assigneeIds,
-      ));
+      await announceAssignment(c, { id, title: body.title, department: body.department, dueDate: body.dueDate ?? null }, body.assigneeIds);
     }
 
     await logAudit(c.env, user.id, 'CREATE', 'universal_tasks', id, body);
@@ -351,23 +501,10 @@ tasksRouter.delete('/:id', async (c) => {
       return c.json({ success: false, error: 'Permission denied: cannot delete tasks' }, 403);
     }
 
-    // Logged time outlives the task: it was worked, and it is somebody's record. It
-    // is released to general work (task_id → null), which also keeps the foreign key
-    // from refusing the delete. Attachments go with the task — left in place, their
-    // foreign key refused the delete outright, so any task with a file attached
-    // could not be removed at all. One batch, so a task is never half-removed; the
-    // files themselves go after it commits, never before (see removeObjects).
-    const attachments = await db.query.taskAttachments.findMany({
-      where: eq(schema.taskAttachments.taskId, id),
-      columns: { r2Key: true },
-    });
-    await db.batch([
-      db.update(schema.timeEntries).set({ taskId: null }).where(eq(schema.timeEntries.taskId, id)),
-      db.delete(schema.taskAssignments).where(eq(schema.taskAssignments.taskId, id)),
-      db.delete(schema.taskAttachments).where(eq(schema.taskAttachments.taskId, id)),
-      db.delete(schema.universalTasks).where(eq(schema.universalTasks.id, id)),
-    ]);
-    await removeObjects(c.env, attachments.map((a) => keyFromUrl(a.r2Key)).filter((k): k is string => !!k));
+    // Time released, assignments and attachments removed, one batch — see
+    // src/tasks/delete.ts. Deleting one occurrence of a series deletes only that
+    // occurrence: the series has already moved past it and will not re-create it.
+    await deleteTasks(c.env, db, [id]);
     await logAudit(c.env, user.id, 'DELETE', 'universal_tasks', id);
     return ok(c, { id, deleted: true });
   } catch (err) {

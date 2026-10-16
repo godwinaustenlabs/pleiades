@@ -35,6 +35,7 @@ DELETE FROM work_days;
 DELETE FROM task_attachments;
 DELETE FROM task_assignments;
 DELETE FROM universal_tasks;
+DELETE FROM task_recurrences;
 -- Acquisition's leads, and the two tables that point at them. The site's intake
 -- route writes all three, so a test that captures a lead and then calls `reseed()`
 -- needs them emptied or the next case sees the previous one's lead.

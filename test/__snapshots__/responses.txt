@@ -317,8 +317,12 @@
 /api/public/calendar/feed/:token
     404 text/plain
 /api/tasks
-    200 ok data=array<{appointmentId,assignments,boardPosition,committeeId,completedAt,createdAt,creatorId,department,description,dueDate,id,priority,relatedEntityId,relatedEntityType,startDate,status,taskType,title,updatedAt}>
+    200 ok data=array<{appointmentId,assignments,boardPosition,committeeId,completedAt,createdAt,creatorId,department,description,dueDate,id,occurrenceAt,priority,recurrenceId,relatedEntityId,relatedEntityType,startDate,status,taskType,title,updatedAt}>
 /api/tasks/:id/attachments
+    200 ok data=array<empty>
+/api/tasks/recurrences/:id
+    404 err="Series not found"
+/api/tasks/recurrences/upcoming
     200 ok data=array<empty>
 /api/tech/deployments
     200 ok data=array<empty>

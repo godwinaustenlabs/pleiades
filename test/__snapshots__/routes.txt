@@ -383,6 +383,11 @@ DELETE /api/tasks/:id
 PATCH  /api/tasks/:id
 GET    /api/tasks/:id/attachments
 POST   /api/tasks/:id/attachments
+GET    /api/tasks/recurrences/:id
+PATCH  /api/tasks/recurrences/:id
+POST   /api/tasks/recurrences/:id/stop
+POST   /api/tasks/recurrences/preview
+GET    /api/tasks/recurrences/upcoming
 POST   /api/tasks/reorder
 GET    /api/tech/deployments
 POST   /api/tech/deployments

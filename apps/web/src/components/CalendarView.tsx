@@ -1,14 +1,33 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
+/**
+ * An occurrence a repeating series WILL create, from GET /tasks/recurrences/upcoming.
+ * Drawn dashed and inert: it is not a task yet, so there is nothing to open or drag.
+ */
+export interface ProjectedOccurrence {
+  recurrenceId: string;
+  title: string;
+  occurrenceAt: number;
+  /** YYYY-MM-DD in the series' own zone. */
+  date: string;
+  summary: string;
+}
+
 interface CalendarViewProps {
   tasks: any[];
   appointments: any[];
   onEditTask?: (task: any) => void;
   onUpdateTask?: (taskId: string, updates: any) => Promise<void>;
+  projected?: ProjectedOccurrence[];
+  /** The first and last date the grid shows, whenever the month changes. */
+  onRangeChange?: (from: string, to: string) => void;
 }
 
-export default function CalendarView({ tasks, appointments, onEditTask, onUpdateTask }: CalendarViewProps) {
+const ymd = (y: number, m0: number, d: number) => `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+const fromYmd = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+
+export default function CalendarView({ tasks, appointments, onEditTask, onUpdateTask, projected = [], onRangeChange }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -74,6 +93,17 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
 
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
+  // Tell the owner which dates are on screen, so it can fetch what repeats into them.
+  const first = monthData[0]?.[0];
+  const last = monthData[monthData.length - 1]?.[6];
+  const rangeKey = first && last ? `${ymd(first.year, first.month, first.day)}|${ymd(last.year, last.month, last.day)}` : '';
+  useEffect(() => {
+    if (!rangeKey || !onRangeChange) return;
+    const [from, to] = rangeKey.split('|');
+    onRangeChange(from, to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the visible range; the callback is the owner's
+  }, [rangeKey]);
+
   const getEventsForWeek = (week: any[]) => {
     const weekStart = new Date(week[0].year, week[0].month, week[0].day);
     weekStart.setHours(0,0,0,0);
@@ -113,6 +143,21 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
           isStart: start >= weekStart,
           isEnd: end <= weekEnd,
           isPreview: isDraggingThis && isDragging.currentDeltaDays !== 0
+        });
+      }
+    });
+
+    projected.forEach(p => {
+      const date = fromYmd(p.date);
+      if (date >= weekStart && date <= weekEnd) {
+        weekEvents.push({
+          ...p,
+          id: `upcoming-${p.recurrenceId}-${p.occurrenceAt}`,
+          type: 'projected',
+          segmentStart: date.getDay(),
+          segmentEnd: date.getDay(),
+          isStart: true,
+          isEnd: true,
         });
       }
     });
@@ -272,8 +317,15 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
       }
     });
 
+    projected.forEach(p => {
+      const date = fromYmd(p.date);
+      if (date.getFullYear() === year && date.getMonth() === month) {
+        list.push({ ...p, id: `upcoming-${p.recurrenceId}-${p.occurrenceAt}`, type: 'projected', sortDate: date });
+      }
+    });
+
     return list.sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
-  }, [tasks, appointments, currentDate]);
+  }, [tasks, appointments, projected, currentDate]);
 
   return (
     <div ref={containerRef} className="glass-panel md:rounded-[2.5rem] overflow-hidden border border-white/10 animate-in fade-in duration-700 shadow-2xl">
@@ -364,7 +416,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                               className={`relative group/item px-3 py-1.5 rounded-lg text-[9px] font-bold leading-tight cursor-pointer transition-colors border shadow-sm ${
  isPreview ? 'opacity-50 scale-[0.98] z-50 shadow-xl' : ''
  } ${
- event.type === 'appt' 
+ event.type === 'projected'
+ ? 'bg-transparent text-primary/70 border-dashed border-primary/40 cursor-default'
+ : event.type === 'appt' 
  ? 'bg-accent/20 text-accent border-accent/30 hover:bg-accent/30' 
  : event.status === 'completed' 
  ? 'bg-success/20 text-success border-success/30 hover:bg-success/30'
@@ -380,6 +434,7 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                               onMouseDown={(e) => {
                                 if (isTask && !isDragging) handleMouseDown(e, event, 'both');
                               }}
+                              title={event.type === 'projected' ? `Upcoming — ${event.summary}` : undefined}
                             >
                               <div className="flex items-center gap-1.5 overflow-hidden select-none pointer-events-none">
                                 {event.isStart && (
@@ -439,7 +494,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                   if (isTask) onEditTask?.(event);
                 }}
                 className={`glass-panel p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all active:scale-[0.98] cursor-pointer ${
- event.type === 'appt' 
+ event.type === 'projected'
+ ? 'border-dashed border-primary/30 opacity-80'
+ : event.type === 'appt' 
  ? 'bg-accent/5 border-accent/20 hover:bg-accent/10' 
  : event.status === 'completed' 
  ? 'bg-success/5 border-success/20 hover:bg-success/10'
@@ -465,7 +522,7 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
  ? 'bg-accent/10 text-accent border border-accent/20'
  : 'bg-primary/10 text-primary border border-primary/20'
  }`}>
-                        {event.type === 'appt' ? 'Appointment' : 'Task'}
+                        {event.type === 'appt' ? 'Appointment' : event.type === 'projected' ? 'Upcoming' : 'Task'}
                       </span>
                       
                       {isTask && (
@@ -482,7 +539,9 @@ export default function CalendarView({ tasks, appointments, onEditTask, onUpdate
                       {event.title || event.roleOrTitle}
                     </h4>
                     <p className="text-[10px] text-textSecondary truncate mt-0.5">
-                      {isTask 
+                      {event.type === 'projected'
+                        ? event.summary
+                        : isTask 
                         ? `Due: ${event.dueDate || 'No due date'}` 
                         : `${event.termType || 'Special'} • ${event.appointmentDate}`
                       }
