@@ -1,5 +1,4 @@
 import { Context, Next } from 'hono';
-import { getCookie } from 'hono/cookie';
 import { sign, verify } from 'hono/jwt';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@pleiades/database';
@@ -145,15 +144,22 @@ export async function authMiddleware(c: Context<{ Bindings: Env; Variables: { us
   // 3. Check JWT for Human Users
   const authHeader = c.req.header('Authorization');
 
-  // Every place a browser can carry a token, in order of preference. Tried in
-  // turn rather than picked once: a stale `auth_token` cookie used to shadow a
-  // perfectly good `?token=`, so the request failed with a valid credential
-  // sitting unread in the query string. The query param exists at all so that
-  // `<img>` and download URLs, which cannot set a header, can authenticate.
+  /*
+   * Where a token may come from: the Authorization header, always; `?token=`, only
+   * on a GET to the two endpoints opened as plain links (`<img>`, `<a href>`), which
+   * cannot set a header — file downloads and the mailbox export.
+   *
+   * Anywhere else a token in the URL is a liability: URLs land in browser history,
+   * proxy logs and Referer headers, and a link copied out of the address bar would
+   * otherwise authorise writes. There is no cookie: nothing ever set `auth_token`,
+   * and a cookie is the one credential a browser attaches to a cross-site request
+   * on its own, which is what makes CSRF possible.
+   */
+  const path = c.req.path;
+  const linkable = c.req.method === 'GET' && (path.startsWith('/api/assets/download/') || path === '/api/email/export');
   const candidates = [
     authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '',
-    getCookie(c, 'auth_token') || '',
-    c.req.query('token') || '',
+    linkable ? c.req.query('token') || '' : '',
   ].filter(Boolean);
 
   if (candidates.length === 0) {

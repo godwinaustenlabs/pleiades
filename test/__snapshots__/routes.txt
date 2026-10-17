@@ -68,7 +68,6 @@ GET    /api/admin/users/:id/permissions
 PUT    /api/admin/users/:id/permissions
 POST   /api/admin/users/:id/reassign-owner
 POST   /api/admin/users/:id/reset-password
-GET    /api/admin/users/my-team
 POST   /api/admin/users/provision
 POST   /api/agents/slack/event
 GET    /api/appointments
@@ -366,6 +365,8 @@ POST   /api/ops/labs
 PATCH  /api/ops/labs/:id
 GET    /api/ops/reports
 POST   /api/ops/reports
+DELETE /api/ops/reports/:id
+PATCH  /api/ops/reports/:id
 GET    /api/permissions/app-features
 GET    /api/permissions/me
 GET    /api/permissions/user/:userId
@@ -424,11 +425,6 @@ POST   /api/tech/stories
 DELETE /api/tech/stories/:id
 GET    /api/tech/stories/:id
 PATCH  /api/tech/stories/:id
-GET    /api/tech/tasks
-POST   /api/tech/tasks
-DELETE /api/tech/tasks/:id
-GET    /api/tech/tasks/:id
-PATCH  /api/tech/tasks/:id
 DELETE /api/time/entries/:id
 PATCH  /api/time/entries/:id
 GET    /api/time/now

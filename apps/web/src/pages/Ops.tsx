@@ -19,6 +19,13 @@ import { errorMessage } from '../lib/errors';
 
 type Tab = 'labs' | 'committees' | 'clients' | 'docs' | 'reports' | 'tasks' | 'email';
 
+/**
+ * Where each tab's records live. Monthly reports are served by the ops router,
+ * gated on the same `ops/reports` feature this page checks; it was `/core/reports`,
+ * a route that never existed, so the tab could neither list nor save a report.
+ */
+const endpointFor = (tab: Tab) => (tab === 'reports' ? `${API}/ops/reports` : `${API}/core/${tab}`);
+
 function Ops() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
   const [tab, setTab] = useState<Tab>('labs');
@@ -60,8 +67,10 @@ function Ops() {
 
   const fetchData = () => {
     if (!permsLoaded) return;
+    // TaskBoard and MailboxTab fetch their own data; a generic request here only 404s.
+    if (tab === 'tasks' || tab === 'email') { setLoading(false); return; }
     setLoading(true);
-    fetch(`${API}/core/${tab}`, { headers: { Authorization: `Bearer ${token()}` } })
+    fetch(endpointFor(tab), { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => {
         if (r.status === 401) { handleLogout(); throw new Error('Unauthorized'); }
         return r.json();
@@ -148,7 +157,7 @@ function Ops() {
 
   const handleEntitySubmit = async (formData: any) => {
     const method = editingRecord ? 'PATCH' : 'POST';
-    const url = editingRecord ? `${API}/core/${tab}/${editingRecord.id}` : `${API}/core/${tab}`;
+    const url = editingRecord ? `${endpointFor(tab)}/${editingRecord.id}` : endpointFor(tab);
 
     // Ensure boolean fields are correctly typed
     const cleanData = { ...formData };
@@ -257,7 +266,7 @@ function Ops() {
             onDelete={async (r) => {
               if (!confirm(`Confirm irreversible deletion of this ${tab.slice(0, -1)} record? This action cannot be undone.`)) return;
               try {
-                const res = await fetch(`${API}/core/${tab}/${r.id}`, {
+                const res = await fetch(`${endpointFor(tab)}/${r.id}`, {
                   method: 'DELETE',
                   headers: { Authorization: `Bearer ${token()}` }
                 });

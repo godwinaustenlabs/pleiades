@@ -5,6 +5,8 @@ import { Env } from '../index';
 import { authMiddleware, UserPayload } from '../middleware/auth';
 import { actorEmployeeId, requireAppAccess } from '../middleware/rbac';
 import { generateId } from '../utils/id';
+import { generateToken } from '../utils/token';
+import { limited } from '../utils/rate-limit';
 import { ok, created, notFound, badRequest, serverError } from '../utils/response';
 import { logAudit } from '../utils/audit';
 import * as time from '../time/store';
@@ -243,7 +245,14 @@ dashboardRouter.patch('/notes/:id', async (c) => {
       where: and(eq(schema.userNotes.id, id), eq(schema.userNotes.userId, user.id)),
     });
     if (!note) return notFound(c);
-    await db.update(schema.userNotes).set({ ...body, updatedAt: new Date() }).where(eq(schema.userNotes.id, id));
+    // An allowlist. Spreading the body let a caller rewrite `userId` and move their
+    // note into somebody else's workspace, or rewrite the id itself.
+    const updates: Partial<typeof schema.userNotes.$inferInsert> = { updatedAt: new Date() };
+    if (typeof body.title === 'string') updates.title = body.title;
+    if (typeof body.content === 'string') updates.content = body.content;
+    if (body.color === null || typeof body.color === 'string') updates.color = body.color;
+    if (typeof body.pinned === 'boolean') updates.pinned = body.pinned;
+    await db.update(schema.userNotes).set(updates).where(and(eq(schema.userNotes.id, id), eq(schema.userNotes.userId, user.id)));
     return ok(c, { id });
   } catch (err) { return serverError(c, err); }
 });
@@ -293,6 +302,9 @@ const MAX_AUDIO_BASE64 = 4_000_000;
 
 dashboardRouter.post('/notes/transcribe', async (c) => {
   try {
+    // Per user: every call spends the Workers AI allowance both agents share.
+    const tooMany = await limited(c, 'transcribe', c.get('user').id);
+    if (tooMany) return tooMany;
     const body = await c.req.json<{ audio?: unknown }>().catch(() => null);
     const audio = body?.audio;
     if (typeof audio !== 'string' || audio.length === 0) return badRequest(c, 'audio required');
@@ -346,7 +358,7 @@ dashboardRouter.get('/calendar/token', async (c) => {
 
     if (!feed) {
       const id = generateId('cal');
-      const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      const token = generateToken();
       const now = new Date();
       await db.insert(schema.calendarFeeds).values({
         id, userId: user.id, token, createdAt: now, updatedAt: now
@@ -362,7 +374,7 @@ dashboardRouter.post('/calendar/token/reset', async (c) => {
   try {
     const user = c.get('user');
     const db = getDb(c.env);
-    const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    const token = generateToken();
     const existing = await db.query.calendarFeeds.findFirst({
       where: eq(schema.calendarFeeds.userId, user.id),
     });

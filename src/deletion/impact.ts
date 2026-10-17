@@ -17,7 +17,7 @@ import { chunk } from '../utils/batch';
  * whole design:
  *
  *   delete   the row goes. Only for records that describe the relationship itself
- *            (an appointment's grants, an employee's attendance) and are
+ *            (an appointment's grants, an employee's logged time) and are
  *            meaningless without it.
  *   release  the row survives, pointed at nobody. An asset is not destroyed
  *            because the person holding it left; it goes back in the pool.
@@ -315,14 +315,13 @@ async function employeeRows(db: Db, employeeId: string) {
   });
 
   const [
-    appointments, assets, employeeDocs, attendance, leaveRequests, leaveBalances,
+    appointments, assets, employeeDocs, leaveRequests, leaveBalances,
     payroll, salaryStructures, salaryRevisions, loans, reviews, legalTracker,
     labMemberships, committeeSeats, taskAssignments, workDays, timeEntries,
   ] = await Promise.all([
     db.query.appointments.findMany({ where: eq(schema.appointments.employeeId, employeeId), columns: { id: true, roleOrTitle: true, isActive: true } }),
     db.query.assets.findMany({ where: eq(schema.assets.assignedTo, employeeId), columns: { id: true, assetName: true, assetType: true } }),
     db.query.employeeDocuments.findMany({ where: eq(schema.employeeDocuments.employeeId, employeeId) }),
-    db.query.attendance.findMany({ where: eq(schema.attendance.employeeId, employeeId), columns: { id: true, date: true } }),
     db.query.leaveRequests.findMany({ where: eq(schema.leaveRequests.employeeId, employeeId), columns: { id: true, leaveType: true, startDate: true } }),
     db.query.leaveBalances.findMany({ where: eq(schema.leaveBalances.employeeId, employeeId), columns: { id: true, leaveType: true } }),
     db.query.payrollRecords.findMany({ where: eq(schema.payrollRecords.employeeId, employeeId), columns: { id: true, payrollMonth: true, netPay: true, financeReference: true } }),
@@ -367,7 +366,7 @@ async function employeeRows(db: Db, employeeId: string) {
     : [];
 
   return {
-    employee, login, appointments, assets, employeeDocs, attendance, leaveRequests,
+    employee, login, appointments, assets, employeeDocs, leaveRequests,
     leaveBalances, payroll, salaryStructures, salaryComponents, salaryRevisions, loans,
     reviews, legalTracker, labMemberships, committeeSeats, taskAssignments, workDays, timeEntries,
     reviewedByThem, approvedLeave, approvedRevisions, ledLabs, headedSectors,
@@ -486,7 +485,6 @@ export async function employeeImpact(
   }
 
   const hrRecords: [string, number][] = [
-    ['Attendance days (before time logging)', r.attendance.length],
     // A person's logged time is theirs alone, so it goes with them — and with it
     // their share of every task it was on. The tasks themselves are untouched.
     ['Days of logged time', r.workDays.length],
@@ -644,7 +642,6 @@ export async function deleteEmployee(env: Env, employeeId: string): Promise<Casc
   writes.push(db.delete(schema.salaryRevisions).where(eq(schema.salaryRevisions.employeeId, employeeId)));
   writes.push(db.delete(schema.payrollRecords).where(eq(schema.payrollRecords.employeeId, employeeId)));
   writes.push(db.delete(schema.loans).where(eq(schema.loans.employeeId, employeeId)));
-  writes.push(db.delete(schema.attendance).where(eq(schema.attendance.employeeId, employeeId)));
   // Entries before days: time_entries.work_day_id references work_days.
   writes.push(db.delete(schema.timeEntries).where(eq(schema.timeEntries.employeeId, employeeId)));
   writes.push(db.delete(schema.workDays).where(eq(schema.workDays.employeeId, employeeId)));

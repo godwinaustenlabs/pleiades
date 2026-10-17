@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { resetDatabase, tokenFor, type FixtureUser } from './helpers';
 import { validate } from '../src/email/transport';
 import { render } from '../src/email/render';
@@ -26,6 +26,13 @@ const AS = async (user: FixtureUser, path: string, init: RequestInit = {}) => {
 };
 
 beforeAll(async () => { await resetDatabase(); });
+// Every request here comes from one test "IP", and this file asks for more password
+// resets than the per-IP limit allows in an hour. The limit has its own tests in
+// security.test.ts; these are about what a reset may do, so each starts a fresh window.
+beforeEach(async () => {
+  const { env } = await import('cloudflare:test');
+  await env.DB.prepare('DELETE FROM rate_limits').run();
+});
 
 describe('mass assignment', () => {
   it('cannot change a mailbox address, which would re-point stored history', async () => {

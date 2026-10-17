@@ -23,11 +23,9 @@ const getVar = async (key: string) =>
 
 describe('Pleiades schema', () => {
 	it.each([
-		'compliance_events',
 		'generated_documents',
 		'agent_conversations',
 		'conversation_turns',
-		'notifications_log',
 		'compliance_config',
 		'agent_approvals',
 	])('creates %s', async (table) => {

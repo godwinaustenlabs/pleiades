@@ -36,6 +36,7 @@ DELETE FROM task_attachments;
 DELETE FROM task_assignments;
 DELETE FROM universal_tasks;
 DELETE FROM task_recurrences;
+DELETE FROM rate_limits;
 -- Acquisition's leads, and the two tables that point at them. The site's intake
 -- route writes all three, so a test that captures a lead and then calls `reseed()`
 -- needs them emptied or the next case sees the previous one's lead.
@@ -46,7 +47,6 @@ DELETE FROM crm_ticket_notes;
 DELETE FROM crm_documents;
 DELETE FROM crm_planner_events;
 DELETE FROM crm_tickets;
-DELETE FROM attendance;
 DELETE FROM leave_requests;
 DELETE FROM leave_balances;
 DELETE FROM salary_components;

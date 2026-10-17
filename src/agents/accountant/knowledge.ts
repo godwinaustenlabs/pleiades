@@ -1,3 +1,4 @@
+import { PublicError } from '../../utils/response';
 import { Env } from '../../index';
 
 /**
@@ -123,11 +124,11 @@ export async function ingestDocument(
   env: Env,
   args: { r2Key: string; title: string; docId: string; namespace?: Namespace },
 ): Promise<IngestResult> {
-  if (!env.VECTORIZE) throw new Error('No Vectorize index is bound.');
-  if (!env.COMPLIANCE_BUCKET) throw new Error('No compliance bucket is bound.');
+  if (!env.VECTORIZE) throw new PublicError('No Vectorize index is bound.');
+  if (!env.COMPLIANCE_BUCKET) throw new PublicError('No compliance bucket is bound.');
 
   const object = await env.COMPLIANCE_BUCKET.get(args.r2Key);
-  if (!object) throw new Error(`No document at ${args.r2Key} in the compliance bucket.`);
+  if (!object) throw new PublicError(`No document at ${args.r2Key} in the compliance bucket.`);
 
   const bytes = await object.arrayBuffer();
   const namespace: Namespace = args.namespace ?? 'compliance';
@@ -145,14 +146,14 @@ export async function ingestDocument(
   }
 
   if (!markdown || markdown.replace(/\s/g, '').length < 200) {
-    throw new Error(
+    throw new PublicError(
       'That document produced almost no text. If it is a scan, it needs an OCR text layer ' +
         'before it can be indexed — an empty index looks populated and answers nothing.',
     );
   }
 
   const chunks = chunkMarkdown(markdown);
-  if (chunks.length === 0) throw new Error('No usable passages found in that document.');
+  if (chunks.length === 0) throw new PublicError('No usable passages found in that document.');
 
   const vectors = await embed(env, chunks.map((c) => c.text));
 

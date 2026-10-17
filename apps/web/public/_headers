@@ -1,0 +1,27 @@
+# Security headers for the SPA's static files.
+#
+# These are served by Cloudflare's assets layer WITHOUT running the Worker, so the
+# Worker's header middleware never sees them — this file is the only place their
+# headers are set. API responses get theirs from src/index.ts.
+#
+# CSP, line by line:
+#   script-src 'self'    no inline script, no third-party script. The one inline
+#                        boot snippet lives in /boot.js for exactly this reason.
+#   style-src            React style attributes and a few <style> blocks need
+#                        'unsafe-inline'; Google Fonts serves the stylesheet.
+#   img-src https:       profile photos may be absolute URLs, and a person may choose
+#                        to load a mail message's remote images (MailHtml.tsx).
+#   frame-src            document previews are same-origin frames; mail HTML is a
+#                        sandboxed srcdoc frame, which inherits this policy.
+#   frame-ancestors      nobody may frame the app (clickjacking).
+#   connect-src 'self'   the API and the accountant's WebSocket are same-origin.
+#
+# Referrer-Policy no-referrer matters here: download links carry ?token=.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' blob: data:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: microphone=(self), camera=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin

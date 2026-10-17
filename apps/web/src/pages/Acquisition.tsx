@@ -66,6 +66,8 @@ function Acquisition() {
   const fetchData = () => {
     if (!permsLoaded) return;
     fetchRelations();
+    // MailboxTab fetches its own data; a generic request here only 404s.
+    if (tab === 'email') { setLoading(false); return; }
     setLoading(true);
     const route = tabToRoute(tab);
     fetch(`${API}/acquisition/${route}`, { headers: { Authorization: `Bearer ${token()}` } })

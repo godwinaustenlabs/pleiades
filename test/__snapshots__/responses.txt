@@ -52,8 +52,6 @@
     404 err="User not found"
 /api/admin/users/:id/permissions
     200 ok data=array<empty>
-/api/admin/users/my-team
-    404 err="Record not found"
 /api/appointments
     200 ok data=array<{appointmentDate,appointmentEndDate,committeeId,createdAt,employee,employeeId,id,isActive,roleOrTitle,termType}>
 /api/appointments/:id
@@ -352,10 +350,6 @@
     200 ok data=array<empty>
 /api/tech/stories/:id
     404 err="Record not found"
-/api/tech/tasks
-    500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"
-/api/tech/tasks/:id
-    500 err="D1_ERROR: no such table: tasks: SQLITE_ERROR"
 /api/time/now
     200 ok data={loggingNow}
 /api/time/people

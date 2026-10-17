@@ -17,32 +17,6 @@ import { usersLogins } from './auth';
  */
 
 /**
- * The compliance calendar: one row per obligation *instance*.
- *
- * A recurring rule ("monthly withholding statement") is expanded into twelve
- * rows a year by a generator, so the agent never reasons about recurrence — it
- * asks what is due. That keeps a class of error (a model doing date arithmetic
- * about a filing deadline) out of the system entirely.
- */
-export const complianceEvents = sqliteTable('compliance_events', {
-  id: text('id').primaryKey(),
-  obligationType: text('obligation_type').notNull(),
-  /** 'FBR' | 'SECP' | 'EOBI' | 'PESSI' | 'SESSI' | 'PSEB' | 'SRB' | 'PRA' */
-  authority: text('authority').notNull(),
-  /** '2026-08' | 'TY2027' | 'Q1-FY2027' */
-  periodLabel: text('period_label').notNull(),
-  dueDate: text('due_date').notNull(),
-  /** pending | draft_ready | reviewed | filed | overdue */
-  status: text('status').notNull().default('pending'),
-  draftDocumentId: text('draft_document_id'),
-  reviewedBy: text('reviewed_by'),
-  filedAt: text('filed_at'),
-  notes: text('notes'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
-});
-
-/**
  * A generated deliverable. The file is in R2; this is its metadata.
  *
  * `generationBasis` carries the provenance the spec requires of every figure —
@@ -88,18 +62,6 @@ export const conversationTurns = sqliteTable('conversation_turns', {
   toolCalls: text('tool_calls'),
   vectorId: text('vector_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
-
-export const notificationsLog = sqliteTable('notifications_log', {
-  id: text('id').primaryKey(),
-  /** 'email' | 'slack' */
-  channel: text('channel').notNull(),
-  subjectOrSummary: text('subject_or_summary').notNull(),
-  relatedDocumentId: text('related_document_id'),
-  relatedComplianceEventId: text('related_compliance_event_id'),
-  sentAt: integer('sent_at', { mode: 'timestamp' }).notNull(),
-  /** 'sent' | 'failed' */
-  status: text('status').notNull(),
 });
 
 /**

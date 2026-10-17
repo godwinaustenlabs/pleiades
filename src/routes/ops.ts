@@ -67,6 +67,30 @@ opsRouter.post('/reports', requireFeatureAccess('ops', 'reports', 'edit'), async
   } catch (err) { return serverError(c, err); }
 });
 
+opsRouter.patch('/reports/:id', requireFeatureAccess('ops', 'reports', 'edit'), async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user' as any);
+    const body = await c.req.json(); const id = c.req.param('id');
+    delete body.id; delete body.createdAt; delete body.updatedAt;
+    const existing = await db.query.monthlyReports.findFirst({ where: eq(schema.monthlyReports.id, id), columns: { id: true } });
+    if (!existing) return notFound(c);
+    await db.update(schema.monthlyReports).set(body).where(eq(schema.monthlyReports.id, id));
+    await logAudit(c.env, user.id, 'UPDATE', 'monthly_reports', id, body);
+    return ok(c, { id });
+  } catch (err) { return serverError(c, err); }
+});
+opsRouter.delete('/reports/:id', requireFeatureAccess('ops', 'reports', 'delete'), async (c) => {
+  try {
+    const db = getDb(c.env); const user = c.get('user' as any);
+    const id = c.req.param('id');
+    const existing = await db.query.monthlyReports.findFirst({ where: eq(schema.monthlyReports.id, id), columns: { id: true } });
+    if (!existing) return notFound(c);
+    await db.delete(schema.monthlyReports).where(eq(schema.monthlyReports.id, id));
+    await logAudit(c.env, user.id, 'DELETE', 'monthly_reports', id);
+    return ok(c, { id, deleted: true });
+  } catch (err) { return serverError(c, err); }
+});
+
 /* ── OPS DOCS ── */
 opsRouter.get('/docs', requireFeatureAccess('ops', 'docs', 'view'), async (c) => {
   try { return ok(c, await getDb(c.env).query.coreDocs.findMany()); }

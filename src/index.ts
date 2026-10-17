@@ -184,11 +184,46 @@ export const app = new Hono<{ Bindings: Env }>();
 
 // ── Global Middleware ───────────────────────────────────────────
 app.use('*', logger());
-app.use('*', cors({
-  origin: '*',
+/*
+ * CORS: the app's own origin only. It was `*`, which let any website drive this API
+ * from a visitor's browser. Nothing needs cross-origin browser access — the SPA is
+ * served from this Worker, and the marketing site's lead intake is server to server
+ * (x-api-key), where CORS does not apply.
+ */
+app.use('*', async (c, next) => cors({
+  origin: (origin) => (origin === c.env.WORKER_ORIGIN ? origin : null),
   allowHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
   allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-}));
+  exposeHeaders: ['X-Refresh-Token', 'Retry-After'],
+})(c, next));
+
+/*
+ * Security headers on every API response. The SPA's static files are served by the
+ * assets layer without running this Worker, so they get the same set (plus a CSP)
+ * from apps/web/public/_headers. API responses are JSON or downloads, never pages,
+ * so they get the strictest policy available.
+ */
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('Referrer-Policy', 'no-referrer');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Files are previewed in same-origin frames and opened in tabs (PDFs, images), so
+  // they may be framed by this app and are not sandboxed — a sandbox CSP stops the
+  // browser's PDF viewer. What keeps them safe is assets.ts: nosniff, and anything
+  // not on its inline-safe list is forced to an attachment.
+  const file = c.req.path.startsWith('/api/assets/download/') || c.req.path === '/api/email/export';
+  if (file) {
+    c.header('X-Frame-Options', 'SAMEORIGIN');
+    c.header('Content-Security-Policy', "frame-ancestors 'self'");
+  } else if (c.req.path.startsWith('/api/')) {
+    c.header('X-Frame-Options', 'DENY');
+    c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; sandbox");
+    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store');
+  } else {
+    c.header('X-Frame-Options', 'DENY');
+  }
+});
 
 // ── Health Check (monitoring / uptime pings) ────────────────────
 app.get('/api/health', (c) => c.json({
@@ -393,6 +428,14 @@ export default {
         if (closed > 0) console.log(`[time] auto-closed ${closed} forgotten timer(s)`);
       } catch (err) {
         console.error('[time] sweep failed:', err);
+      }
+
+      // Rate-limit windows that ended over a day ago.
+      try {
+        const { sweepRateLimits } = await import('./utils/rate-limit');
+        await sweepRateLimits(env.DB, Date.now());
+      } catch (err) {
+        console.error('[rate-limit] sweep failed:', err);
       }
 
       // Repeating tasks: create every occurrence that has come inside its lead

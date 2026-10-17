@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, ne } from 'drizzle-orm';
 import { sign } from 'hono/jwt';
 import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
@@ -10,7 +10,8 @@ import { generateId } from '../utils/id';
 import { generateToken, sha256hex } from '../utils/token';
 import { issueResetLink } from '../email/password-reset';
 import { logAudit } from '../utils/audit';
-import { hashPassword, verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword, UNKNOWN_ACCOUNT_HASH } from '../utils/password';
+import { clientIp, limited } from '../utils/rate-limit';
 
 const authRouter = new Hono<{ Bindings: Env; Variables: { user: UserPayload } }>();
 
@@ -76,6 +77,11 @@ const LOCKOUT_SECONDS     = 15 * 60; // 15 minutes
  */
 authRouter.post('/login', async (c) => {
   try {
+    // Per IP, across every account: the per-account lockout below stops guessing one
+    // password, not trying a common one against every address in turn.
+    const tooMany = await limited(c, 'login', clientIp(c));
+    if (tooMany) return tooMany;
+
     const { email, password } = await c.req.json<{ email: string; password: string }>();
     if (!email || !password) return badRequest(c, 'email and password are required');
 
@@ -89,8 +95,11 @@ authRouter.post('/login', async (c) => {
       with: { employee: true },
     });
 
-    if (!user) return c.json({ success: false, error: 'Invalid credentials' }, 401);
-    if (!user.isActive) return c.json({ success: false, error: 'Account is deactivated' }, 401);
+    if (!user) {
+      // Same work, same answer, as a wrong password — see UNKNOWN_ACCOUNT_HASH.
+      await verifyPassword(password, UNKNOWN_ACCOUNT_HASH);
+      return c.json({ success: false, error: 'Invalid credentials' }, 401);
+    }
 
     // Lockout check
     if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
@@ -101,6 +110,10 @@ authRouter.post('/login', async (c) => {
     }
 
     const { valid, needsUpgrade } = await verifyPassword(password, user.passwordHash);
+
+    // Deactivation is only revealed to somebody who knows the password. Before the
+    // check it told anyone with an address whether that account had ever existed.
+    if (valid && !user.isActive) return c.json({ success: false, error: 'Account is deactivated' }, 401);
 
     if (!valid) {
       // Increment failed attempts
@@ -239,8 +252,41 @@ authRouter.patch('/profile', authMiddleware, async (c) => {
   try {
     const user = c.get('user')!;
     const db = getDb(c.env);
-    const body = await c.req.json<{ name?: string; username?: string; email?: string; phone?: string; password?: string }>();
-    
+    const body = await c.req.json<{ name?: string; username?: string; email?: string; phone?: string; password?: string; currentPassword?: string }>();
+
+    /*
+     * The two changes that hand an account to somebody else — a new password, a new
+     * sign-in address — need the current password. A session token alone could do
+     * both before, which turned a token stolen once (a shared machine, a leaked
+     * download link) into the account itself, permanently.
+     */
+    const row = await db.query.usersLogins.findFirst({ where: eq(schema.usersLogins.id, user.id), columns: { passwordHash: true, email: true } });
+    if (!row) return notFound(c, 'Account not found');
+    const sensitive = !!body.password || (body.email !== undefined && body.email.toLowerCase().trim() !== row.email.toLowerCase());
+    if (sensitive) {
+      if (!body.currentPassword || !(await verifyPassword(body.currentPassword, row.passwordHash)).valid) {
+        return c.json({ success: false, error: 'Enter your current password to change your password or email.' }, 403);
+      }
+    }
+
+    /*
+     * A sign-in identifier must be unique across BOTH columns, not each on its own:
+     * login matches `email OR username`, so a username equal to somebody else's
+     * email made their sign-in ambiguous — whichever row came back first won.
+     */
+    for (const [field, raw] of [['email', body.email], ['username', body.username]] as const) {
+      if (raw === undefined) continue;
+      const v = raw.toLowerCase().trim();
+      if (!v) return badRequest(c, `${field} cannot be empty`);
+      if (field === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return badRequest(c, 'That is not an email address.');
+      if (field === 'username' && v.includes('@')) return badRequest(c, 'A username cannot contain @.');
+      const clash = await db.query.usersLogins.findFirst({
+        where: and(or(eq(schema.usersLogins.email, v), eq(schema.usersLogins.username, v)), ne(schema.usersLogins.id, user.id)),
+        columns: { id: true },
+      });
+      if (clash) return c.json({ success: false, error: `That ${field} is already in use.` }, 409);
+    }
+
     const updateData: any = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.username !== undefined) updateData.username = body.username.toLowerCase().trim();
@@ -330,6 +376,8 @@ authRouter.post('/profile/avatar', authMiddleware, async (c) => {
  */
 authRouter.post('/request-reset', async (c) => {
   try {
+    const tooMany = await limited(c, 'resetRequest', clientIp(c));
+    if (tooMany) return tooMany;
     const body = await c.req.json<{ identifier?: string; email?: string }>();
     // `email` is still accepted so an older client keeps working; the field is named
     // `identifier` now because either an email or a username is fine.
@@ -393,6 +441,8 @@ authRouter.post('/request-reset', async (c) => {
  */
 authRouter.post('/complete-reset', async (c) => {
   try {
+    const tooMany = await limited(c, 'resetComplete', clientIp(c));
+    if (tooMany) return tooMany;
     const { token, newPassword } = await c.req.json<{ token: string; newPassword: string }>();
     if (!token || !newPassword) return badRequest(c, 'token and newPassword are required');
     if (newPassword.length < 8) return badRequest(c, 'Password must be at least 8 characters');
@@ -420,14 +470,19 @@ authRouter.post('/complete-reset', async (c) => {
       return c.json({ success: false, error: 'Token has expired. Please request a new reset.' }, 400);
     }
 
+    // Spend the token FIRST, conditionally. Read-then-write let two requests racing
+    // on one link both find it 'approved' and both set a password; now exactly one
+    // flips it to 'used' and the other is refused.
+    const spent = await db.update(schema.passwordResetTokens)
+      .set({ status: 'used' })
+      .where(and(eq(schema.passwordResetTokens.id, resetRecord.id), eq(schema.passwordResetTokens.status, 'approved')))
+      .returning({ id: schema.passwordResetTokens.id });
+    if (spent.length !== 1) return c.json({ success: false, error: 'Token is used and cannot be used.' }, 400);
+
     const newHash = await hashPassword(newPassword);
     await db.update(schema.usersLogins)
       .set({ passwordHash: newHash, passwordUpdatedAt: new Date(), failedAttempts: 0, lockedUntil: null })
       .where(eq(schema.usersLogins.id, resetRecord.userId));
-
-    await db.update(schema.passwordResetTokens)
-      .set({ status: 'used' })
-      .where(eq(schema.passwordResetTokens.id, resetRecord.id));
 
     await logAudit(c.env, resetRecord.userId, 'RESET', 'users_logins', resetRecord.userId, {
       action: 'password_reset_completed',

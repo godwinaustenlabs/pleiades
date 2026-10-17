@@ -402,42 +402,6 @@ adminRouter.post('/users/provision', requireFeatureAccess('admin', 'users', 'edi
   } catch (err) { return serverError(c, err); }
 });
 
-adminRouter.get('/users/my-team', requireFeatureAccess('admin', 'users', 'view'), async (c) => {
-  try {
-    const db = getDb(c.env);
-    const actor = c.get('user')!!;
-    // This previously read user_app_access, a table with no rows in production,
-    // so the "is an admin" branch below was unreachable for every caller.
-    const isUserAdmin = await checkFeaturePermission(c, 'admin', 'users', 'edit');
-
-    if (isUserAdmin) {
-      const rows = await db.query.usersLogins.findMany({
-        with: { ownership: true, permissions: true },
-        columns: { passwordHash: false },
-      });
-      return ok(c, rows);
-    }
-
-    const ownerships = await db.query.userOwnership.findMany({
-      where: eq(schema.userOwnership.ownerUserId, actor.id),
-    });
-    const userIds = ownerships.map((o) => o.userId);
-    if (userIds.length === 0) return ok(c, []);
-
-    const rows = await Promise.all(
-      userIds.map((uid) =>
-        db.query.usersLogins.findFirst({
-          where: eq(schema.usersLogins.id, uid),
-          with: { permissions: true },
-          columns: { passwordHash: false },
-        })
-      )
-    );
-
-    return ok(c, rows.filter(Boolean));
-  } catch (err) { return serverError(c, err); }
-});
-
 adminRouter.post('/users/:id/reassign-owner', requireFeatureAccess('admin', 'users', 'edit'), async (c) => {
   try {
     const db = getDb(c.env); const actor = c.get('user')!!;

@@ -13,7 +13,7 @@ import {
 } from './core';
 import { sectors, appointments, appointmentAppPermissions, payrollRecords, legalTracker } from './hr';
 import {
-  complianceEvents, generatedDocuments, agentConversations,
+  generatedDocuments, agentConversations,
   conversationTurns,
 } from './pleiades';
 import {
@@ -25,7 +25,7 @@ import {
   complianceObligations, legalRequests, intellectualProperty, legalSops,
 } from './legal';
 import {
-  projects, epics, stories, tasks, releases, environments, deployments, issues,
+  projects, epics, stories, releases, environments, deployments, issues,
 } from './tech';
 import {
   campaigns, contactsLeads, leadsActivity, funnelsPipelines,
@@ -266,19 +266,12 @@ export const epicsRelations = relations(epics, ({ one, many }) => ({
 
 export const storiesRelations = relations(stories, ({ one, many }) => ({
   epic: one(epics, { fields: [stories.epicId], references: [epics.id] }),
-  tasks: many(tasks),
   issues: many(issues),
 }));
 
 export const releasesRelations = relations(releases, ({ one, many }) => ({
   project: one(projects, { fields: [releases.projectId], references: [projects.id] }),
-  tasks: many(tasks),
   deployments: many(deployments),
-}));
-
-export const tasksRelations = relations(tasks, ({ one }) => ({
-  story: one(stories, { fields: [tasks.storyId], references: [stories.id] }),
-  release: one(releases, { fields: [tasks.releaseId], references: [releases.id] }),
 }));
 
 export const environmentsRelations = relations(environments, ({ many }) => ({
@@ -389,21 +382,6 @@ export const userDashboardStateRelations = relations(userDashboardState, ({ one 
 }));
 
 /* ── PLEIADES ACCOUNTANT ── */
-export const complianceEventsRelations = relations(complianceEvents, ({ one }) => ({
-  // The draft prepared for this obligation, once one exists.
-  draftDocument: one(generatedDocuments, {
-    fields: [complianceEvents.draftDocumentId],
-    references: [generatedDocuments.id],
-  }),
-}));
-
-export const generatedDocumentsRelations = relations(generatedDocuments, ({ one }) => ({
-  complianceEvent: one(complianceEvents, {
-    fields: [generatedDocuments.complianceEventId],
-    references: [complianceEvents.id],
-  }),
-}));
-
 export const agentConversationsRelations = relations(agentConversations, ({ one, many }) => ({
   operatorUser: one(usersLogins, {
     fields: [agentConversations.operator],

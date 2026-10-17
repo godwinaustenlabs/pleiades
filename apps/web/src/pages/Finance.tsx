@@ -119,7 +119,9 @@ function Finance() {
     // DocumentsTab loads its own data from /finance/documents; the generic
     // `/finance/<tab>` fetch below would just 404 on /finance/docs.
     // Both render their own data; the generic finance fetch below does not apply.
-    if (tab === 'docs' || tab === 'agent' || tab === 'assets' || tab === 'statements') { setLoading(false); return; }
+    if (tab === 'docs' || tab === 'agent' || tab === 'assets' || tab === 'statements' || tab === 'tasks' || tab === 'email') { setLoading(false); return; }
+    // The ledger viewer has nothing to show until an account is chosen; asking anyway is a 400.
+    if (tab === 'ledger-view' && !selectedLedgerAccount) { setLedgerViewData(null); setLoading(false); return; }
     setLoading(true);
     let url = `${API}/finance/${tab}`;
     if (tab === 'journals') {

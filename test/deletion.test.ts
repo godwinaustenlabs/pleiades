@@ -50,7 +50,6 @@ async function furnish(): Promise<void> {
     env.DB.prepare("INSERT INTO employee_documents (id,employee_id,document_type,url,upload_date,created_at) VALUES ('ed_1','emp_dual','CNIC','/api/assets/download/employee-docs/cnic.pdf','2026-01-01',0)"),
     env.DB.prepare("INSERT INTO employee_documents (id,employee_id,document_type,url,upload_date,created_at) VALUES ('ed_2','emp_dual','Contract','employee-docs/contract.pdf','2026-01-01',0)"),
     // HR history.
-    env.DB.prepare("INSERT INTO attendance (id,employee_id,date,status,created_at) VALUES ('at_1','emp_dual','2026-09-01','Present',0)"),
     env.DB.prepare("INSERT INTO payroll_records (payroll_id,employee_id,payroll_month,net_pay,finance_reference,created_at) VALUES ('pr_1','emp_dual','2026-08',150000,'txn_9',0)"),
     env.DB.prepare("INSERT INTO loans (id,employee_id,original_amount,remaining_balance,monthly_installment,start_date,status,created_at) VALUES ('ln_1','emp_dual',100000,60000,10000,'2026-01-01','Active',0)"),
     // Somebody ELSE's record that merely names them. Both must survive.
@@ -228,7 +227,7 @@ describe('deleting a person', () => {
     expect(await count('SELECT COUNT(*) n FROM users_logins WHERE id = ?', 'u_dual')).toBe(0);
     expect(await count('SELECT COUNT(*) n FROM appointments WHERE employee_id = ?', 'emp_dual')).toBe(0);
     expect(await count('SELECT COUNT(*) n FROM user_app_permissions WHERE user_id = ?', 'u_dual')).toBe(0);
-    expect(await count('SELECT COUNT(*) n FROM attendance WHERE employee_id = ?', 'emp_dual')).toBe(0);
+    expect(await count('SELECT COUNT(*) n FROM time_entries WHERE employee_id = ?', 'emp_dual')).toBe(0);
     expect(await count('SELECT COUNT(*) n FROM payroll_records WHERE employee_id = ?', 'emp_dual')).toBe(0);
     expect(await count('SELECT COUNT(*) n FROM employee_documents WHERE employee_id = ?', 'emp_dual')).toBe(0);
     expect(await count('SELECT COUNT(*) n FROM task_assignments WHERE employee_id = ?', 'emp_dual')).toBe(0);

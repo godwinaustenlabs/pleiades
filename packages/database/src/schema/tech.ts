@@ -56,24 +56,6 @@ export const releases = sqliteTable('releases', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
-export const tasks = sqliteTable('tasks', {
-  id: text('task_id').primaryKey(),
-  taskName: text('task_name').notNull(),
-  description: text('description'),
-  status: text('status'),
-  priority: text('priority'),
-  assignee: text('assignee'), // Display name
-
-  dueDate: text('due_date'), // Used by Slack Agent filter
-  taskType: text('task_type'),
-  estimatedHours: real('estimated_hours'),
-  actualHours: real('actual_hours'),
-  completed: integer('completed', { mode: 'boolean' }),
-  storyId: text('story_id').references(() => stories.id),
-  releaseId: text('release_id').references(() => releases.id),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
-
 export const environments = sqliteTable('environments', {
   id: text('env_id').primaryKey(),
   envName: text('env_name').notNull(),

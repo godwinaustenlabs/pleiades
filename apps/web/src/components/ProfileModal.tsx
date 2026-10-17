@@ -12,7 +12,10 @@ interface ProfileModalProps {
 }
 
 export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
-  const [form, setForm] = useState({ name: '', username: '', email: '', phone: '', password: '', confirmPassword: '', profilePhoto: '' });
+  const [form, setForm] = useState({ name: '', username: '', email: '', phone: '', password: '', confirmPassword: '', currentPassword: '', profilePhoto: '' });
+  /** The email as loaded, so the form knows when a change needs the current password. */
+  const [savedEmail, setSavedEmail] = useState('');
+  const needsCurrentPassword = !!form.password || (!!savedEmail && form.email.trim().toLowerCase() !== savedEmail.toLowerCase());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -37,6 +40,7 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
             phone: data.data.phone || '',
             profilePhoto: data.data.profilePhoto || ''
           }));
+          setSavedEmail(data.data.email || '');
         }
         setLoading(false);
       })
@@ -53,6 +57,10 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
       setError('Passwords do not match');
       return;
     }
+    if (needsCurrentPassword && !form.currentPassword) {
+      setError('Enter your current password to change your password or email.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -67,7 +75,8 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
           username: form.username,
           email: form.email,
           phone: form.phone,
-          ...(form.password ? { password: form.password } : {})
+          ...(form.password ? { password: form.password } : {}),
+          ...(needsCurrentPassword ? { currentPassword: form.currentPassword } : {})
         })
       });
 
@@ -88,7 +97,8 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
         
         setSuccess('Profile updated successfully');
         if (onUpdate) onUpdate();
-        setForm(f => ({ ...f, password: '', confirmPassword: '' }));
+        setForm(f => ({ ...f, password: '', confirmPassword: '', currentPassword: '' }));
+        setSavedEmail(form.email.trim().toLowerCase());
       }
     } catch {
       setError('Network error. Please try again.');
@@ -259,6 +269,9 @@ export default function ProfileModal({ onClose, onUpdate }: ProfileModalProps) {
                 <div className="space-y-3">
                   <input type="password" placeholder="New Password (min 8 chars)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm" />
                   <input type="password" placeholder="Confirm New Password" value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} className="w-full bg-surface/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm" />
+                  {needsCurrentPassword && (
+                    <input type="password" required autoComplete="current-password" placeholder="Current password (required to change password or email)" value={form.currentPassword} onChange={e => setForm({ ...form, currentPassword: e.target.value })} className="w-full bg-surface/50 border border-warning/40 rounded-xl px-4 py-2.5 text-sm" />
+                  )}
                 </div>
               </div>
 

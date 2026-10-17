@@ -144,53 +144,6 @@ techRouter.delete('/stories/:id', requireFeatureAccess('tech', 'stories', 'delet
   } catch (err) { return serverError(c, err); }
 });
 
-/* ── TASKS ── */
-techRouter.get('/tasks', requireFeatureAccess('tech', 'tasks', 'view'), async (c) => {
-  try {
-    const { assignee, status, story_id, completed } = c.req.query();
-    const rows = await getDb(c.env).query.tasks.findMany({
-      where: and(
-        assignee ? eq(schema.tasks.assignee, assignee) : undefined,
-        status ? eq(schema.tasks.status, status) : undefined,
-        story_id ? eq(schema.tasks.storyId, story_id) : undefined,
-        completed !== undefined ? eq(schema.tasks.completed, completed === 'true') : undefined
-      ),
-    });
-    return ok(c, rows);
-  } catch (err) { return serverError(c, err); }
-});
-techRouter.post('/tasks', requireFeatureAccess('tech', 'tasks', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user' as any);
-    const body = await c.req.json(); const id = generateId('task');
-    await db.insert(schema.tasks).values({ ...body, id, createdAt: new Date() });
-    await logAudit(c.env, user.id, 'CREATE', 'tasks', id, body);
-    return created(c, { id });
-  } catch (err) { return serverError(c, err); }
-});
-techRouter.get('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'view'), async (c) => {
-  try {
-    const row = await getDb(c.env).query.tasks.findFirst({ where: eq(schema.tasks.id, c.req.param('id')) });
-    if (!row) return notFound(c); return ok(c, row);
-  } catch (err) { return serverError(c, err); }
-});
-techRouter.patch('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'edit'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user' as any);
-    const body = await c.req.json(); const id = c.req.param('id');
-    delete body.id; delete body.createdAt; delete body.updatedAt;
-    await db.update(schema.tasks).set(body).where(eq(schema.tasks.id, id));
-    await logAudit(c.env, user.id, 'UPDATE', 'tasks', id, body); return ok(c, { id });
-  } catch (err) { return serverError(c, err); }
-});
-techRouter.delete('/tasks/:id', requireFeatureAccess('tech', 'tasks', 'delete'), async (c) => {
-  try {
-    const db = getDb(c.env); const user = c.get('user' as any); const id = c.req.param('id');
-    await db.delete(schema.tasks).where(eq(schema.tasks.id, id));
-    await logAudit(c.env, user.id, 'DELETE', 'tasks', id); return ok(c, { id, deleted: true });
-  } catch (err) { return serverError(c, err); }
-});
-
 /* ── RELEASES ── */
 techRouter.get('/releases', requireFeatureAccess('tech', 'releases', 'view'), async (c) => {
   try {

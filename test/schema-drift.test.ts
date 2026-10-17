@@ -32,23 +32,19 @@ function productionTables(): string[] {
 }
 
 /**
- * Tables Drizzle declares that production does not have.
+ * Tables Drizzle declares that production does not have. None.
  *
- * `tasks` is real and currently unfixed: it is created by migration 0000, is
- * recorded in pleiades-db's d1_migrations as applied, and does not exist in the
- * database — so it was dropped by hand at some point. The five handlers in
- * src/routes/tech.ts that read it return
- * `D1_ERROR: no such table: tasks` in production today, which
- * test/__snapshots__/responses.txt records.
- *
- * It is listed here so the gap is documented in code rather than folklore, and
- * so it cannot silently grow to two. Removing it from this list means either
- * writing the migration or deleting the dead routes.
+ * There used to be one: `tasks`, created by migration 0000, recorded as applied,
+ * and dropped by hand at some point — so the five `/api/tech/tasks` handlers that
+ * read it returned `D1_ERROR: no such table: tasks` in production. Department
+ * tasks live in `universal_tasks`; the dead handlers and the declaration were
+ * deleted in October 2026. Anything added to this list is a production 500
+ * waiting to be found.
  */
-const KNOWN_MISSING_IN_PRODUCTION = ['tasks'];
+const KNOWN_MISSING_IN_PRODUCTION: string[] = [];
 
 describe('schema drift', () => {
-  it('declares no table that production lacks, beyond the known gap', () => {
+  it('declares no table that production lacks', () => {
     const prod = new Set(productionTables());
     const missing = drizzleTables().filter((t) => !prod.has(t));
     expect(missing.sort()).toEqual([...KNOWN_MISSING_IN_PRODUCTION].sort());

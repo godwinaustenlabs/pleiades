@@ -105,3 +105,13 @@ export async function verifyPassword(
   const valid = timingSafeEqualHex(derived, parts[3]);
   return { valid, needsUpgrade: valid && iterations < PBKDF2_ITERATIONS };
 }
+
+/**
+ * A well-formed hash of a password nobody knows, verified against when a login
+ * names an account that does not exist. Without it a missing account answered in
+ * microseconds and a real one after a full PBKDF2 run, so response time alone
+ * said which addresses had accounts. Same iteration count as a real hash, so the
+ * two cost the same.
+ */
+export const UNKNOWN_ACCOUNT_HASH =
+  'pbkdf2$100000$9f3c2a1e7b6d5c4f8a0e1d2c3b4a5968$5b0e8f1c2d3a4b6c7e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3';

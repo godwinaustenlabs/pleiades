@@ -181,4 +181,12 @@ export const calendarFeeds = sqliteTable('calendar_feeds', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
 
-
+/**
+ * Fixed-window rate limiting (migration 0055). Written only by
+ * src/utils/rate-limit.ts, with one atomic upsert per guarded request.
+ */
+export const rateLimits = sqliteTable('rate_limits', {
+  bucket: text('bucket').primaryKey(),
+  count: integer('count').notNull(),
+  resetAt: integer('reset_at').notNull(),
+});

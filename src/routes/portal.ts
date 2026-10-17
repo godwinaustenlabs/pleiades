@@ -5,7 +5,8 @@ import { getDb, schema } from '@pleiades/database';
 import { Env } from '../index';
 import { generateId } from '../utils/id';
 import { ok, badRequest, notFound, serverError } from '../utils/response';
-import { hashPassword, verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword, UNKNOWN_ACCOUNT_HASH } from '../utils/password';
+import { clientIp, limited } from '../utils/rate-limit';
 import {
   SESSION_REFRESH_BELOW_SECONDS,
   SESSION_REFRESH_HEADER,
@@ -47,6 +48,8 @@ async function clientAuth(c: any, next: any) {
 
 portalRouter.post('/login', async (c) => {
   try {
+    const tooMany = await limited(c, 'portalLogin', clientIp(c));
+    if (tooMany) return tooMany;
     const { email, password } = await c.req.json<{ email: string; password: string }>();
     if (!email || !password) return badRequest(c, 'email and password required');
     const db = getDb(c.env);
@@ -54,12 +57,17 @@ portalRouter.post('/login', async (c) => {
       where: eq(schema.clientLogins.email, email.toLowerCase().trim()),
       with: { client: true },
     });
-    if (!cl) return c.json({ error: 'Invalid credentials' }, 401);
-    if (!cl.isActive) return c.json({ error: 'Account deactivated' }, 401);
+    if (!cl) {
+      // Same work and answer as a wrong password, so timing does not reveal accounts.
+      await verifyPassword(password, UNKNOWN_ACCOUNT_HASH);
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
     if (cl.lockedUntil && new Date(cl.lockedUntil) > new Date()) {
       return c.json({ error: 'Account locked. Try later.' }, 429);
     }
     const { valid, needsUpgrade } = await verifyPassword(password, cl.passwordHash);
+    // Deactivation is only revealed to somebody who knows the password.
+    if (valid && !cl.isActive) return c.json({ error: 'Account deactivated' }, 401);
     if (!valid) {
       const att = (cl.failedAttempts ?? 0) + 1;
       await db.update(schema.clientLogins).set({

@@ -55,6 +55,9 @@ function Tech() {
 
   const fetchData = () => {
     if (!permsLoaded) return;
+    // These tabs render their own component (TaskBoard, MailboxTab), which fetches
+    // its own data; a generic request here only 404s.
+    if (tab === 'tasks' || tab === 'email') { setLoading(false); return; }
     setLoading(true);
     fetch(`${API}/tech/${tab}`, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => {

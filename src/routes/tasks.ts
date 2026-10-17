@@ -373,6 +373,16 @@ tasksRouter.patch('/:id', async (c) => {
     }
 
     delete body.id; delete body.createdAt; delete body.updatedAt; delete body.completedAt;
+    // Who created a task is a record, not an editable field.
+    delete body.creatorId;
+    // Moving a task into another department needs edit rights THERE too; holding
+    // them here was enough to drop a task onto a board you cannot otherwise touch.
+    if (typeof body.department === 'string' && body.department.trim().toLowerCase() !== task.department.toLowerCase()) {
+      if (!(await checkFeaturePermission(c, body.department.trim().toLowerCase(), 'tasks', 'edit'))) {
+        return c.json({ success: false, error: 'Permission denied: cannot move tasks into that department' }, 403);
+      }
+      body.department = body.department.trim();
+    }
     const assigneeIds = body.assigneeIds;
     delete body.assigneeIds;
 

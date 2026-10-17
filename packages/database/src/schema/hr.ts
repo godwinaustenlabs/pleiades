@@ -74,17 +74,6 @@ export const appointmentAppPermissions = sqliteTable('appointment_app_permission
 
 // -- NEW HRMS TABLES --
 
-export const attendance = sqliteTable('attendance', {
-  id: text('id').primaryKey(),
-  employeeId: text('employee_id').notNull().references(() => employees.id),
-  date: text('date').notNull(), // YYYY-MM-DD
-  checkIn: text('check_in'), // ISO string or time
-  checkOut: text('check_out'),
-  status: text('status'), // Present, Absent, Late, Overtime, Remote
-  totalHours: real('total_hours'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
-
 export const leaveRequests = sqliteTable('leave_requests', {
   id: text('id').primaryKey(),
   employeeId: text('employee_id').notNull().references(() => employees.id),
