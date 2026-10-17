@@ -129,6 +129,22 @@ function Finance() {
   const [showReport, setShowReport] = useState<'journal' | 'ledger' | null>(null);
   /** The General Journal's order. Newest first unless somebody picks otherwise. */
   const [journalSort, setJournalSort] = useState<JournalSort>('newest');
+  /**
+   * The journal's own date range, empty by default — meaning every entry.
+   *
+   * It used to share the 15th-to-15th period the Accounts and Trial Balance tabs
+   * use, so on the 15th of each month the journal silently emptied: everything
+   * from the previous period dropped out of view, the pager vanished with it,
+   * and a full journal read as three entries. A journal is a running record;
+   * newest first with paging is the right default, and a range is a filter
+   * somebody chooses. Kept separate so it cannot move the other tabs' periods.
+   */
+  const [journalFrom, setJournalFrom] = useState('');
+  const [journalTo, setJournalTo] = useState('');
+  const journalQuery = new URLSearchParams({
+    ...(journalFrom ? { startDate: journalFrom } : {}),
+    ...(journalTo ? { endDate: journalTo } : {}),
+  }).toString();
   const [ledgerViewData, setLedgerViewData] = useState<any>(null);
   const [committees, setCommittees] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -177,7 +193,7 @@ function Finance() {
     setLoading(true);
     let url = `${API}/finance/${tab}`;
     if (tab === 'journals') {
-      url += `?startDate=${startDate}&endDate=${endDate}`;
+      if (journalQuery) url += `?${journalQuery}`;
     }
     if (tab === 'accounts') {
       url += `?startDate=${startDate}&endDate=${endDate}`;
@@ -225,7 +241,7 @@ function Finance() {
       fetchData();
       fetchRelations();
     }
-  }, [tab, isAuthenticated, permsLoaded, startDate, endDate, selectedLedgerAccount]);
+  }, [tab, isAuthenticated, permsLoaded, startDate, endDate, selectedLedgerAccount, journalQuery]);
 
 
 
@@ -467,13 +483,21 @@ function Finance() {
             {tab === 'journals' && (
               <div className="flex flex-col md:flex-row gap-4 items-end glass-panel p-4 rounded-2xl border border-white/10">
                 <div className="min-w-0 flex-1 w-full md:w-auto">
-                  <label className="text-xs text-textSecondary mb-1 block">Start Date</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                  <label htmlFor="journal-from" className="text-xs text-textSecondary mb-1 block">From <span className="opacity-60">(optional)</span></label>
+                  <input id="journal-from" type="date" value={journalFrom} max={journalTo || undefined} onChange={e => setJournalFrom(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
                 </div>
                 <div className="min-w-0 flex-1 w-full md:w-auto">
-                  <label className="text-xs text-textSecondary mb-1 block">End Date</label>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
+                  <label htmlFor="journal-to" className="text-xs text-textSecondary mb-1 block">To <span className="opacity-60">(optional)</span></label>
+                  <input id="journal-to" type="date" value={journalTo} min={journalFrom || undefined} onChange={e => setJournalTo(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
                 </div>
+                {(journalFrom || journalTo) && (
+                  <button
+                    onClick={() => { setJournalFrom(''); setJournalTo(''); }}
+                    className="w-full md:w-auto px-4 py-2 bg-surfaceAlt hover:bg-white/5 rounded-xl font-bold text-sm transition-all border border-white/10"
+                  >
+                    Show all dates
+                  </button>
+                )}
                 <div className="min-w-0 flex-1 w-full md:w-auto">
                   <label htmlFor="journal-sort" className="text-xs text-textSecondary mb-1 block">Sort by</label>
                   <select
@@ -486,7 +510,23 @@ function Finance() {
                   </select>
                 </div>
                 <button 
-                  onClick={() => window.open(`${API}/finance/export/${tab}?startDate=${startDate}&endDate=${endDate}`, '_blank')}
+                  onClick={async () => {
+                    // Fetched with the session and saved as a file. It used to be
+                    // window.open on the API URL, which sends no Authorization
+                    // header, so the export answered 401 every time.
+                    try {
+                      const res = await fetch(`${API}/finance/export/journals${journalQuery ? `?${journalQuery}` : ''}`, { headers: { Authorization: `Bearer ${token()}` } });
+                      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || `Export failed (${res.status})`);
+                      const href = URL.createObjectURL(await res.blob());
+                      const a = document.createElement('a');
+                      a.href = href;
+                      a.download = `journal${journalFrom ? `_from_${journalFrom}` : ''}${journalTo ? `_to_${journalTo}` : ''}.csv`;
+                      document.body.appendChild(a); a.click(); a.remove();
+                      URL.revokeObjectURL(href);
+                    } catch (err) {
+                      alert(errorMessage(err, 'Could not export the journal'));
+                    }
+                  }}
                   className="w-full md:w-auto px-6 py-2 bg-success/20 text-success hover:bg-success/30 rounded-xl font-bold text-sm transition-all border border-success/30"
                 >
                   Export CSV
@@ -502,8 +542,8 @@ function Finance() {
             )}
 
             {/* The generator keeps its own date range rather than reusing the
-                filter bar's. The bar above defaults to a fortnight and is for
-                browsing; a report is a document somebody keeps, and inheriting
+                filter bar's. The bar above shows every entry unless a range is
+                chosen, and is for browsing; a report is a document somebody keeps, and inheriting
                 a range nobody chose for it is how the wrong period gets filed. */}
             {tab === 'journals' && showReport === 'journal' && (
               <ReportsPanel
