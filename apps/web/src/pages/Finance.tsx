@@ -26,6 +26,56 @@ import { errorMessage } from '../lib/errors';
 
 type Tab = 'ledger-view' | 'ledgers' | 'journals' | 'trial-balance' | 'invoices' | 'fund-requests' | 'accounts' | 'docs' | 'tasks' | 'assets' | 'statements' | 'agent' | 'email';
 
+type JournalSort = 'newest' | 'oldest' | 'amountDesc' | 'amountAsc';
+type JournalLine = { type?: string; amount?: unknown };
+/** The fields of a journal entry the sort reads. */
+type JournalRow = { lines?: unknown; amount?: unknown; entryDate?: string | number | null; createdAt?: string | number | null };
+const JOURNAL_SORTS: { value: JournalSort; label: string }[] = [
+  { value: 'newest', label: 'Newest to oldest' },
+  { value: 'oldest', label: 'Oldest to newest' },
+  { value: 'amountDesc', label: 'Highest amount first' },
+  { value: 'amountAsc', label: 'Lowest amount first' },
+];
+
+/**
+ * A journal entry's amount as the table shows it: the sum of its debit lines when it
+ * has lines (a balanced entry's debits equal its credits), else its own `amount`.
+ * One function so the column and the sort can never disagree about what "highest" is.
+ */
+function journalAmount(row: JournalRow): number {
+  let lines: JournalLine[] = [];
+  if (row.lines) {
+    try { lines = (typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines) as JournalLine[]; } catch { /* malformed lines: fall back to amount */ }
+  }
+  if (Array.isArray(lines) && lines.length > 0) {
+    return lines.filter((l) => l.type === 'debit').reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+  }
+  return Number(row.amount) || 0;
+}
+
+/** When an entry happened: its entry date, then when it was recorded, to break ties. */
+function journalTime(row: JournalRow): [number, number] {
+  const d = row.entryDate ? new Date(row.entryDate).getTime() : 0;
+  const c = row.createdAt ? new Date(row.createdAt).getTime() : 0;
+  return [Number.isFinite(d) ? d : 0, Number.isFinite(c) ? c : 0];
+}
+
+function sortJournal<T extends JournalRow>(rows: T[], order: JournalSort): T[] {
+  const byTime = (a: T, b: T) => {
+    const [da, ca] = journalTime(a);
+    const [db, cb] = journalTime(b);
+    return da - db || ca - cb;
+  };
+  const sorted = [...rows];
+  switch (order) {
+    case 'newest': return sorted.sort((a, b) => byTime(b, a));
+    case 'oldest': return sorted.sort(byTime);
+    // Equal amounts fall back to newest first, so the order is stable and predictable.
+    case 'amountDesc': return sorted.sort((a, b) => journalAmount(b) - journalAmount(a) || byTime(b, a));
+    case 'amountAsc': return sorted.sort((a, b) => journalAmount(a) - journalAmount(b) || byTime(b, a));
+  }
+}
+
 function Finance() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!token());
   const [tab, setTab] = useState<Tab>('ledger-view');
@@ -77,6 +127,8 @@ function Finance() {
   // filter bar and a table, and a third always-open panel above them pushes the
   // thing the tab is named after below the fold.
   const [showReport, setShowReport] = useState<'journal' | 'ledger' | null>(null);
+  /** The General Journal's order. Newest first unless somebody picks otherwise. */
+  const [journalSort, setJournalSort] = useState<JournalSort>('newest');
   const [ledgerViewData, setLedgerViewData] = useState<any>(null);
   const [committees, setCommittees] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -422,6 +474,17 @@ function Finance() {
                   <label className="text-xs text-textSecondary mb-1 block">End Date</label>
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white" />
                 </div>
+                <div className="min-w-0 flex-1 w-full md:w-auto">
+                  <label htmlFor="journal-sort" className="text-xs text-textSecondary mb-1 block">Sort by</label>
+                  <select
+                    id="journal-sort"
+                    value={journalSort}
+                    onChange={e => setJournalSort(e.target.value as JournalSort)}
+                    className="w-full bg-surfaceAlt border border-white/10 rounded-xl px-4 py-2 text-sm text-white"
+                  >
+                    {JOURNAL_SORTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
                 <button 
                   onClick={() => window.open(`${API}/finance/export/${tab}?startDate=${startDate}&endDate=${endDate}`, '_blank')}
                   className="w-full md:w-auto px-6 py-2 bg-success/20 text-success hover:bg-success/30 rounded-xl font-bold text-sm transition-all border border-success/30"
@@ -501,7 +564,12 @@ function Finance() {
             </div>
           )}
 
+          {/* Keyed by tab: one grid instance used to serve every tab, so its page,
+              search and header sort carried over — page 3 of the journal opened
+              Accounts on page 3. Each tab now starts on its own first page. */}
           <GAGrid
+            key={tab}
+            orderKey={tab === 'journals' ? journalSort : undefined}
             title={TABS.find(t => t.id === tab)?.label || 'Finance'}
             entityName={tab.slice(0, -1)}
             columns={
@@ -513,18 +581,7 @@ function Finance() {
                 { key: 'id', label: '#', render: (v: any) => <span className="font-mono text-[10px] text-textSecondary bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">{v}</span> },
                 { key: 'entryDate', label: 'Date', type: 'date' as const },
                 { key: 'description', label: 'Description' },
-                { key: 'amount', label: 'Amount', render: (v: any, row: any) => {
-                    let lines = [];
-                    if (row.lines) {
-                      try { lines = typeof row.lines === 'string' ? JSON.parse(row.lines) : row.lines; } catch { /* non-fatal: leave prior state */ }
-                    }
-                    if (lines.length > 0) {
-                      const total = lines.filter((l: any) => l.type === 'debit').reduce((acc: number, l: any) => acc + (l.amount || 0), 0);
-                      return <span className="font-mono">{money(total)}</span>;
-                    }
-                    return <span className="font-mono">{money(v || 0)}</span>;
-                  }
-                },
+                { key: 'amount', label: 'Amount', render: (_v: any, row: any) => <span className="font-mono">{money(journalAmount(row))}</span> },
                 { key: 'debitAccountId', label: 'Debit Account', render: (v: any, row: any) => {
                     let lines = [];
                     if (row.lines) {
@@ -575,7 +632,7 @@ function Finance() {
                 { key: 'status', label: 'Status', type: 'status' as const },
               ]
             }
-            data={data}
+            data={tab === 'journals' ? sortJournal(data, journalSort) : data}
             loading={loading}
             onAdd={() => { setEditingRecord(null); setShowEntityForm(true); }}
             onEdit={(r) => { setEditingRecord(r); setShowEntityForm(true); }}

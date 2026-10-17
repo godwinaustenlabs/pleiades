@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Filter, ArrowUpDown, Plus, Edit2, Trash2, Download, FileText, ChevronLeft, ChevronRight, Maximize2, Upload } from 'lucide-react';
 import AssetPreviewModal from './AssetPreviewModal';
 import UserAvatar from './UserAvatar';
@@ -30,6 +30,12 @@ interface GAGridProps {
   canDelete?: boolean;
   // Custom Actions
   rowActions?: { label: string; icon: React.FC<any>; onClick: (record: any) => void; color?: string }[];
+  /**
+   * The order `data` arrives in, when the caller sorts it. Changing it returns to
+   * page 1 and drops any column-header sort, so the order just chosen is the one
+   * on screen — page 3 of the old order is not page 3 of the new one.
+   */
+  orderKey?: string;
 }
 
 export default function GAGrid({
@@ -45,7 +51,8 @@ export default function GAGrid({
   canAdd = true,
   canEdit = true,
   canDelete = true,
-  rowActions = []
+  rowActions = [],
+  orderKey,
 }: GAGridProps) {
   const { money } = useCurrencies();
   const [search, setSearch] = useState('');
@@ -54,6 +61,12 @@ export default function GAGrid({
   const [page, setPage] = useState(1);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const pageSize = 10;
+
+  useEffect(() => {
+    if (orderKey === undefined) return;
+    setPage(1);
+    setSortKey('');
+  }, [orderKey]);
 
   const filteredData = (data || []).filter(item => 
     item && Object.values(item).some(val => 
@@ -425,6 +438,7 @@ export default function GAGrid({
               <button 
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
+                aria-label="Previous page"
                 className="p-2 rounded-xl border border-white/10 hover:bg-white/10 disabled:opacity-30 transition-all"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -432,6 +446,7 @@ export default function GAGrid({
               <button 
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
+                aria-label="Next page"
                 className="p-2 rounded-xl border border-white/10 hover:bg-white/10 disabled:opacity-30 transition-all"
               >
                 <ChevronRight className="w-4 h-4" />
