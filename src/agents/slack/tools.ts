@@ -14,6 +14,24 @@ export type ApiCaller = (method: string, path: string, body?: unknown) => Promis
  * the rule SECURITY.md sets out for agent tools, and it is why the agent can
  * never read more than the person it is acting for.
  */
+/**
+ * A repeating task's rule, exactly as `POST /api/tasks` takes it (see
+ * src/tasks/recurrence.ts). The model fills in a schedule; the server decides what
+ * it means — the agent never does date arithmetic, it reads back `summary`.
+ */
+const recurrenceSchema = z.object({
+  frequency: z.enum(['hourly', 'daily', 'weekly', 'monthly']),
+  interval: z.number().int().min(1).optional().describe('Every N hours/days/weeks/months. Default 1.'),
+  weekdays: z.array(z.number().int().min(0).max(6)).optional()
+    .describe('Weekly only. 0=Sunday … 6=Saturday, e.g. [1,3,5] for Mon/Wed/Fri. Default: the start date\'s weekday.'),
+  monthDay: z.number().int().min(1).max(31).optional()
+    .describe('Monthly only. Day of the month; 29–31 fall on the last day of shorter months. Default: the start date\'s day.'),
+  timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().describe('24-hour HH:MM. Default 09:00.'),
+  timezone: z.string().optional().describe('IANA zone, e.g. Asia/Karachi. Default Asia/Karachi.'),
+  startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD. Usually today.'),
+  endsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD, inclusive. Omit to repeat indefinitely.'),
+});
+
 export const buildTools = (callApi: ApiCaller) => ({
   get_employee_info: tool({
     description: 'Fetches employee records. Use slack_id to find a specific person or filter by department.',
@@ -37,8 +55,9 @@ export const buildTools = (callApi: ApiCaller) => ({
   }),
 
   get_tasks: tool({
-    description: 'Fetches tasks with optional filters.',
+    description: 'Fetches tasks with optional filters. scope "workspace" returns the caller\'s own tasks: assigned to them, or on a post or committee they hold.',
     inputSchema: z.object({
+          scope: z.enum(['workspace']).optional().describe('Use "workspace" for "my tasks"; other filters are then ignored.'),
           dept: z.string().optional().describe('Department name'),
           userId: z.string().optional().describe('Assignee Employee ID (emp_...)'),
           status: z.enum(['todo', 'in_progress', 'completed', 'blocked']).optional(),
@@ -52,15 +71,21 @@ export const buildTools = (callApi: ApiCaller) => ({
   }),
 
   create_task: tool({
-    description: 'Creates a new task.',
+    description:
+      'Creates a task. Pass `recurrence` to make it REPEAT (every Monday, the 1st of each month, daily at 10:00…): ' +
+      'each occurrence then appears as its own task shortly before it is due. Read the returned `summary` back to the user.',
     inputSchema: z.object({
           title: z.string(),
           department: z.string(),
           description: z.string().optional(),
-          status: z.enum(['todo', 'in_progress', 'completed', 'blocked']).optional(),
+          priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+          status: z.enum(['todo', 'in_progress', 'completed', 'blocked']).optional().describe('Ignored for a repeating task: occurrences start as todo.'),
           assigneeIds: z.array(z.string()).optional().describe('Array of Assignee Employee IDs'),
           committeeId: z.string().optional(),
-          appointmentId: z.string().optional()
+          appointmentId: z.string().optional(),
+          startDate: z.string().optional().describe('YYYY-MM-DD. One-off tasks only.'),
+          dueDate: z.string().optional().describe('YYYY-MM-DD. One-off tasks only.'),
+          recurrence: recurrenceSchema.optional(),
         }),
     execute: async (args: any) => {
         return await callApi('POST', '/api/tasks', args);
@@ -83,9 +108,39 @@ export const buildTools = (callApi: ApiCaller) => ({
   }),
 
   delete_task: tool({
-    description: 'Deletes a task by ID.',
+    description: 'Deletes one task by ID. For a repeating task this removes only that occurrence; use stop_repeating_task to end the series.',
     inputSchema: z.object({ id: z.string() }),
     execute: async (args: any) => await callApi('DELETE', `/api/tasks/${args.id}`),
+  }),
+
+  get_repeating_task: tool({
+    description: 'Reads a repeating series: its schedule in words (`summary`), people and template. A task with a recurrenceId belongs to one.',
+    inputSchema: z.object({ recurrenceId: z.string().describe('Series ID (trec_...)') }),
+    execute: async (args: any) => await callApi('GET', `/api/tasks/recurrences/${args.recurrenceId}`),
+  }),
+
+  update_repeating_task: tool({
+    description:
+      'Changes a repeating series. Affects upcoming occurrences nobody has started; past and started ones are left as they are. ' +
+      'Pass a full `recurrence` to change the schedule.',
+    inputSchema: z.object({
+          recurrenceId: z.string().describe('Series ID (trec_...)'),
+          title: z.string().optional(),
+          description: z.string().optional(),
+          priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+          assigneeIds: z.array(z.string()).optional(),
+          recurrence: recurrenceSchema.optional(),
+        }),
+    execute: async (args: any) => {
+        const { recurrenceId, ...changes } = args;
+        return await callApi('PATCH', `/api/tasks/recurrences/${recurrenceId}`, changes);
+      },
+  }),
+
+  stop_repeating_task: tool({
+    description: 'Stops a repeating series: no more occurrences. Upcoming ones nobody has started are removed. Confirm with the user first.',
+    inputSchema: z.object({ recurrenceId: z.string().describe('Series ID (trec_...)') }),
+    execute: async (args: any) => await callApi('POST', `/api/tasks/recurrences/${args.recurrenceId}/stop`),
   }),
 
   get_notifications: tool({
