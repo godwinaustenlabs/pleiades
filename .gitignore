@@ -204,3 +204,7 @@ migrations_backup/
 # Production D1 dumps taken during the pleiades cutover. Full data,
 # including password hashes — never commit.
 cutover/
+
+# Full production D1 exports (npm run db:backup). Real data, including password
+# hashes — never commit. The Time Travel bookmark beside each is the undo point.
+backups/
