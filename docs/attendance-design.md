@@ -2,6 +2,10 @@
 
 Status: **live** · 4 Oct 2026 — migrations 0052 and 0053 applied to `pleiades-db`, worker version fe8afc6d
 
+17 Oct 2026: the `attendance` table was dropped (migration 0055) after the copy below was
+verified exactly against it — 15 entries and 223,386 seconds on both sides. Its rows remain
+in the pre-migration export taken that day. See docs/adr/0006.
+
 Two changes, shipped separately:
 
 1. **Replace attendance** (one check-in/check-out row per day) with a play/pause

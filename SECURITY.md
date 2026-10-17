@@ -1,5 +1,74 @@
 # Security
 
+## Audit — October 2026
+
+A stabilisation pass over the whole system: credentials, sessions, browser
+boundaries, rate limiting, dependencies, leaked secrets and dead schema. Every item
+marked **Fixed** is pinned by `test/hardening.test.ts` unless another test is named;
+those tests fail with the fixes reverted. The decisions behind them are
+`docs/adr/0008` and `docs/adr/0009`.
+
+A full export of `pleiades-db` and a Time Travel bookmark were taken before any
+change (`npm run db:backup`, files in the gitignored `backups/`).
+
+### Action required
+
+1. **The GitHub repository `godwinaustenlabs/pleiades` is PUBLIC.** Anyone can read the
+   source and the entire history — including the two database dumps committed in
+   `15114b1` (nine real staff email addresses and the old password hashes, rotated in
+   August) and an early `wrangler.jsonc` carrying a Slack bot token. **Make it private
+   (GitHub → Settings → General → Danger Zone → Change visibility).** Nothing in the
+   current tree is a live secret, but an internal company system has no reason to be
+   public, and a private repo is what makes a history rewrite worth doing.
+2. **Then decide on rewriting history** (still open from August). Once private, purging
+   the dumps with `git filter-repo` and force-pushing is the remaining step; it
+   rewrites every commit hash, so do it deliberately and re-clone everywhere after.
+3. **Calendar feed URLs issued before this pass** were generated with `Math.random()`
+   (see #6 below). New and reset links are cryptographic. Existing subscribers should
+   press "Reset" once on the workspace calendar's Sync dialog, which invalidates the
+   old URL.
+
+The Slack token found in history was checked against Slack directly
+(`auth.test` → `invalid_auth`): it was revoked long ago and differs from the token in
+use. No other credential pattern appears anywhere in the 105 commits of history;
+the RSA "private keys" a scan finds are fixtures inside a `node_modules` that was
+committed in February.
+
+### Fixed
+
+| # | Severity | Issue |
+|---|---|---|
+| 1 | High | **Login could be sprayed.** Lockout was per account (5 tries), so one common password could be tried against every account in turn without limit. Now rate-limited per IP (20 / 15 min), on top of lockout. Same for the client portal, and for password-reset request (10/h) and completion (20/h) — each reset request can send mail against a 90/day budget. |
+| 2 | Medium | **Login revealed which accounts exist.** An unknown address answered instantly while a real one ran PBKDF2, and "Account is deactivated" was returned before the password was checked. An unknown account now verifies against a dummy hash of the same cost and gets the identical answer; deactivation is only revealed with the right password. Staff and portal logins both. |
+| 3 | High | **A stolen session token became the account.** `PATCH /auth/profile` changed the password and the sign-in email on the token alone. Both now require the current password. |
+| 4 | Medium | **Sign-in identifiers could collide.** Login matches `email OR username`, but uniqueness was per column, so a username equal to somebody else's email made their sign-in ambiguous. Both are now checked against both columns (409), a username cannot contain `@`, and a duplicate no longer surfaces as a 500. |
+| 5 | Medium | **A reset link could be spent twice.** Read-then-write let two racing requests both pass. The token is now spent first with a conditional update; exactly one wins. |
+| 6 | Medium | **Calendar feed tokens came from `Math.random()`**, a non-cryptographic generator, though the token alone reads a person's tasks and appointments. Now 256-bit `crypto.getRandomValues`. |
+| 7 | Medium | **Errors leaked the database.** `serverError` returned `err.message`, which for D1 names tables and columns — and from drizzle-orm 0.45 is `Failed query: <SQL> params: <values>`. The client now gets a generic message and a reference; the log keeps the error under the same reference. Only `PublicError` reaches a client verbatim. |
+| 8 | Medium | **Tokens were accepted from the query string on every route**, and from an `auth_token` cookie nothing ever set. URL tokens leak through history, logs and Referer, and a cookie is what makes CSRF possible. `?token=` now works only on GETs to the two link-opened paths (downloads, mbox export); the cookie path is gone. |
+| 9 | Medium | **CORS was `*`.** Any website could drive the API from a visitor's browser. Now only the app's own origin. |
+| 10 | Medium | **No security headers anywhere.** API responses now carry nosniff, `Referrer-Policy: no-referrer`, HSTS, `X-Frame-Options` and a sandboxing CSP; the SPA gets the same plus a CSP with `script-src 'self'` from `apps/web/public/_headers` (the static files never pass through the Worker). Verified in a browser across all 61 tabs of 9 pages with zero violations. |
+| 11 | Medium | **Notes could be moved into another person's workspace.** `PATCH /dashboard/notes/:id` spread the body into the update, so `userId` (and the id) were writable. Now an allowlist. |
+| 12 | Medium | **A task could be moved into a department the editor cannot touch**, and its creator rewritten. Moving now needs edit rights in the target department too; `creatorId` is not editable. |
+| 13 | Low | **Unbounded transcription.** `POST /dashboard/notes/transcribe` spends a Workers AI allowance both agents share; now 300 calls per user per hour. |
+| 14 | High→none | **Dependencies.** 15 known vulnerabilities (1 critical, 9 high) in production dependencies, 4 high in tooling. `drizzle-orm` 0.30 → 0.45 (SQL identifier escaping), `agents` 0.21 → 0.28 (MCP SDK), `undici` and `sharp` pinned by override, the rest by patch updates. `npm audit` now reports **0**. The golden response manifest proved the upgrades changed no API response. |
+
+### Corrections to this file
+
+- PBKDF2 runs at **100,000** iterations, not the 210,000 stated in the August audit
+  below: 100,000 is the ceiling Workers' `deriveBits` accepts (`src/utils/password.ts`).
+
+### Removed
+
+- Tables `attendance` (copy into time logging verified exactly), `compliance_events`
+  and `notifications_log` (never used, zero rows) — migration 0055.
+- The five `/api/tech/tasks` routes and the `tasks` declaration (the table never existed
+  in production; every call was a 500), and `/api/admin/users/my-team` (shadowed by
+  `/users/:id` since it was written, never reachable, no caller).
+- drizzle-kit, its stale snapshots and config (docs/adr/0003); Vite template leftovers.
+
+---
+
 ## Audit — August 2026
 
 A pre-implementation audit ahead of building the accounting agent. Everything
@@ -12,7 +81,7 @@ below marked **Fixed** is closed and pinned by tests in `test/security.test.ts`
 |---|---|---|
 | 1 | Critical | **Slack identity was a trusted header.** `authMiddleware` accepted `x-slack-id: <slackUserId>` and granted that employee's full RBAC identity. Combined with #2, any unauthenticated caller could `curl -H "x-slack-id: <ceo>"` and read or write anything that user could. Replaced with `x-agent-actor` + `x-agent-secret`, gated by the `AGENT_INTERNAL_SECRET` Worker secret, which never leaves the Worker. |
 | 2 | Critical | **No Slack request verification.** `POST /api/agents/slack/event` verified nothing; `SLACK_SIGNING_SECRET` was set in production but never read by the code. Now verifies Slack's HMAC over the raw body with a 5-minute replay window, before the `url_verification` handshake is answered. |
-| 3 | Critical | **Passwords stored as unsalted SHA-256.** One fast hash, no per-user salt: identical passwords produced identical digests and the whole space is precomputable. Replaced with PBKDF2-HMAC-SHA256 (210,000 iterations, per-user salt). Legacy digests still verify and are transparently upgraded on next login, so no one is locked out. Applies to staff logins and client-portal logins. |
+| 3 | Critical | **Passwords stored as unsalted SHA-256.** One fast hash, no per-user salt: identical passwords produced identical digests and the whole space is precomputable. Replaced with PBKDF2-HMAC-SHA256 (100,000 iterations — the Workers ceiling — per-user salt). Legacy digests still verify and are transparently upgraded on next login, so no one is locked out. Applies to staff logins and client-portal logins. |
 | 4 | High | **Finance and HR were gated only at the app level.** A user holding just `finance/tasks` could read every ledger, account and invoice; any `hr` grant holder could read all salaries. 39 finance and 47 HR routes are now gated per feature. Salary, payroll, loans and salary structures moved to the `payroll` feature rather than the broad `employees` grant. |
 | 5 | High | **Notification forgery.** `POST /api/notifications/send` had no authorization: any authenticated user could deliver a notification with an arbitrary `link` to any other user — a ready-made phishing channel. It had no callers. Now requires `admin/users` edit and validates the target exists. |
 | 6 | High | **Employee PII over-exposure.** `GET /api/core/employees` returned full CNIC, bank details, tax information, salary and home address to anyone holding a `core` grant — which is nearly every role. Those fields are now stripped unless the caller holds `hr/employees` view (or is reading their own record). |
@@ -42,7 +111,7 @@ the hash column (so no issued key could ever authenticate), and
 
 3. ~~**Set `AGENT_INTERNAL_SECRET` in every environment.**~~ **Done.** Present
    in production and in local `.dev.vars`. The Slack agent fails closed without
-   it. See CLAUDE.md for the full five-secret inventory — production secrets and
+   it. See CLAUDE.md for the full seven-secret inventory — production secrets and
    `.dev.vars` are kept in step by name.
 
 ### Notes for future work

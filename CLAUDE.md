@@ -20,13 +20,15 @@ npm run dev        # root: `wrangler dev` + `turbo run dev` (Vite) concurrently
 npm run build      # turbo build across workspaces
 npm run lint       # turbo lint (ESLint, web workspace only)
 npm run format     # prettier over **/*.{ts,tsx,md} — see the tabs caveat below
+npm run deploy     # builds the SPA, then wrangler deploy (manual; main also auto-deploys)
+npm run db:backup  # Time Travel bookmark + full export into backups/ — before any remote migration
 
 cd apps/web && npm run dev     # Vite only (port 5173, proxies /api -> 127.0.0.1:8788)
 cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (35 files, 805 tests)
+npm test          # vitest — see test/ (36 files, 822 tests)
 npm run test:watch
 ```
 
@@ -76,16 +78,14 @@ users_logins` fails a foreign key the second time round.
   matches the script's own hostname, and that every D1/R2 resource name starts with the
   script name — so the config verifies its own naming.
 
-Two facts the suite records rather than hides, both pre-existing:
+The suite used to record two pre-existing defects; both are gone (October 2026). The
+`/api/tech/tasks` routes read a `tasks` table production never had, and were deleted
+with the declaration — department tasks are `universal_tasks`. `GET
+/api/admin/users/my-team` was shadowed by `/users/:id` from the day it was written and
+had no caller; it was deleted. `schema-drift.test.ts` now allows no gap at all.
 
-- `GET /api/tech/tasks` (and `/:id`) return `D1_ERROR: no such table: tasks`. Migration
-  0000 creates the table and `pleiades-db` records that migration as applied, but the
-  table is not there — it was dropped by hand, and the cutover copied that state across
-  faithfully. `schema-drift.test.ts` names `tasks` as the one known gap so it cannot
-  silently become two.
-- `GET /api/admin/users/my-team` returns 404 for everyone. `/users/:id` is registered at
-  `admin.ts:137` and `my-team` at `admin.ts:259`, so the parameterised route shadows it
-  and the handler is unreachable. Registering the static path first fixes it.
+- `test/hardening.test.ts` — the October 2026 security pass (SECURITY.md), one block per
+  finding, written as the attack it stops. It fails with those fixes reverted.
 
 `npm run lint` passes (0 errors). It still reports ~290 **warnings**, which are tracked
 debt, not noise — see the commented rules in `apps/web/eslint.config.js` for why each is
@@ -165,7 +165,13 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0054_task_recurrences.sql`: repeating tasks (see Repeating tasks
+The newest is `0055_rate_limits_and_dead_tables.sql`: the `rate_limits` table (see
+Security boundaries) and three drops — `attendance`, once its copy into time logging
+was verified exactly (15 entries, 223,386 s; the 6 rows not carried were never checked
+out), and `compliance_events` / `notifications_log`, unused with zero rows. It was
+rehearsed on a full copy of production with foreign keys on before it ran remotely.
+
+Before that, `0054_task_recurrences.sql`: repeating tasks (see Repeating tasks
 below). Purely additive — the `task_recurrences` table, `universal_tasks.recurrence_id`
 and `occurrence_at`, and the partial unique index on the pair that makes creating an
 occurrence idempotent. No table is rebuilt, so no foreign-key deferral was needed.
@@ -173,9 +179,8 @@ occurrence idempotent. No table is rebuilt, so no foreign-key deferral was neede
 Before that, `0053_time_tracking.sql`: `work_days` + `time_entries` replace
 `attendance` (see Time logging below), `employees.timezone` is added, the old rows
 are copied (as `timezone = 'UTC'`, which is what they were), and `hr/attendance` is
-granted to every holder of `hr/employees` in both grant tables. `attendance` itself
-is left in place for one release so the copy can be checked against it on
-`pleiades-db`; drop it in a later migration once row counts and hour totals agree.
+granted to every holder of `hr/employees` in both grant tables. `attendance` was
+kept one release so the copy could be checked, then dropped in 0055.
 
 Before that, `0052_drop_scores_and_estimates.sql` drops `employees.efficiency_score`,
 `universal_tasks.estimated_hours` and `acq_tasks.estimated_effort`. Evaluation is
@@ -238,14 +243,29 @@ and did not include PKR) into a `currencies` table. It is gated on
 an attribute of an account — so it needed no `APP_FEATURES` entry and no grant
 migration.
 
-Migrations are **hand-written**; `drizzle-kit generate` is not part of the current
-workflow. Its snapshot baseline stopped at `0019` and still describes the
-pre-roles-only schema (`role_permissions`, `role_hierarchy`, `user_app_*`), so a
-`generate` today prompts to rename tables that were already replaced and would
-emit a file numbered `0020`, colliding with the hand-written `0020_role_based_access.sql`.
-Reconciling that baseline is a deliberate decision, not a routine step. What
-authoritatively records migration state is `pleiades-db`'s own `d1_migrations`
-table, not `meta/_journal.json`.
+Migrations are **hand-written** SQL (docs/adr/0003). drizzle-kit is not installed: its
+snapshot baseline had stopped at `0019` and described a schema that no longer
+existed, so the snapshots, `drizzle.config.ts` and the dependency were removed in
+October 2026. What records migration state is `pleiades-db`'s own `d1_migrations`
+table. Before a remote migration: `npm run db:backup`, then rehearse the file on a
+copy of production with `PRAGMA foreign_keys = ON` inside a transaction (see Syncing
+the local database), then regenerate `test/schema.sql` from the rehearsed copy.
+
+#### Backups and syncing the local database
+
+`npm run db:backup` (`scripts/backup-db.sh`) records a Time Travel bookmark and writes
+a full export to `backups/` — gitignored, `chmod 600`, real data including password
+hashes. D1 keeps 30 days of history, so the bookmark alone undoes anything since:
+`npx wrangler d1 time-travel restore pleiades-db --bookmark=<bookmark>`.
+
+The local database (`.wrangler/state/`) is disposable and should mirror production.
+To rebuild it from an export: delete `.wrangler/state/v3/d1`, run any
+`wrangler d1 execute pleiades-db --local --command "SELECT 1"` to create a fresh file,
+then load the export into that sqlite file with foreign keys off, **skipping
+`sqlite_sequence` lines** (replaying them duplicates the sequence rows). Afterwards
+`PRAGMA foreign_key_check` must be empty and `wrangler d1 migrations list --local`
+must report nothing to apply. A stale local copy is how a feature test once failed on
+tables production had had for months.
 
 ## Architecture
 
@@ -287,7 +307,7 @@ client router can resolve it. Without it every deep link and refresh away from
 
 1. `x-api-key` header → agent identity from the `api_keys` table (`type: 'agent'`, never superadmin).
 2. `x-agent-actor` + `x-agent-secret` headers → the `users_logins` row named by the actor id, but only when the secret matches the `AGENT_INTERNAL_SECRET` Worker binding. Present-but-invalid always denies and never falls through to another source. This replaced `x-slack-id`, which named a Slack user and was trusted outright — see SECURITY.md #1. Slack identity is resolved server-side only *after* the request signature is verified (`src/agents/slack/lib/slack.ts`), and the resolved user id is what gets passed here.
-3. `Authorization: Bearer <jwt>` → falls back to the `auth_token` cookie, then a `?token=` query param (the query-param path exists so `<img>`/download URLs can authenticate).
+3. `Authorization: Bearer <jwt>`, or `?token=` — the latter **only** on a GET to `/api/assets/download/*` or `/api/email/export`, the two paths opened as plain links that cannot set a header. There is no cookie path (docs/adr/0009). A new link-opened path must be added to that list deliberately.
 
 **Session lifetime is a week of inactivity, not a week from login.** A token
 lasts `SESSION_TTL_SECONDS` (8 days) and any request carrying one with under
@@ -470,7 +490,8 @@ refuses to write a superadmin's credentials and refuses an address that already
 signs another account in — `hr/employees` edit is a far weaker permission than
 taking over an account should need.
 
-Removed — do not reintroduce: `roles` / `role_app_permissions` (the roles
+Removed — do not reintroduce: `attendance`, `compliance_events`, `notifications_log`
+(dropped in 0055), the `tasks` declaration and `/api/tech/tasks`, `roles` / `role_app_permissions` (the roles
 experiment, dropped in 0025), `user_app_access` (deprecated, empty),
 `role_permissions` / `role_hierarchy` (declared in the schema but never
 deployed, so every query against them failed in production), and
@@ -495,7 +516,7 @@ Every dependency has one of four **fates**, and choosing among them is the desig
 
 | fate | means | example |
 |---|---|---|
-| `delete` | the row describes nothing but the relationship | attendance, an appointment's grants |
+| `delete` | the row describes nothing but the relationship | logged time, an appointment's grants |
 | `release` | the row survives, pointed at nobody | a laptop goes back in the pool; a review keeps its content and loses the reviewer |
 | `detach` | survives, switched off, and needs a new reader | a mailbox |
 | `keep` | untouched, and listed anyway | `audit_logs`, and the finance transaction a deleted payslip named |
@@ -553,6 +574,8 @@ router.post('/things', async (c) => {
 ```
 
 - Responses always go through `src/utils/response.ts` (`ok`/`created`/`notFound`/`badRequest`/`forbidden`/`serverError`), which produce `{ success, data }` or `{ success, error }`. The frontend unwraps `.data`.
+- `serverError` never echoes an error: the client gets `Something went wrong (ref …)`, the log the full error under the same ref. To show a message on purpose, `throw new PublicError(message, status)`.
+- **Never spread a body into a write that crosses an ownership boundary.** Within a module, `{ ...body }` into an insert by someone holding that module's edit grant is the convention. Where the row belongs to a person (notes, a profile) or carries a boundary (a task's department, who created it), use an allowlist — both were exploitable until October 2026.
 - `logAudit` writes to `audit_logs` and deliberately swallows its own errors; call it after every mutation.
 - On PATCH, strip `id`, `createdAt`, `updatedAt` from the body before `set(...)`.
 - D1 has a bound-parameter limit — use `chunk` from `src/utils/batch.ts` for bulk writes.
@@ -641,6 +664,29 @@ on chosen weekdays, or on a chosen day of the month. A series is one
 comparison against a day-by-day enumerator; `test/recurring-tasks.test.ts` the API,
 the cron, idempotency and the deletion cascades.
 
+### Security boundaries
+
+The October 2026 audit (SECURITY.md) left these rules; `test/hardening.test.ts` pins them.
+
+- **Rate limits** are fixed windows in D1 (`src/utils/rate-limit.ts`, docs/adr/0008): one
+  atomic upsert per guarded request, limits declared together in `LIMITS`, the cron
+  sweeps expired rows. Guard a new endpoint with
+  `const r = await limited(c, 'name', key); if (r) return r;` — per IP (`clientIp(c)`,
+  from `cf-connecting-ip`, never a client header) for anonymous endpoints, per user id
+  otherwise.
+- **Login** answers an unknown account exactly as it answers a wrong password
+  (`UNKNOWN_ACCOUNT_HASH` costs the same PBKDF2), and reveals deactivation only to the
+  right password. Changing a password or the sign-in email needs the current password.
+  Email and username are unique across *both* columns.
+- **CORS** answers `WORKER_ORIGIN` only; nothing needs cross-origin browser access (the
+  website's lead intake is server to server).
+- **Headers**: every API response gets nosniff, `Referrer-Policy: no-referrer`, HSTS,
+  `X-Frame-Options` and a sandboxing CSP — except the two link-opened file paths, which
+  may be framed same-origin for previews. The SPA's own headers are in `_headers`.
+- **Dependencies**: `npm audit` is 0. `undici` and `sharp` are pinned by `overrides` in
+  the root `package.json`; drop an override once the dependency that pulls it in ships
+  a fixed version.
+
 ### Generated documents (`src/statements`)
 
 Everything the app renders to PDF. `layout.ts` is a small typographic kit over
@@ -695,7 +741,11 @@ assertion really checks.
 One directory per agent, no loose files. Both are Agents-SDK Durable Objects
 exported from `src/index.ts` and bound in `wrangler.jsonc`.
 
-- `slack/` — the Slack assistant, one instance per Slack conversation.
+- `slack/` — the Slack assistant, one instance per Slack conversation. Its tools cover
+  tasks (including `scope: workspace` for "my tasks"), repeating tasks
+  (`create_task` with `recurrence`, `get_/update_/stop_repeating_task`), notes,
+  notifications and records. The prompt carries today's date in Asia/Karachi; the
+  model never computes repeat dates — it reads back the server's `summary`.
 - `accountant/` — the accountant. One instance per conversation;
   `compliance.ts` turns operator configuration into payroll components,
   `tools.ts` is the HR + accounting surface, `approvals.ts` is the
@@ -1334,7 +1384,9 @@ misconfigured".
   `apps/web/src/components/*` is 2-space while `apps/web/src/lib/*` is tabs.
 - **Do not run `npm run format` across the repo.** `.prettierrc`/`.editorconfig` specify tabs, but the existing TypeScript sources are 2-space indented; a blanket format reflows the whole codebase. Match the indentation of the file you are editing.
 - The Vite dev proxy targets `127.0.0.1:8788` while `wrangler dev` defaults to `8787`. If `/api` calls 502 in dev, start the worker on 8788 (`npx wrangler dev --port 8788`).
-- `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it.
+- `wrangler dev`/`deploy` serves assets from `apps/web/dist`, so the SPA must be built before the Worker can serve it. `npm run deploy` builds first; a bare `wrangler deploy` does not.
+- **Static files never run the Worker.** Headers for the SPA (CSP, framing, referrer) live in `apps/web/public/_headers`; the Worker's header middleware covers `/api/*` only. A new external origin (a font, an image host) needs a CSP entry there, or the browser blocks it.
+- **Tests share one client IP.** Rate-limited endpoints count every request in a file against the same bucket; `seed.sql` clears `rate_limits`, and a file that calls them many times without reseeding clears it in a `beforeEach` (see `email-adversarial.test.ts`).
 - **The Drizzle schema has drifted from production before.** `role_hierarchy` and `role_permissions` were defined in `schema/auth.ts` for a long time but never existed in the D1 database, so every route touching them returned a 500 that nobody noticed. If you add a table, confirm the migration actually ran against `pleiades-db` (`SELECT name FROM sqlite_master`). `test/schema-drift.test.ts` now catches this class of drift automatically.
 - `test/schema.sql` is the **production** DDL, pulled from `sqlite_master`, precisely so the test database cannot drift from the real one. Regenerate it rather than hand-editing.
 
