@@ -196,3 +196,13 @@ describe('bugs found by sweeping every page and tab in a browser', () => {
     expect((await call(`/api/ops/reports/${id}`, { method: 'DELETE', token })).status).toBe(404);
   });
 });
+
+describe('outreach tracker', () => {
+  it('records calls made beside DMs and emails, and reports them', async () => {
+    const token = await forgedToken({ id: 'u_ceo', isSuperadmin: true });
+    const made = await (await call('/api/acquisition/outreach', { method: 'POST', token, body: JSON.stringify({ date: '2026-10-17', dmsSent: 3, emailsSent: 2, callsMade: 4 }) })).json() as any;
+    expect((await call(`/api/acquisition/outreach/${made.data.id}`, { method: 'PATCH', token, body: JSON.stringify({ callsMade: 6 }) })).status).toBe(200);
+    const day = await (await call('/api/acquisition/outreach?date=2026-10-17', { token })).json() as any;
+    expect(day.data[0]).toMatchObject({ dmsSent: 3, emailsSent: 2, callsMade: 6 });
+  });
+});

@@ -625,7 +625,7 @@ CREATE TABLE `outreach_logs` (
 	`meetings_booked` integer DEFAULT 0,
 	`notes` text,
 	`created_at` integer NOT NULL
-);
+, calls_made INTEGER DEFAULT 0);
 CREATE TABLE `deal_pipelines` (
 	`pipeline_id` text PRIMARY KEY NOT NULL,
 	`pipeline_name` text NOT NULL,

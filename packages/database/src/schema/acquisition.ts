@@ -92,6 +92,7 @@ export const outreachLogs = sqliteTable('outreach_logs', {
   date: text('date').notNull(),
   dmsSent: integer('dms_sent').default(0),
   emailsSent: integer('emails_sent').default(0),
+  callsMade: integer('calls_made').default(0),
   repliesReceived: integer('replies_received').default(0),
   forwards: integer('forwards').default(0),
   meetingsBooked: integer('meetings_booked').default(0),

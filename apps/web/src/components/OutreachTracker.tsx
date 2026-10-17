@@ -3,7 +3,7 @@ import { format, addDays, subDays, startOfWeek, addWeeks, subWeeks } from 'date-
 import { API, token } from '../lib/auth';
 import { errorMessage } from '../lib/errors';
 import {
-  ChevronLeft, ChevronRight, MessageSquare, Mail, CornerDownRight, Share2,
+  ChevronLeft, ChevronRight, MessageSquare, Mail, Phone, CornerDownRight, Share2,
   Calendar as CalendarIcon, Loader2, Download, BarChart3, CheckCircle2,
   AlertCircle, RefreshCw, TrendingUp, Target
 } from 'lucide-react';
@@ -14,6 +14,7 @@ type OutreachRecord = {
   date: string;
   dmsSent: number;
   emailsSent: number;
+  callsMade: number;
   repliesReceived: number;
   forwards: number;
   meetingsBooked: number;
@@ -39,6 +40,7 @@ export default function OutreachTracker() {
   // Form state — kept in sync with `record`
   const [dmsSent, setDmsSent] = useState(0);
   const [emailsSent, setEmailsSent] = useState(0);
+  const [callsMade, setCallsMade] = useState(0);
   const [repliesReceived, setRepliesReceived] = useState(0);
   const [forwards, setForwards] = useState(0);
   const [meetingsBooked, setMeetingsBooked] = useState(0);
@@ -74,6 +76,7 @@ export default function OutreachTracker() {
         recordRef.current = r;
         setDmsSent(r.dmsSent ?? 0);
         setEmailsSent(r.emailsSent ?? 0);
+        setCallsMade(r.callsMade ?? 0);
         setRepliesReceived(r.repliesReceived ?? 0);
         setForwards(r.forwards ?? 0);
         setMeetingsBooked(r.meetingsBooked ?? 0);
@@ -84,6 +87,7 @@ export default function OutreachTracker() {
         recordRef.current = null;
         setDmsSent(0);
         setEmailsSent(0);
+        setCallsMade(0);
         setRepliesReceived(0);
         setForwards(0);
         setMeetingsBooked(0);
@@ -113,7 +117,7 @@ export default function OutreachTracker() {
     if (!loadedRef.current) return; // guard: don't save before first successful load
     setSaveStatus('saving');
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const payload = { date: dateStr, dmsSent, emailsSent, repliesReceived, forwards, meetingsBooked, notes };
+    const payload = { date: dateStr, dmsSent, emailsSent, callsMade, repliesReceived, forwards, meetingsBooked, notes };
 
     try {
       if (recordRef.current?.id) {
@@ -145,7 +149,7 @@ export default function OutreachTracker() {
       console.error('[OutreachTracker] Save error:', e);
       setSaveStatus('error');
     }
-  }, [selectedDate, dmsSent, emailsSent, repliesReceived, forwards, meetingsBooked, notes]);
+  }, [selectedDate, dmsSent, emailsSent, callsMade, repliesReceived, forwards, meetingsBooked, notes]);
 
   // Debounced auto-save — fires 1.2s after last change
   useEffect(() => {
@@ -158,7 +162,7 @@ export default function OutreachTracker() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [dmsSent, emailsSent, repliesReceived, forwards, meetingsBooked, notes]);
+  }, [dmsSent, emailsSent, callsMade, repliesReceived, forwards, meetingsBooked, notes]);
 
   // ─── Report ───────────────────────────────────────────────────────────────
   const fetchReport = useCallback(async () => {
@@ -182,11 +186,11 @@ export default function OutreachTracker() {
 
   const downloadCSV = () => {
     if (reportData.length === 0) return;
-    const headers = ['Date', 'DMs Sent', 'Emails Sent', 'Replies Received', 'Forwards', 'Meetings Booked', 'Notes'];
+    const headers = ['Date', 'DMs Sent', 'Emails Sent', 'Calls Made', 'Replies Received', 'Forwards', 'Meetings Booked', 'Notes'];
     const csvContent = [
       headers.join(','),
       ...reportData.map(r => [
-        r.date, r.dmsSent, r.emailsSent, r.repliesReceived, r.forwards, r.meetingsBooked,
+        r.date, r.dmsSent, r.emailsSent, r.callsMade ?? 0, r.repliesReceived, r.forwards, r.meetingsBooked,
         `"${(r.notes || '').replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
@@ -217,6 +221,7 @@ export default function OutreachTracker() {
     const colors: Record<string, { bg: string; text: string; border: string; glow: string }> = {
       blue:    { bg: 'rgba(59,130,246,0.1)',   text: '#60a5fa', border: 'rgba(59,130,246,0.2)',   glow: 'rgba(59,130,246,0.15)' },
       purple:  { bg: 'rgba(168,85,247,0.1)',   text: '#c084fc', border: 'rgba(168,85,247,0.2)',   glow: 'rgba(168,85,247,0.15)' },
+      cyan:    { bg: 'rgba(6,182,212,0.1)',    text: '#22d3ee', border: 'rgba(6,182,212,0.2)',    glow: 'rgba(6,182,212,0.15)' },
       emerald: { bg: 'rgba(16,185,129,0.1)',   text: '#34d399', border: 'rgba(16,185,129,0.2)',   glow: 'rgba(16,185,129,0.15)' },
       amber:   { bg: 'rgba(245,158,11,0.1)',   text: '#fbbf24', border: 'rgba(245,158,11,0.2)',   glow: 'rgba(245,158,11,0.15)' },
       rose:    { bg: 'rgba(244,63,94,0.1)',    text: '#fb7185', border: 'rgba(244,63,94,0.2)',    glow: 'rgba(244,63,94,0.15)' },
@@ -382,9 +387,10 @@ export default function OutreachTracker() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-5 md:gap-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
                 {statCard(MessageSquare, 'DMs Sent',      dmsSent,          setDmsSent,          'blue')}
                 {statCard(Mail,          'Emails Sent',    emailsSent,       setEmailsSent,       'purple')}
+                {statCard(Phone,         'Calls Made',     callsMade,        setCallsMade,        'cyan')}
                 {statCard(CornerDownRight,'Replies',       repliesReceived,  setRepliesReceived,  'emerald')}
                 {statCard(Share2,        'Forwards',       forwards,         setForwards,         'amber')}
                 {statCard(CalendarIcon,  'Meetings',       meetingsBooked,   setMeetingsBooked,   'rose')}
@@ -464,10 +470,11 @@ export default function OutreachTracker() {
 
           {/* Summary cards */}
           {reportData.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5 md:gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
               {[
                 { label: 'Total DMs',      value: reportData.reduce((a, r) => a + (r.dmsSent || 0), 0),          color: '#60a5fa' },
                 { label: 'Total Emails',   value: reportData.reduce((a, r) => a + (r.emailsSent || 0), 0),        color: '#c084fc' },
+                { label: 'Total Calls',    value: reportData.reduce((a, r) => a + (r.callsMade || 0), 0),         color: '#22d3ee' },
                 { label: 'Total Replies',  value: reportData.reduce((a, r) => a + (r.repliesReceived || 0), 0),   color: '#34d399' },
                 { label: 'Total Forwards', value: reportData.reduce((a, r) => a + (r.forwards || 0), 0),          color: '#fbbf24' },
                 { label: 'Meetings',       value: reportData.reduce((a, r) => a + (r.meetingsBooked || 0), 0),    color: '#fb7185' },
@@ -507,7 +514,7 @@ export default function OutreachTracker() {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-white/10 bg-white/5">
-                      {['Date', 'DMs', 'Emails', 'Replies', 'Forwards', 'Meetings'].map(h => (
+                      {['Date', 'DMs', 'Emails', 'Calls', 'Replies', 'Forwards', 'Meetings'].map(h => (
                         <th key={h} className="p-4 text-xs font-bold uppercase tracking-widest text-textSecondary">{h}</th>
                       ))}
                     </tr>
@@ -518,6 +525,7 @@ export default function OutreachTracker() {
                         <td className="p-4 text-sm font-bold">{r.date}</td>
                         <td className="p-4 text-sm font-bold text-info">{r.dmsSent}</td>
                         <td className="p-4 text-sm font-bold text-info">{r.emailsSent}</td>
+                        <td className="p-4 text-sm font-bold text-info">{r.callsMade ?? 0}</td>
                         <td className="p-4 text-sm font-bold text-success">{r.repliesReceived}</td>
                         <td className="p-4 text-sm font-bold text-warning">{r.forwards}</td>
                         <td className="p-4 text-sm font-bold text-module">{r.meetingsBooked}</td>
@@ -527,6 +535,7 @@ export default function OutreachTracker() {
                       <td className="p-4 text-sm text-textSecondary uppercase tracking-widest text-xs">TOTAL</td>
                       <td className="p-4 text-sm text-info">{reportData.reduce((a, r) => a + (r.dmsSent || 0), 0)}</td>
                       <td className="p-4 text-sm text-info">{reportData.reduce((a, r) => a + (r.emailsSent || 0), 0)}</td>
+                      <td className="p-4 text-sm text-info">{reportData.reduce((a, r) => a + (r.callsMade || 0), 0)}</td>
                       <td className="p-4 text-sm text-success">{reportData.reduce((a, r) => a + (r.repliesReceived || 0), 0)}</td>
                       <td className="p-4 text-sm text-warning">{reportData.reduce((a, r) => a + (r.forwards || 0), 0)}</td>
                       <td className="p-4 text-sm text-module">{reportData.reduce((a, r) => a + (r.meetingsBooked || 0), 0)}</td>

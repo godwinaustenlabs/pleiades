@@ -28,7 +28,7 @@ cd apps/web && npm run build   # tsc -b && vite build -> apps/web/dist
 ```
 
 ```bash
-npm test          # vitest — see test/ (36 files, 822 tests)
+npm test          # vitest — see test/ (36 files, 823 tests)
 npm run test:watch
 ```
 
@@ -165,7 +165,10 @@ wrangler's `parseInt` sort yielded `NaN` and ran it last, after `0036`, where it
 rebuilt `universal_tasks` around an `assignee_id` column production does not
 have (assignment lives in `task_assignments`).
 
-The newest is `0055_rate_limits_and_dead_tables.sql`: the `rate_limits` table (see
+The newest is `0056_outreach_calls.sql`: `outreach_logs.calls_made`, the Calls counter in
+Acquisition's Outreach Tracker (additive; earlier days read as 0).
+
+Before that, `0055_rate_limits_and_dead_tables.sql`: the `rate_limits` table (see
 Security boundaries) and three drops — `attendance`, once its copy into time logging
 was verified exactly (15 entries, 223,386 s; the 6 rows not carried were never checked
 out), and `compliance_events` / `notifications_log`, unused with zero rows. It was
